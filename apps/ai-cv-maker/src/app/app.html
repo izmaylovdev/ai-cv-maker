@@ -1,2 +1,25 @@
-<app-nx-welcome></app-nx-welcome>
-<router-outlet></router-outlet>
+<nav class="bg-blue-600 text-white shadow-md">
+  <div class="max-w-4xl mx-auto px-4 flex items-center h-14 gap-1">
+    <span class="material-icons text-xl">description</span>
+    <span class="font-semibold text-lg ml-1 flex-1">AI CV Maker</span>
+
+    @if (auth.isLoggedIn()) {
+      <a routerLink="/profile" class="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-blue-700 text-sm transition-colors cursor-pointer">
+        <span class="material-icons text-base">person</span> Profile
+      </a>
+      <a routerLink="/cv" class="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-blue-700 text-sm transition-colors cursor-pointer">
+        <span class="material-icons text-base">picture_as_pdf</span> Generate CV
+      </a>
+      <button (click)="auth.logout()" class="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-blue-700 text-sm transition-colors cursor-pointer bg-transparent border-0 text-white">
+        <span class="material-icons text-base">logout</span> Logout
+      </button>
+    } @else {
+      <a routerLink="/auth/login" class="px-3 py-1.5 rounded hover:bg-blue-700 text-sm transition-colors cursor-pointer">Login</a>
+      <a routerLink="/auth/register" class="px-3 py-1.5 rounded hover:bg-blue-700 text-sm transition-colors cursor-pointer">Register</a>
+    }
+  </div>
+</nav>
+
+<main class="max-w-4xl mx-auto px-4 py-8">
+  <router-outlet />
+</main>

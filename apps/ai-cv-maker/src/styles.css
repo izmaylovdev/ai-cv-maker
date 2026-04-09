@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@source "./apps/ai-cv-maker/src/app/**/*.{html,ts}";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* Google Sign-In button full-width fix */
+.google-btn-container > div {
+  width: 100% !important;
+}

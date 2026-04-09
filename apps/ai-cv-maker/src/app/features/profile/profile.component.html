@@ -1,0 +1,287 @@
+@if (loading) {
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <span class="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
+  </div>
+} @else if (loadError) {
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <span class="material-icons text-[48px] text-red-500">error_outline</span>
+    <p class="text-gray-500 mt-4 mb-4 text-sm">Failed to load profile. Please check your connection and try again.</p>
+    <button (click)="retryLoad()"
+      class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-5 py-2.5 text-sm transition-colors cursor-pointer border-0">
+      <span class="material-icons text-base">refresh</span> Retry
+    </button>
+  </div>
+} @else {
+  <div class="bg-white rounded-2xl shadow-md overflow-hidden">
+    <div class="px-6 pt-6 pb-4">
+      <h2 class="text-xl font-bold text-gray-800">My Profile</h2>
+      <p class="text-sm text-gray-500 mt-1">Fill in your details to generate an AI-powered CV</p>
+    </div>
+
+    @if (notification) {
+      <div [class]="notification.type === 'success'
+        ? 'mx-6 mb-4 flex items-center gap-2 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm'
+        : 'mx-6 mb-4 flex items-center gap-2 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm'">
+        <span class="material-icons text-base">{{ notification.type === 'success' ? 'check_circle' : 'error_outline' }}</span>
+        {{ notification.message }}
+      </div>
+    }
+
+    <form [formGroup]="form">
+      <!-- Tab Navigation -->
+      <div class="border-b border-gray-200 px-6">
+        <div class="flex gap-1 -mb-px">
+          @for (tab of tabs; track tab.id) {
+            <button type="button" (click)="activeTab = tab.id"
+              [class]="activeTab === tab.id
+                ? 'px-4 py-2.5 text-sm font-medium text-blue-600 border-b-2 border-blue-600 cursor-pointer bg-transparent'
+                : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent cursor-pointer bg-transparent'">
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Overview Tab -->
+      @if (activeTab === 'overview') {
+        <div class="px-6 py-6 flex flex-col gap-4">
+          <h3 class="text-sm font-semibold text-blue-600 uppercase tracking-wide">Personal Information</h3>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-sm font-medium text-gray-700">Full Name</label>
+            <input type="text" formControlName="fullName" placeholder="John Doe"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+            @if (form.get('fullName')?.hasError('required') && form.get('fullName')?.touched) {
+              <span class="text-xs text-red-500">Full name is required</span>
+            }
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-sm font-medium text-gray-700">Professional Title</label>
+            <input type="text" formControlName="title" placeholder="Senior Software Engineer"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+            @if (form.get('title')?.hasError('required') && form.get('title')?.touched) {
+              <span class="text-xs text-red-500">Title is required</span>
+            }
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-sm font-medium text-gray-700">Professional Overview</label>
+            <textarea formControlName="overview" rows="5"
+              placeholder="Brief description of your professional background, key achievements, and career goals..."
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"></textarea>
+            @if (form.get('overview')?.hasError('required') && form.get('overview')?.touched) {
+              <span class="text-xs text-red-500">Overview is required</span>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Work Experience Tab -->
+      @if (activeTab === 'work') {
+        <div class="px-6 py-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-blue-600 uppercase tracking-wide">Work Experience</h3>
+            <button type="button" (click)="addWorkExperience()"
+              class="flex items-center gap-1 border border-blue-600 text-blue-600 hover:bg-blue-50 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white">
+              <span class="material-icons text-base">add</span> Add Experience
+            </button>
+          </div>
+
+          @if (workExperiences.length === 0) {
+            <p class="text-center text-gray-400 italic text-sm py-8">No work experience added yet. Click "Add Experience" to start.</p>
+          }
+
+          <div formArrayName="workExperiences" class="flex flex-col gap-4">
+            @for (exp of workExperiences.controls; track $index) {
+              <div [formGroupName]="$index" class="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                <div class="flex items-center justify-between mb-4">
+                  <span class="text-sm font-semibold text-indigo-600">Experience {{ $index + 1 }}</span>
+                  <button type="button" (click)="removeWorkExperience($index)"
+                    class="flex items-center justify-center w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer bg-transparent border-0">
+                    <span class="material-icons text-base">delete</span>
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Company</label>
+                    <input type="text" formControlName="company" placeholder="Acme Corp"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    @if (exp.get('company')?.hasError('required') && exp.get('company')?.touched) {
+                      <span class="text-xs text-red-500">Company is required</span>
+                    }
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Role</label>
+                    <input type="text" formControlName="role" placeholder="Software Engineer"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    @if (exp.get('role')?.hasError('required') && exp.get('role')?.touched) {
+                      <span class="text-xs text-red-500">Role is required</span>
+                    }
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Start Date</label>
+                    <input type="text" formControlName="startDate" placeholder="2020-01-15"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    <span class="text-xs text-gray-400">Format: YYYY-MM-DD</span>
+                    @if (exp.get('startDate')?.hasError('required') && exp.get('startDate')?.touched) {
+                      <span class="text-xs text-red-500">Start date is required</span>
+                    }
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">End Date</label>
+                    <input type="text" formControlName="endDate" placeholder="2023-06-30 or leave blank"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    <span class="text-xs text-gray-400">Leave blank if current</span>
+                  </div>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-600">Description</label>
+                  <textarea formControlName="description" rows="3"
+                    placeholder="Key responsibilities and achievements..."
+                    class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none bg-white"></textarea>
+                  @if (exp.get('description')?.hasError('required') && exp.get('description')?.touched) {
+                    <span class="text-xs text-red-500">Description is required</span>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Education Tab -->
+      @if (activeTab === 'education') {
+        <div class="px-6 py-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-blue-600 uppercase tracking-wide">Education</h3>
+            <button type="button" (click)="addEducation()"
+              class="flex items-center gap-1 border border-blue-600 text-blue-600 hover:bg-blue-50 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white">
+              <span class="material-icons text-base">add</span> Add Education
+            </button>
+          </div>
+
+          @if (educations.length === 0) {
+            <p class="text-center text-gray-400 italic text-sm py-8">No education added yet. Click "Add Education" to start.</p>
+          }
+
+          <div formArrayName="educations" class="flex flex-col gap-4">
+            @for (edu of educations.controls; track $index) {
+              <div [formGroupName]="$index" class="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                <div class="flex items-center justify-between mb-4">
+                  <span class="text-sm font-semibold text-indigo-600">Education {{ $index + 1 }}</span>
+                  <button type="button" (click)="removeEducation($index)"
+                    class="flex items-center justify-center w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer bg-transparent border-0">
+                    <span class="material-icons text-base">delete</span>
+                  </button>
+                </div>
+
+                <div class="flex flex-col gap-1 mb-3">
+                  <label class="text-xs font-medium text-gray-600">Institution</label>
+                  <input type="text" formControlName="institution" placeholder="MIT"
+                    class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                  @if (edu.get('institution')?.hasError('required') && edu.get('institution')?.touched) {
+                    <span class="text-xs text-red-500">Institution is required</span>
+                  }
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Degree</label>
+                    <input type="text" formControlName="degree" placeholder="Bachelor of Science"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    @if (edu.get('degree')?.hasError('required') && edu.get('degree')?.touched) {
+                      <span class="text-xs text-red-500">Degree is required</span>
+                    }
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Field of Study</label>
+                    <input type="text" formControlName="field" placeholder="Computer Science"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    @if (edu.get('field')?.hasError('required') && edu.get('field')?.touched) {
+                      <span class="text-xs text-red-500">Field is required</span>
+                    }
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Start Year</label>
+                    <input type="number" formControlName="startYear" placeholder="2016"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    @if (edu.get('startYear')?.hasError('required') && edu.get('startYear')?.touched) {
+                      <span class="text-xs text-red-500">Start year is required</span>
+                    }
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">End Year</label>
+                    <input type="number" formControlName="endYear" placeholder="2020 or leave blank"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white" />
+                    <span class="text-xs text-gray-400">Leave blank if current</span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Skills Tab -->
+      @if (activeTab === 'skills') {
+        <div class="px-6 py-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-blue-600 uppercase tracking-wide">Skills</h3>
+            <button type="button" (click)="addSkill()"
+              class="flex items-center gap-1 border border-blue-600 text-blue-600 hover:bg-blue-50 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white">
+              <span class="material-icons text-base">add</span> Add Skill
+            </button>
+          </div>
+
+          @if (skills.length === 0) {
+            <p class="text-center text-gray-400 italic text-sm py-8">No skills added yet. Click "Add Skill" to start.</p>
+          }
+
+          <div formArrayName="skills" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            @for (skill of skills.controls; track $index) {
+              <div [formGroupName]="$index" class="border border-gray-200 rounded-xl p-3 bg-gray-50 flex items-center gap-2">
+                <input type="text" formControlName="name" placeholder="TypeScript"
+                  class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white min-w-0" />
+                <select formControlName="level"
+                  class="w-32 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white">
+                  @for (level of skillLevels; track level) {
+                    <option [value]="level">{{ level }}</option>
+                  }
+                </select>
+                <button type="button" (click)="removeSkill($index)"
+                  class="flex items-center justify-center w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer bg-transparent border-0 shrink-0">
+                  <span class="material-icons text-base">delete</span>
+                </button>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </form>
+
+    <div class="flex flex-wrap gap-3 px-6 pb-6 border-t border-gray-100 pt-4">
+      <button (click)="save()" [disabled]="saving"
+        class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-5 py-2.5 text-sm transition-colors cursor-pointer border-0">
+        @if (saving) {
+          <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        } @else {
+          <span class="material-icons text-base">save</span>
+        }
+        Save Profile
+      </button>
+      <button (click)="goToGenerate()"
+        class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-5 py-2.5 text-sm transition-colors cursor-pointer border-0">
+        <span class="material-icons text-base">picture_as_pdf</span> Generate CV
+      </button>
+    </div>
+  </div>
+}
