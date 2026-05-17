@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package llm;
+
+option csharp_namespace = "CvApi.Grpc";
+
+service LlmService {
+  rpc Generate (GenerateRequest) returns (GenerateResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message WorkExperienceInput {
+  string id = 1;
+  string company = 2;
+  string role = 3;
+  string start_date = 4;
+  string end_date = 5;
+  string description = 6;
+}
+
+message EducationInput {
+  string id = 1;
+  string institution = 2;
+  string degree = 3;
+  string field = 4;
+  int32 start_year = 5;
+  int32 end_year = 6;
+}
+
+message SkillInput {
+  string id = 1;
+  string name = 2;
+  string level = 3;
+}
+
+message ProfileInput {
+  string full_name = 1;
+  string title = 2;
+  string overview = 3;
+  string location = 4;
+  repeated WorkExperienceInput work_experiences = 5;
+  repeated EducationInput educations = 6;
+  repeated SkillInput skills = 7;
+}
+
+message GenerateRequest {
+  ProfileInput profile = 1;
+}
+
+message WorkExperienceOutput {
+  string company = 1;
+  string role = 2;
+  string period = 3;
+  string description = 4;
+}
+
+message EducationOutput {
+  string institution = 1;
+  string degree = 2;
+  string field = 3;
+  string period = 4;
+}
+
+message GenerateResponse {
+  string summary = 1;
+  repeated WorkExperienceOutput work_experiences = 2;
+  repeated EducationOutput educations = 3;
+  repeated string skills = 4;
+  repeated string highlights = 5;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+}

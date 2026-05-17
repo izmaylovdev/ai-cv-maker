@@ -1,0 +1,50 @@
+<div class="flex h-screen overflow-hidden">
+  <aside class="w-56 shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
+    <div class="px-5 h-14 flex items-center gap-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
+      <span class="material-icons text-blue-600 dark:text-blue-400">description</span>
+      <span class="font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
+    </div>
+
+    @if (auth.isLoggedIn()) {
+      <nav class="flex flex-col gap-1 p-3 flex-1">
+        <a routerLink="/profile" routerLinkActive="active" class="sidebar-link">
+          <span class="material-icons text-[20px]">person</span> Profile
+        </a>
+        <a routerLink="/cv" routerLinkActive="active" class="sidebar-link">
+          <span class="material-icons text-[20px]">picture_as_pdf</span> Generate CV
+        </a>
+      </nav>
+      <div class="p-3 border-t border-gray-100 dark:border-gray-800 flex flex-col gap-1 shrink-0">
+        <button (click)="theme.toggle()"
+          class="sidebar-link w-full text-left bg-transparent border-0">
+          <span class="material-icons text-[20px]">{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</span>
+          {{ theme.isDark() ? 'Light Mode' : 'Dark Mode' }}
+        </button>
+        <button (click)="auth.logout()"
+          class="sidebar-link w-full text-left bg-transparent border-0">
+          <span class="material-icons text-[20px]">logout</span> Logout
+        </button>
+      </div>
+    } @else {
+      <nav class="flex flex-col gap-1 p-3 flex-1">
+        <a routerLink="/auth/login" routerLinkActive="active" class="sidebar-link">
+          <span class="material-icons text-[20px]">login</span> Login
+        </a>
+        <a routerLink="/auth/register" routerLinkActive="active" class="sidebar-link">
+          <span class="material-icons text-[20px]">person_add</span> Register
+        </a>
+      </nav>
+      <div class="p-3 border-t border-gray-100 dark:border-gray-800 shrink-0">
+        <button (click)="theme.toggle()"
+          class="sidebar-link w-full text-left bg-transparent border-0">
+          <span class="material-icons text-[20px]">{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</span>
+          {{ theme.isDark() ? 'Light Mode' : 'Dark Mode' }}
+        </button>
+      </div>
+    }
+  </aside>
+
+  <main class="flex-1 overflow-y-auto p-8">
+    <router-outlet />
+  </main>
+</div>

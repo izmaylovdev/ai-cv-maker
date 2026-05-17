@@ -1,0 +1,12 @@
+node_modules
+dist
+.angular
+.nx/cache
+.nx/workspace-data
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/bin
+**/obj
+.env
+.git

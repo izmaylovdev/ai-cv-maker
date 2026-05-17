@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cv-api:
+    build:
+      context: .
+      dockerfile: apps/cv-api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      JwtSettings__Secret: ${JWT_SECRET}
+      LlmService__BaseUrl: http://llm-service:8000
+      Google__ClientId: ${GOOGLE_CLIENT_ID}
+    ports:
+      - "5050:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm-service:
+        condition: service_started
+
+  ui-angular:
+    build:
+      context: .
+      dockerfile: apps/ui-angular/Dockerfile
+    restart: unless-stopped
+    environment:
+      CV_API_UPSTREAM: http://cv-api:8080
+      NGINX_ENVSUBST_TEMPLATE_VARS: CV_API_UPSTREAM
+    ports:
+      - "4200:80"
+    depends_on:
+      - cv-api
+
+  # LLM_PROVIDER=openai + OPENAI_BASE_URL=http://host.docker.internal:1234/v1 targets LM Studio on the host.
+  # LLM_PROVIDER=foundry + FOUNDRY_API_KEY + FOUNDRY_BASE_URL (or FOUNDRY_DEPLOYMENT_NAME) + LLM_MODEL (see .env.example).
+  llm-service:
+    build:
+      context: apps/llm-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-google}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.4}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-lm-studio}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      FOUNDRY_API_KEY: ${FOUNDRY_API_KEY:-}
+      FOUNDRY_BASE_URL: ${FOUNDRY_BASE_URL:-}
+      FOUNDRY_DEPLOYMENT_NAME: ${FOUNDRY_DEPLOYMENT_NAME:-}
+      ANTHROPIC_FOUNDRY_MAX_TOKENS: ${ANTHROPIC_FOUNDRY_MAX_TOKENS:-8192}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8000"
+
+volumes:
+  postgres_data:

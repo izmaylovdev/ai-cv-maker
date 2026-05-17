@@ -1,0 +1,30 @@
+@import "tailwindcss" source("./app");
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium no-underline cursor-pointer
+         text-gray-600 dark:text-gray-400
+         hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white
+         transition-colors;
+}
+
+.sidebar-link.active {
+  @apply bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300;
+}
+
+/* Google Sign-In button full-width fix */
+.google-btn-container > div {
+  width: 100% !important;
+}
+

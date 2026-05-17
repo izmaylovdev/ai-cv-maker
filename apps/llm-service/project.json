@@ -1,0 +1,46 @@
+{
+  "name": "llm-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/llm-service",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["production"],
+      "outputs": [],
+      "options": {
+        "command": "docker build -t llm-service .",
+        "cwd": "apps/llm-service"
+      }
+    },
+    "install": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["{projectRoot}/pyproject.toml"],
+      "outputs": ["{projectRoot}/.venv"],
+      "options": {
+        "command": "python3 -m venv .venv && .venv/bin/pip install -q -e .",
+        "cwd": "apps/llm-service"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "continuous": true,
+      "dependsOn": ["install"],
+      "options": {
+        "command": ".venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8080",
+        "cwd": "apps/llm-service"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default"],
+      "options": {
+        "command": "python3 -m py_compile app/main.py app/schemas.py app/chains/cv_chain.py && echo 'Syntax OK'",
+        "cwd": "apps/llm-service"
+      }
+    }
+  }
+}

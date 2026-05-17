@@ -16,19 +16,19 @@
 To run the dev server for your app, use:
 
 ```sh
-npx nx serve ai-cv-maker
+npx nx serve ui-angular
 ```
 
 To create a production bundle:
 
 ```sh
-npx nx build ai-cv-maker
+npx nx build ui-angular
 ```
 
 To see all available targets to run for a project, run:
 
 ```sh
-npx nx show project ai-cv-maker
+npx nx show project ui-angular
 ```
 
 These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.

@@ -49,3 +49,21 @@ __screenshots__/
 **/bin/
 **/obj/
 /artifacts/
+
+# Environment
+.env
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfvars
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+vite.config.*.timestamp*

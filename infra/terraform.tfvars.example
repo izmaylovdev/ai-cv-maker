@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (git-ignored) and fill in real values.
+
+prefix   = "aicvmaker"
+location = "westeurope"
+
+postgres_admin_login    = "cvmaker"
+postgres_admin_password = "change-me-strong-password"
+
+jwt_secret       = "change-me-at-least-32-chars-long-secret"
+google_client_id = "your-client-id.apps.googleusercontent.com"
+
+# LLM settings — google (Gemini) is the default
+llm_provider  = "google"
+google_api_key = "AIzaSy..."
+# llm_model   = "gemini-1.5-flash"   # optional override

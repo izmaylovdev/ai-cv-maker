@@ -1,0 +1,76 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      # ── Build & push images ────────────────────────────────────────────────
+
+      - name: Build and push cv-api
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/cv-api:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/cv-api:latest \
+            -f apps/cv-api/Dockerfile .
+          docker push $ACR_LOGIN_SERVER/cv-api:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/cv-api:latest
+
+      - name: Build and push llm-service
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/llm-service:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/llm-service:latest \
+            apps/llm-service
+          docker push $ACR_LOGIN_SERVER/llm-service:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/llm-service:latest
+
+      - name: Build and push ui-angular
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/ui-angular:latest \
+            -f apps/ui-angular/Dockerfile .
+          docker push $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/ui-angular:latest
+
+      # ── Deploy to Container Apps ───────────────────────────────────────────
+
+      - name: Deploy llm-service
+        run: |
+          az containerapp update \
+            --name llm-service \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/llm-service:${{ github.sha }}
+
+      - name: Deploy cv-api
+        run: |
+          az containerapp update \
+            --name cv-api \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/cv-api:${{ github.sha }}
+
+      - name: Deploy ui-angular
+        run: |
+          az containerapp update \
+            --name ui-angular \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
