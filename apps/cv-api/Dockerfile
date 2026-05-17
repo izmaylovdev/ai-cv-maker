@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
+COPY proto/ proto/
 COPY apps/cv-api/cv-api.csproj apps/cv-api/
 RUN dotnet restore apps/cv-api/cv-api.csproj
 COPY apps/cv-api/ apps/cv-api/

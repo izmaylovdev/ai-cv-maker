@@ -6,6 +6,7 @@ option csharp_namespace = "CvApi.Grpc";
 
 service LlmService {
   rpc Generate (GenerateRequest) returns (GenerateResponse);
+  rpc Optimize (OptimizeRequest) returns (OptimizeResponse);
   rpc Health (HealthRequest) returns (HealthResponse);
 }
 
@@ -45,6 +46,7 @@ message ProfileInput {
 
 message GenerateRequest {
   ProfileInput profile = 1;
+  string message = 2;
 }
 
 message WorkExperienceOutput {
@@ -67,6 +69,30 @@ message GenerateResponse {
   repeated EducationOutput educations = 3;
   repeated string skills = 4;
   repeated string highlights = 5;
+}
+
+message OptimizeRequest {
+  ProfileInput profile = 1;
+  string message = 2;
+}
+
+message OptimizeWorkExperienceOutput {
+  string company = 1;
+  string role = 2;
+  string start_date = 3;
+  string end_date = 4;
+  string description = 5;
+}
+
+message OptimizeSkillOutput {
+  string name = 1;
+}
+
+message OptimizeResponse {
+  string title = 1;
+  string overview = 2;
+  repeated OptimizeWorkExperienceOutput work_experiences = 3;
+  repeated OptimizeSkillOutput skills = 4;
 }
 
 message HealthRequest {}

@@ -2,13 +2,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import os
+from contextlib import asynccontextmanager
+
+import grpc.aio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.chains.cv_chain import generate_cv, optimize_profile
+from app.grpc.servicer import LlmServiceImpl
+from app.grpc.llm_service_pb2_grpc import add_LlmServiceServicer_to_server
 from app.schemas import GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse
 
-app = FastAPI(title="CV LLM Service", version="1.0.0")
+_GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    grpc_server = grpc.aio.server()
+    add_LlmServiceServicer_to_server(LlmServiceImpl(), grpc_server)
+    grpc_server.add_insecure_port(f"[::]:{_GRPC_PORT}")
+    await grpc_server.start()
+    yield
+    await grpc_server.stop(grace=5)
+
+
+app = FastAPI(title="CV LLM Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

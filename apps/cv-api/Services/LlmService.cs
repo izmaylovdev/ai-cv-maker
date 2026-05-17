@@ -1,44 +1,82 @@
-using System.Net.Http.Json;
-using System.Text.Json;
 using CvApi.DTOs;
+using CvApi.Grpc;
 
 namespace CvApi.Services;
 
-public class LlmService(HttpClient httpClient)
+public class LlmService(CvApi.Grpc.LlmService.LlmServiceClient grpcClient)
 {
-    private static readonly JsonSerializerOptions _camelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-
     public async Task<LlmGenerateResponse> GenerateAsync(LlmGenerateRequest request)
     {
-        var response = await httpClient.PostAsJsonAsync("/generate", request, _camelCase);
-
-        if (!response.IsSuccessStatusCode)
+        var reply = await grpcClient.GenerateAsync(new GenerateRequest
         {
-            var errorBody = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException(
-                $"LLM service returned {(int)response.StatusCode} {response.ReasonPhrase}: {errorBody}",
-                null,
-                response.StatusCode);
-        }
+            Profile = MapProfile(request.Profile),
+            Message = request.Message ?? string.Empty,
+        });
 
-        return await response.Content.ReadFromJsonAsync<LlmGenerateResponse>()
-            ?? throw new InvalidOperationException("Empty response from LLM service");
+        return new LlmGenerateResponse(
+            reply.Summary,
+            reply.WorkExperiences.Select(w => new LlmWorkExperience(w.Company, w.Role, w.Period, w.Description)).ToList(),
+            reply.Educations.Select(e => new LlmEducation(e.Institution, e.Degree, e.Field, e.Period)).ToList(),
+            reply.Skills.ToList(),
+            reply.Highlights.ToList()
+        );
     }
 
     public async Task<LlmOptimizeResponse> OptimizeAsync(LlmOptimizeRequest request)
     {
-        var response = await httpClient.PostAsJsonAsync("/optimize", request, _camelCase);
-
-        if (!response.IsSuccessStatusCode)
+        var reply = await grpcClient.OptimizeAsync(new OptimizeRequest
         {
-            var errorBody = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException(
-                $"LLM service returned {(int)response.StatusCode} {response.ReasonPhrase}: {errorBody}",
-                null,
-                response.StatusCode);
-        }
+            Profile = MapProfile(request.Profile),
+            Message = request.Message,
+        });
 
-        return await response.Content.ReadFromJsonAsync<LlmOptimizeResponse>()
-            ?? throw new InvalidOperationException("Empty response from LLM service");
+        return new LlmOptimizeResponse(
+            reply.Title,
+            reply.Overview,
+            reply.WorkExperiences.Select(w => new LlmOptimizeWorkExperience(
+                w.Company, w.Role, w.StartDate, string.IsNullOrEmpty(w.EndDate) ? null : w.EndDate, w.Description
+            )).ToList(),
+            reply.Skills.Select(s => new LlmOptimizeSkill(s.Name)).ToList()
+        );
     }
+
+    private static ProfileInput MapProfile(LlmProfileRequest p) => new()
+    {
+        FullName = p.FullName,
+        Title = p.Title,
+        Overview = p.Overview,
+        Location = p.Location ?? string.Empty,
+        WorkExperiences =
+        {
+            p.WorkExperiences.Select(w => new WorkExperienceInput
+            {
+                Id = w.Id?.ToString() ?? string.Empty,
+                Company = w.Company,
+                Role = w.Role,
+                StartDate = w.StartDate.ToString(),
+                EndDate = w.EndDate?.ToString() ?? string.Empty,
+                Description = w.Description,
+            })
+        },
+        Educations =
+        {
+            p.Educations.Select(e => new EducationInput
+            {
+                Id = e.Id?.ToString() ?? string.Empty,
+                Institution = e.Institution,
+                Degree = e.Degree,
+                Field = e.Field,
+                StartYear = e.StartYear,
+                EndYear = e.EndYear ?? 0,
+            })
+        },
+        Skills =
+        {
+            p.Skills.Select(s => new SkillInput
+            {
+                Id = s.Id?.ToString() ?? string.Empty,
+                Name = s.Name,
+            })
+        },
+    };
 }

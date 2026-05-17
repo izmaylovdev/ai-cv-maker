@@ -69,13 +69,11 @@ builder.Services.AddCors(opt =>
 // Services
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PdfService>();
-builder.Services.AddHttpClient<LlmService>(client =>
+builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
 {
-    var baseUrl = builder.Configuration["LlmService:BaseUrl"]
-        ?? "http://localhost:8000";
-    client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(120);
+    o.Address = new Uri(builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051");
 });
+builder.Services.AddScoped<LlmService>();
 
 var app = builder.Build();
 

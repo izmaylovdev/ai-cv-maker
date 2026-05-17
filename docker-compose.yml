@@ -26,7 +26,7 @@ services:
     environment:
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       JwtSettings__Secret: ${JWT_SECRET}
-      LlmService__BaseUrl: http://llm-service:8000
+      LlmService__GrpcUrl: http://llm-service:50051
       Google__ClientId: ${GOOGLE_CLIENT_ID}
     ports:
       - "5050:8080"
@@ -73,6 +73,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8080:8000"
+      - "50051:50051"
 
 volumes:
   postgres_data:
