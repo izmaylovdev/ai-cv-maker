@@ -26,8 +26,16 @@ export interface Contacts {
   phone?: string;
 }
 
+export interface JobProfileListItem {
+  id: string;
+  name: string;
+  fullName: string;
+  title: string;
+}
+
 export interface Profile {
   id: string;
+  name: string;
   fullName: string;
   title: string;
   overview: string;

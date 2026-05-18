@@ -21,15 +21,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(u => u.GoogleId).IsUnique().HasFilter("\"GoogleId\" IS NOT NULL");
             e.Property(u => u.Email).IsRequired().HasMaxLength(256);
             e.Property(u => u.GoogleId).HasMaxLength(128);
-            e.HasOne(u => u.Profile)
+            e.HasMany(u => u.Profiles)
                 .WithOne(p => p.User)
-                .HasForeignKey<Profile>(p => p.UserId)
+                .HasForeignKey(p => p.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Profile>(e =>
         {
             e.HasKey(p => p.Id);
+            e.Property(p => p.Name).HasMaxLength(200).HasDefaultValue("My Profile");
             e.Property(p => p.FullName).HasMaxLength(200);
             e.Property(p => p.Title).HasMaxLength(200);
             e.Property(p => p.Location).HasMaxLength(200);

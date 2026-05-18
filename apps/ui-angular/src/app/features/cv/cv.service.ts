@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
 
-const API = `${environment.apiUrl}/cv`;
+const BASE = `${environment.apiUrl}/job-profiles`;
 
 export interface CvListItem {
   id: string;
@@ -15,23 +15,27 @@ export interface CvListItem {
 export class CvService {
   private http = inject(HttpClient);
 
-  list() {
-    return this.http.get<CvListItem[]>(API);
+  private api(profileId: string) {
+    return `${BASE}/${profileId}/cvs`;
   }
 
-  create(optimizationNotes?: string | null) {
-    return this.http.post<CvListItem>(API, { optimizationNotes: optimizationNotes ?? null });
+  list(profileId: string) {
+    return this.http.get<CvListItem[]>(this.api(profileId));
   }
 
-  getPdf(id: string) {
-    return this.http.get(`${API}/${id}/pdf`, { responseType: 'blob' });
+  create(profileId: string, optimizationNotes?: string | null) {
+    return this.http.post<CvListItem>(this.api(profileId), { optimizationNotes: optimizationNotes ?? null });
   }
 
-  getDefaultPdf() {
-    return this.http.get(`${API}/default/pdf`, { responseType: 'blob' });
+  getPdf(profileId: string, id: string) {
+    return this.http.get(`${this.api(profileId)}/${id}/pdf`, { responseType: 'blob' });
   }
 
-  deleteCv(id: string) {
-    return this.http.delete(`${API}/${id}`);
+  getDefaultPdf(profileId: string) {
+    return this.http.get(`${this.api(profileId)}/default/pdf`, { responseType: 'blob' });
+  }
+
+  deleteCv(profileId: string, id: string) {
+    return this.http.delete(`${this.api(profileId)}/${id}`);
   }
 }

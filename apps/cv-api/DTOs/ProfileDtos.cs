@@ -28,8 +28,16 @@ public record ContactsDto(
     string? Phone
 );
 
+public record JobProfileListItemDto(
+    Guid Id,
+    string Name,
+    string FullName,
+    string Title
+);
+
 public record ProfileDto(
     Guid Id,
+    string Name,
     string FullName,
     string Title,
     string Overview,
@@ -40,7 +48,10 @@ public record ProfileDto(
     List<SkillDto> Skills
 );
 
+public record CreateJobProfileRequest(string Name);
+
 public record UpdateProfileRequest(
+    string Name,
     string FullName,
     string Title,
     string Overview,

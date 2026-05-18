@@ -8,7 +8,7 @@
     "serve:app": "pkill -9 -f 'nx run ui-angular' 2>/dev/null; sleep 1 && npx nx daemon --stop 2>/dev/null; npx nx run ui-angular:serve",
     "serve:ui-react": "pkill -9 -f 'nx run ui-react' 2>/dev/null; sleep 1 && npx nx daemon --stop 2>/dev/null; npx nx run ui-react:dev",
     "clean": "pkill -9 -f 'nx run' 2>/dev/null; sleep 1 && npx nx daemon --stop 2>/dev/null && echo 'All nx serve processes cleared'",
-    "grpc:generate": "python3 -m grpc_tools.protoc -I proto --python_out=apps/llm-service/app/grpc --grpc_python_out=apps/llm-service/app/grpc proto/llm_service.proto && sed -i '' 's/^import llm_service_pb2/from . import llm_service_pb2/' apps/llm-service/app/grpc/llm_service_pb2_grpc.py"
+    "grpc:generate": ".venv/bin/python3 -m grpc_tools.protoc -I proto --python_out=apps/llm-service/app/grpc --grpc_python_out=apps/llm-service/app/grpc proto/llm_service.proto && sed -i '' 's/^import llm_service_pb2/from . import llm_service_pb2/' apps/llm-service/app/grpc/llm_service_pb2_grpc.py"
   },
   "private": true,
   "dependencies": {

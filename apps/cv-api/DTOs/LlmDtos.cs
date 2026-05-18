@@ -52,3 +52,35 @@ public record LlmOptimizeResponse(
     List<LlmOptimizeWorkExperience> WorkExperiences,
     List<LlmOptimizeSkill> Skills
 );
+
+public record LlmExtractRequest(string CvText);
+
+public record LlmExtractWorkExperience(
+    string Company,
+    string Role,
+    string StartDate,
+    string? EndDate,
+    string Description
+);
+
+public record LlmExtractEducation(
+    string Institution,
+    string Degree,
+    string Field,
+    int StartYear,
+    int? EndYear
+);
+
+public record LlmExtractSkill(string Name);
+
+public record LlmExtractResponse(
+    string FullName,
+    string Title,
+    string Overview,
+    string? Location,
+    string? ContactEmail,
+    string? ContactPhone,
+    List<LlmExtractWorkExperience> WorkExperiences,
+    List<LlmExtractEducation> Educations,
+    List<LlmExtractSkill> Skills
+);

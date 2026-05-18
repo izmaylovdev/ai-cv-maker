@@ -1,20 +1,24 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { finalize } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CvService, type CvListItem } from './cv.service';
 
 @Component({
   selector: 'app-cv',
   standalone: true,
-  imports: [RouterModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './cv.component.html',
 })
 export class CvComponent implements OnInit, OnDestroy {
   private cvService = inject(CvService);
   private sanitizer = inject(DomSanitizer);
+  private route = inject(ActivatedRoute);
+  readonly router = inject(Router);
+
+  profileId = '';
 
   readonly cvs = signal<CvListItem[]>([]);
   readonly loading = signal(false);
@@ -31,6 +35,7 @@ export class CvComponent implements OnInit, OnDestroy {
   private errorTimer: ReturnType<typeof setTimeout> | null = null;
 
   ngOnInit() {
+    this.profileId = this.route.snapshot.paramMap.get('id') ?? '';
     this.loadCvs();
   }
 
@@ -42,7 +47,7 @@ export class CvComponent implements OnInit, OnDestroy {
   loadCvs() {
     this.loading.set(true);
     this.loadError.set(false);
-    this.cvService.list().pipe(finalize(() => this.loading.set(false))).subscribe({
+    this.cvService.list(this.profileId).pipe(finalize(() => this.loading.set(false))).subscribe({
       next: (cvs) => this.cvs.set(cvs),
       error: () => this.loadError.set(true),
     });
@@ -55,7 +60,7 @@ export class CvComponent implements OnInit, OnDestroy {
 
   generate() {
     this.generating.set(true);
-    this.cvService.create(this.optimizationNotes.trim() || null)
+    this.cvService.create(this.profileId, this.optimizationNotes.trim() || null)
       .pipe(finalize(() => this.generating.set(false)))
       .subscribe({
         next: (cv) => {
@@ -74,7 +79,7 @@ export class CvComponent implements OnInit, OnDestroy {
     this.pdfLoading.set(true);
     if (this.rawBlobUrl) { URL.revokeObjectURL(this.rawBlobUrl); this.rawBlobUrl = null; }
 
-    this.cvService.getDefaultPdf().pipe(finalize(() => this.pdfLoading.set(false))).subscribe({
+    this.cvService.getDefaultPdf(this.profileId).pipe(finalize(() => this.pdfLoading.set(false))).subscribe({
       next: (blob) => {
         this.rawBlobUrl = URL.createObjectURL(blob);
         this.pdfSafeUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawBlobUrl));
@@ -96,7 +101,7 @@ export class CvComponent implements OnInit, OnDestroy {
     this.pdfLoading.set(true);
     if (this.rawBlobUrl) { URL.revokeObjectURL(this.rawBlobUrl); this.rawBlobUrl = null; }
 
-    this.cvService.getPdf(cv.id).pipe(finalize(() => this.pdfLoading.set(false))).subscribe({
+    this.cvService.getPdf(this.profileId, cv.id).pipe(finalize(() => this.pdfLoading.set(false))).subscribe({
       next: (blob) => {
         this.rawBlobUrl = URL.createObjectURL(blob);
         this.pdfSafeUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawBlobUrl));
@@ -114,7 +119,7 @@ export class CvComponent implements OnInit, OnDestroy {
 
   deleteCv(id: string, event: Event) {
     event.stopPropagation();
-    this.cvService.deleteCv(id).subscribe({
+    this.cvService.deleteCv(this.profileId, id).subscribe({
       next: () => this.cvs.update((list) => list.filter((c) => c.id !== id)),
       error: () => {},
     });

@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CvApi.Controllers;
 
 [ApiController]
-[Route("api/cv")]
+[Route("api/job-profiles/{profileId:guid}/cvs")]
 [Authorize]
 public class CvController(AppDbContext db, LlmService llmService, PdfService pdfService) : ControllerBase
 {
@@ -21,13 +21,13 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<ActionResult<List<CvListItemDto>>> GetAll()
+    public async Task<ActionResult<List<CvListItemDto>>> GetAll(Guid profileId)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == UserId);
-        if (profile is null) return Ok(new List<CvListItemDto>());
+        var ownedProfile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == UserId);
+        if (ownedProfile is null) return NotFound();
 
         var cvs = await db.GeneratedCvs
-            .Where(g => g.ProfileId == profile.Id)
+            .Where(g => g.ProfileId == profileId)
             .OrderByDescending(g => g.CreatedAt)
             .Select(g => new CvListItemDto(g.Id, g.CreatedAt, g.OptimizationNotes, g.Title))
             .ToListAsync();
@@ -36,16 +36,15 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
     }
 
     [HttpPost]
-    public async Task<ActionResult<CvListItemDto>> Create(CreateCvRequest request)
+    public async Task<ActionResult<CvListItemDto>> Create(Guid profileId, CreateCvRequest request)
     {
         var profile = await db.Profiles
             .Include(p => p.WorkExperiences)
             .Include(p => p.Educations)
             .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.UserId == UserId);
+            .FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == UserId);
 
-        if (profile is null)
-            return BadRequest("Profile not found. Please complete your profile first.");
+        if (profile is null) return NotFound();
 
         var llmRequest = new LlmGenerateRequest(
             new LlmProfileRequest(
@@ -101,12 +100,12 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
     }
 
     [HttpGet("{id:guid}/pdf")]
-    public async Task<IActionResult> GetPdf(Guid id)
+    public async Task<IActionResult> GetPdf(Guid profileId, Guid id)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == UserId);
-        if (profile is null) return NotFound();
+        var ownedProfile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == UserId);
+        if (ownedProfile is null) return NotFound();
 
-        var cv = await db.GeneratedCvs.FirstOrDefaultAsync(g => g.Id == id && g.ProfileId == profile.Id);
+        var cv = await db.GeneratedCvs.FirstOrDefaultAsync(g => g.Id == id && g.ProfileId == profileId);
         if (cv is null) return NotFound();
 
         var cvData = JsonSerializer.Deserialize<LlmGenerateResponse>(cv.CvDataJson, _jsonOptions);
@@ -117,13 +116,13 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
     }
 
     [HttpGet("default/pdf")]
-    public async Task<IActionResult> GetDefaultPdf()
+    public async Task<IActionResult> GetDefaultPdf(Guid profileId)
     {
         var profile = await db.Profiles
             .Include(p => p.WorkExperiences)
             .Include(p => p.Educations)
             .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.UserId == UserId);
+            .FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == UserId);
 
         if (profile is null) return NotFound();
 
@@ -156,12 +155,12 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
     }
 
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Delete(Guid id)
+    public async Task<IActionResult> Delete(Guid profileId, Guid id)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == UserId);
-        if (profile is null) return NotFound();
+        var ownedProfile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == UserId);
+        if (ownedProfile is null) return NotFound();
 
-        var cv = await db.GeneratedCvs.FirstOrDefaultAsync(g => g.Id == id && g.ProfileId == profile.Id);
+        var cv = await db.GeneratedCvs.FirstOrDefaultAsync(g => g.Id == id && g.ProfileId == profileId);
         if (cv is null) return NotFound();
 
         db.GeneratedCvs.Remove(cv);

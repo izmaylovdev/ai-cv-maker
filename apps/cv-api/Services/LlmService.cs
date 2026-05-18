@@ -40,6 +40,33 @@ public class LlmService(CvApi.Grpc.LlmService.LlmServiceClient grpcClient)
         );
     }
 
+    public async Task<LlmExtractResponse> ExtractAsync(LlmExtractRequest request)
+    {
+        var reply = await grpcClient.ExtractProfileAsync(new ExtractProfileRequest
+        {
+            CvText = request.CvText,
+        });
+
+        return new LlmExtractResponse(
+            reply.FullName,
+            reply.Title,
+            reply.Overview,
+            string.IsNullOrEmpty(reply.Location) ? null : reply.Location,
+            string.IsNullOrEmpty(reply.ContactEmail) ? null : reply.ContactEmail,
+            string.IsNullOrEmpty(reply.ContactPhone) ? null : reply.ContactPhone,
+            reply.WorkExperiences.Select(w => new LlmExtractWorkExperience(
+                w.Company, w.Role, w.StartDate,
+                string.IsNullOrEmpty(w.EndDate) ? null : w.EndDate,
+                w.Description
+            )).ToList(),
+            reply.Educations.Select(e => new LlmExtractEducation(
+                e.Institution, e.Degree, e.Field, e.StartYear,
+                e.EndYear == 0 ? null : e.EndYear
+            )).ToList(),
+            reply.Skills.Select(s => new LlmExtractSkill(s.Name)).ToList()
+        );
+    }
+
     private static ProfileInput MapProfile(LlmProfileRequest p) => new()
     {
         FullName = p.FullName,

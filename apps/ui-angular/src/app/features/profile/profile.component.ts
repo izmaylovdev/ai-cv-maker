@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 import { ProfileService } from './profile.service';
 import { AuthService } from '../../auth/auth.service';
@@ -20,8 +21,11 @@ export class ProfileComponent implements OnInit {
   private fb = inject(FormBuilder);
   private profileService = inject(ProfileService);
   private auth = inject(AuthService);
+  private route = inject(ActivatedRoute);
+  readonly router = inject(Router);
   readonly theme = inject(ThemeService);
 
+  profileId = '';
   form!: FormGroup;
   readonly loading = signal(false);
   readonly loadError = signal(false);
@@ -32,7 +36,10 @@ export class ProfileComponent implements OnInit {
   readonly optimizing = signal(false);
   optimizeMessage = '';
 
+  readonly importing = signal(false);
+
   ngOnInit() {
+    this.profileId = this.route.snapshot.paramMap.get('id') ?? '';
     this.buildForm();
     this.loadProfile();
   }
@@ -98,7 +105,7 @@ export class ProfileComponent implements OnInit {
       })),
     };
     this.saving.set(true);
-    this.profileService.updateProfile(payload).subscribe({
+    this.profileService.updateProfile(this.profileId, payload).subscribe({
       next: () => {
         this.saving.set(false);
         this.showNotification('Profile saved successfully!', 'success');
@@ -114,7 +121,7 @@ export class ProfileComponent implements OnInit {
     const message = this.optimizeMessage.trim();
     if (!message) return;
     this.optimizing.set(true);
-    this.profileService.optimizeProfile(message).subscribe({
+    this.profileService.optimizeProfile(this.profileId, message).subscribe({
       next: (result) => {
         this.form.patchValue({ title: result.title, overview: result.overview });
 
@@ -138,6 +145,46 @@ export class ProfileComponent implements OnInit {
     });
   }
 
+  importFromCv(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = '';
+    this.importing.set(true);
+    this.profileService.extractFromCv(this.profileId, file).pipe(finalize(() => this.importing.set(false))).subscribe({
+      next: (extracted) => {
+        this.form.patchValue({
+          fullName: extracted.fullName ?? '',
+          title: extracted.title ?? '',
+          overview: extracted.overview ?? '',
+          location: extracted.location ?? '',
+          contacts: {
+            email: extracted.contacts?.email ?? '',
+            phone: extracted.contacts?.phone ?? '',
+          },
+        });
+
+        this.workExperiences.clear();
+        (extracted.workExperiences ?? []).forEach((w) =>
+          this.workExperiences.push(this.createWorkExperienceGroup(w))
+        );
+
+        this.educations.clear();
+        (extracted.educations ?? []).forEach((e) =>
+          this.educations.push(this.createEducationGroup(e))
+        );
+
+        this.skills.clear();
+        (extracted.skills ?? []).forEach((s) =>
+          this.skills.push(this.createSkillGroup(s))
+        );
+
+        this.showNotification('Profile extracted from CV! Review the details and save when ready.', 'success');
+      },
+      error: () => this.showNotification('Failed to extract profile from CV. Please try again.', 'error'),
+    });
+  }
+
   retryLoad() {
     this.workExperiences.clear();
     this.educations.clear();
@@ -150,6 +197,10 @@ export class ProfileComponent implements OnInit {
     return { id: '', ...this.form.value } as Profile;
   }
 
+  get profileName(): string {
+    return this.form?.get('name')?.value || 'Job Profile';
+  }
+
   private showNotification(message: string, type: 'success' | 'error') {
     this.notification.set({ message, type });
     setTimeout(() => this.notification.set(null), 4000);
@@ -157,6 +208,7 @@ export class ProfileComponent implements OnInit {
 
   private buildForm() {
     this.form = this.fb.group({
+      name: [''],
       fullName: ['', Validators.required],
       title: ['', Validators.required],
       overview: ['', Validators.required],
@@ -174,11 +226,12 @@ export class ProfileComponent implements OnInit {
   private loadProfile() {
     this.loading.set(true);
     this.loadError.set(false);
-    this.profileService.getProfile().pipe(
+    this.profileService.getProfile(this.profileId).pipe(
       finalize(() => this.loading.set(false))
     ).subscribe({
       next: (profile: Profile) => {
         this.form.patchValue({
+          name: profile.name ?? '',
           fullName: profile.fullName,
           title: profile.title,
           overview: profile.overview,

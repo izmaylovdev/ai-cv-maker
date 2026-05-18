@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using CvApi.Data;
 using CvApi.DTOs;
 using CvApi.Models;
@@ -6,46 +7,66 @@ using CvApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using UglyToad.PdfPig;
 
 namespace CvApi.Controllers;
 
 [ApiController]
-[Route("api/profile")]
+[Route("api/job-profiles")]
 [Authorize]
-public class ProfileController(AppDbContext db, LlmService llmService) : ControllerBase
+public class JobProfileController(AppDbContext db, LlmService llmService) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<ActionResult<ProfileDto>> Get()
+    public async Task<ActionResult<List<JobProfileListItemDto>>> List()
+    {
+        var profiles = await db.Profiles
+            .Where(p => p.UserId == UserId)
+            .OrderBy(p => p.Name)
+            .Select(p => new JobProfileListItemDto(p.Id, p.Name, p.FullName, p.Title))
+            .ToListAsync();
+        return Ok(profiles);
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<JobProfileListItemDto>> Create(CreateJobProfileRequest request)
+    {
+        var profile = new Profile
+        {
+            UserId = UserId,
+            Name = string.IsNullOrWhiteSpace(request.Name) ? "My Profile" : request.Name.Trim(),
+        };
+        db.Profiles.Add(profile);
+        await db.SaveChangesAsync();
+        return Ok(new JobProfileListItemDto(profile.Id, profile.Name, profile.FullName, profile.Title));
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<ProfileDto>> Get(Guid id)
     {
         var profile = await db.Profiles
             .Include(p => p.WorkExperiences)
             .Include(p => p.Educations)
             .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.UserId == UserId);
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == UserId);
 
-        if (profile is null)
-            return Ok(new ProfileDto(Guid.Empty, "", "", "", null, null, [], [], []));
-
+        if (profile is null) return NotFound();
         return Ok(MapToDto(profile));
     }
 
-    [HttpPut]
-    public async Task<ActionResult<ProfileDto>> Update(UpdateProfileRequest request)
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<ProfileDto>> Update(Guid id, UpdateProfileRequest request)
     {
         var profile = await db.Profiles
             .Include(p => p.WorkExperiences)
             .Include(p => p.Educations)
             .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.UserId == UserId);
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == UserId);
 
-        if (profile is null)
-        {
-            profile = new Profile { UserId = UserId };
-            db.Profiles.Add(profile);
-        }
+        if (profile is null) return NotFound();
 
+        profile.Name = string.IsNullOrWhiteSpace(request.Name) ? profile.Name : request.Name.Trim();
         profile.FullName = request.FullName;
         profile.Title = request.Title;
         profile.Overview = request.Overview;
@@ -97,8 +118,18 @@ public class ProfileController(AppDbContext db, LlmService llmService) : Control
         return Ok(MapToDto(profile));
     }
 
-    [HttpPost("optimize")]
-    public async Task<ActionResult<OptimizeProfileResponse>> Optimize(OptimizeProfileRequest request)
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == UserId);
+        if (profile is null) return NotFound();
+        db.Profiles.Remove(profile);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/optimize")]
+    public async Task<ActionResult<OptimizeProfileResponse>> Optimize(Guid id, OptimizeProfileRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest("Message is required.");
@@ -107,10 +138,9 @@ public class ProfileController(AppDbContext db, LlmService llmService) : Control
             .Include(p => p.WorkExperiences)
             .Include(p => p.Educations)
             .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.UserId == UserId);
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == UserId);
 
-        if (profile is null)
-            return BadRequest("Profile not found. Please complete your profile first.");
+        if (profile is null) return NotFound();
 
         var llmRequest = new LlmOptimizeRequest(
             new LlmProfileRequest(
@@ -159,8 +189,78 @@ public class ProfileController(AppDbContext db, LlmService llmService) : Control
         ));
     }
 
+    [HttpPost("{id:guid}/extract")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<UpdateProfileRequest>> Extract(Guid id, IFormFile file)
+    {
+        var exists = await db.Profiles.AnyAsync(p => p.Id == id && p.UserId == UserId);
+        if (!exists) return NotFound();
+
+        if (file is null || file.Length == 0)
+            return BadRequest("No file uploaded.");
+
+        string cvText;
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+        if (ext == ".pdf")
+        {
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            ms.Position = 0;
+            var sb = new StringBuilder();
+            using var pdf = PdfDocument.Open(ms);
+            foreach (var page in pdf.GetPages())
+                sb.AppendLine(page.Text);
+            cvText = sb.ToString();
+        }
+        else
+        {
+            using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
+            cvText = await reader.ReadToEndAsync();
+        }
+
+        if (string.IsNullOrWhiteSpace(cvText))
+            return BadRequest("Could not extract text from the uploaded file.");
+
+        LlmExtractResponse llmResponse;
+        try
+        {
+            llmResponse = await llmService.ExtractAsync(new LlmExtractRequest(cvText));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return StatusCode(503, "CV extraction is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return StatusCode(502, $"CV extraction failed: {ex.Message}");
+        }
+
+        var profile = await db.Profiles.FirstAsync(p => p.Id == id);
+
+        return Ok(new UpdateProfileRequest(
+            profile.Name,
+            llmResponse.FullName,
+            llmResponse.Title,
+            llmResponse.Overview,
+            string.IsNullOrWhiteSpace(llmResponse.Location) ? null : llmResponse.Location,
+            new ContactsDto(llmResponse.ContactEmail, llmResponse.ContactPhone),
+            llmResponse.WorkExperiences.Select(w => new WorkExperienceDto(
+                null, w.Company, w.Role,
+                DateOnly.TryParse(w.StartDate, out var sd) ? sd : DateOnly.FromDateTime(DateTime.Today),
+                string.IsNullOrEmpty(w.EndDate) ? null : DateOnly.TryParse(w.EndDate, out var ed) ? ed : null,
+                w.Description
+            )).ToList(),
+            llmResponse.Educations.Select(e => new EducationDto(
+                null, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear
+            )).ToList(),
+            llmResponse.Skills.Select(s => new SkillDto(null, s.Name)).ToList()
+        ));
+    }
+
     private static ProfileDto MapToDto(Profile profile) => new(
         profile.Id,
+        profile.Name,
         profile.FullName,
         profile.Title,
         profile.Overview,

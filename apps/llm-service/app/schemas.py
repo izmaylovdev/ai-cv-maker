@@ -89,3 +89,39 @@ class OptimizeResponse(BaseModel):
     overview: str
     workExperiences: list[OptimizeWorkExperience]
     skills: list[OptimizeSkill]
+
+
+class ExtractRequest(BaseModel):
+    cv_text: str
+
+
+class ExtractWorkExperience(BaseModel):
+    company: str
+    role: str
+    startDate: str
+    endDate: Optional[str] = None
+    description: str
+
+
+class ExtractEducation(BaseModel):
+    institution: str
+    degree: str
+    field: str
+    startYear: int
+    endYear: Optional[int] = None
+
+
+class ExtractSkill(BaseModel):
+    name: str
+
+
+class ExtractResponse(BaseModel):
+    fullName: str
+    title: str
+    overview: str
+    location: Optional[str] = None
+    contactEmail: Optional[str] = None
+    contactPhone: Optional[str] = None
+    workExperiences: list[ExtractWorkExperience] = []
+    educations: list[ExtractEducation] = []
+    skills: list[ExtractSkill] = []

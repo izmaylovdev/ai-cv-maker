@@ -1,6 +1,6 @@
 import grpc
 
-from app.chains.cv_chain import generate_cv, optimize_profile
+from app.chains.cv_chain import extract_profile, generate_cv, optimize_profile
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
 from app.schemas import (
     EducationInput,
@@ -95,6 +95,44 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 ],
                 skills=[
                     llm_service_pb2.OptimizeSkillOutput(name=s.name)
+                    for s in result.skills
+                ],
+            )
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def ExtractProfile(self, request, context):
+        try:
+            result = await extract_profile(request.cv_text)
+            return llm_service_pb2.ExtractProfileResponse(
+                full_name=result.fullName,
+                title=result.title,
+                overview=result.overview,
+                location=result.location or "",
+                contact_email=result.contactEmail or "",
+                contact_phone=result.contactPhone or "",
+                work_experiences=[
+                    llm_service_pb2.ExtractWorkExperience(
+                        company=w.company,
+                        role=w.role,
+                        start_date=w.startDate,
+                        end_date=w.endDate or "",
+                        description=w.description,
+                    )
+                    for w in result.workExperiences
+                ],
+                educations=[
+                    llm_service_pb2.ExtractEducation(
+                        institution=e.institution,
+                        degree=e.degree,
+                        field=e.field,
+                        start_year=e.startYear,
+                        end_year=e.endYear or 0,
+                    )
+                    for e in result.educations
+                ],
+                skills=[
+                    llm_service_pb2.ExtractSkill(name=s.name)
                     for s in result.skills
                 ],
             )

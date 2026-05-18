@@ -9,10 +9,10 @@ import grpc.aio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.chains.cv_chain import generate_cv, optimize_profile
+from app.chains.cv_chain import extract_profile, generate_cv, optimize_profile
 from app.grpc.servicer import LlmServiceImpl
 from app.grpc.llm_service_pb2_grpc import add_LlmServiceServicer_to_server
-from app.schemas import GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse
+from app.schemas import ExtractRequest, ExtractResponse, GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse
 
 _GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
@@ -54,5 +54,13 @@ async def generate(request: GenerateRequest) -> GenerateResponse:
 async def optimize(request: OptimizeRequest) -> OptimizeResponse:
     try:
         return await optimize_profile(request.profile, request.message)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/extract", response_model=ExtractResponse)
+async def extract(request: ExtractRequest) -> ExtractResponse:
+    try:
+        return await extract_profile(request.cv_text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

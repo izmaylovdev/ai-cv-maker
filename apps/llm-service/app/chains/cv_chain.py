@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app import settings as app_settings
 from app.schemas import (
+    ExtractResponse,
     GenerateResponse,
     OptimizeResponse,
     ProfileInput,
@@ -311,4 +312,80 @@ async def optimize_profile(profile: ProfileInput, message: str) -> OptimizeRespo
 
     chain = build_optimize_chain()
     result = await chain.ainvoke(inputs)
+    return result
+
+
+_EXTRACT_SYSTEM_PROMPT = """\
+You are an expert CV parser. Your task is to extract structured profile information \
+from raw CV/resume text.
+
+Rules:
+- Extract all available information; use empty strings for missing text fields.
+- For dates: use ISO format YYYY-MM-DD for work experience dates, integer years for education.
+- If an end date is absent or says "present"/"current", omit it (null).
+- Normalize skill names (e.g. "TypeScript" not "typescript").
+- The overview should be the professional summary/objective if present, otherwise synthesize \
+  a 2-3 sentence summary from the experience.
+- Return ONLY valid JSON matching the required schema. No markdown, no extra text.
+"""
+
+_EXTRACT_HUMAN_PROMPT = """\
+Extract the profile from the following CV text and return a JSON object with:
+- fullName: string
+- title: string (professional title/headline)
+- overview: string (professional summary, 2-3 sentences)
+- location: string or null
+- contactEmail: string or null
+- contactPhone: string or null
+- workExperiences: array of {{ company, role, startDate (YYYY-MM-DD), endDate (YYYY-MM-DD or null), description }}
+- educations: array of {{ institution, degree, field, startYear (int), endYear (int or null) }}
+- skills: array of {{ name }}
+
+CV Text:
+{cv_text}
+"""
+
+
+def _parse_extract_response_json(text: str) -> ExtractResponse:
+    cleaned = _strip_optional_json_fence(text)
+    try:
+        return ExtractResponse.model_validate_json(cleaned)
+    except (ValidationError, ValueError) as exc:
+        snippet = text[:2000] + ("…" if len(text) > 2000 else "")
+        raise ValueError(f"Model did not return valid extract JSON: {exc}\n---\n{snippet}") from exc
+
+
+async def _extract_profile_foundry(cv_text: str) -> ExtractResponse:
+    model = app_settings.foundry_model()
+    if not model:
+        raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
+    client = _build_foundry_client()
+    user_content = _EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)
+    message = await client.messages.create(
+        model=model,
+        max_tokens=app_settings.foundry_max_tokens(),
+        temperature=0,
+        system=_EXTRACT_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return _parse_extract_response_json(_anthropic_text_content(message))
+
+
+def build_extract_chain():
+    llm = _build_llm()
+    structured_llm = llm.with_structured_output(ExtractResponse)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _EXTRACT_SYSTEM_PROMPT), ("human", _EXTRACT_HUMAN_PROMPT)]
+    )
+    return prompt | structured_llm
+
+
+async def extract_profile(cv_text: str) -> ExtractResponse:
+    provider = app_settings.llm_provider()
+
+    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
+        return await _extract_profile_foundry(cv_text)
+
+    chain = build_extract_chain()
+    result = await chain.ainvoke({"cv_text": cv_text})
     return result

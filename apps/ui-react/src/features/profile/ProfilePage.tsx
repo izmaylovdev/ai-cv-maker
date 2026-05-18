@@ -7,12 +7,12 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { logout } from '../auth/authSlice';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
-import { getProfile, optimizeProfile, updateProfile, type ProfileUpdatePayload } from '../../lib/profileApi';
+import { extractProfileFromCv, getProfile, optimizeProfile, updateProfile, type ProfileUpdatePayload } from '../../lib/profileApi';
 import { PhoneInput } from '../../shared/components/PhoneInput';
 import { ProfilePreview } from '../../shared/components/ProfilePreview';
 import type { Profile } from '../../shared/models/profile.model';
@@ -48,6 +48,7 @@ type EduRow = {
 };
 
 type FormState = {
+  name: string;
   fullName: string;
   title: string;
   overview: string;
@@ -59,6 +60,7 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
+  name: '',
   fullName: '',
   title: '',
   overview: '',
@@ -91,6 +93,7 @@ function validateForm(form: FormState): boolean {
 
 function toPayload(form: FormState): ProfileUpdatePayload {
   return {
+    name: form.name,
     fullName: form.fullName,
     title: form.title,
     overview: form.overview,
@@ -124,6 +127,7 @@ export function ProfilePage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const route = useLocation();
+  const { id: profileId } = useParams<{ id: string }>();
   const token = useAppSelector((s) => s.auth.token) ?? '';
 
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -139,6 +143,8 @@ export function ProfilePage() {
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [optimizeMessage, setOptimizeMessage] = useState('');
   const [optimizing, setOptimizing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hash = route.hash.replace('#', '');
   const activeTab: TabId = TAB_IDS.includes(hash as TabId)
@@ -159,11 +165,11 @@ export function ProfilePage() {
   }, [hash, route.hash, navigate]);
 
   const loadProfile = useCallback(async () => {
-    if (!token) return;
+    if (!token || !profileId) return;
     setLoading(true);
     setLoadError(false);
     try {
-      const profile = await getProfile(token);
+      const profile = await getProfile(token, profileId);
       const sortedWork = [...(profile.workExperiences ?? [])].sort((a, b) => {
         const aEnd = a.endDate ? new Date(a.endDate).getTime() : Infinity;
         const bEnd = b.endDate ? new Date(b.endDate).getTime() : Infinity;
@@ -178,6 +184,7 @@ export function ProfilePage() {
       });
 
       setForm({
+        name: profile.name,
         fullName: profile.fullName,
         title: profile.title,
         overview: profile.overview,
@@ -219,7 +226,7 @@ export function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [dispatch, navigate, token]);
+  }, [dispatch, navigate, token, profileId]);
 
   useEffect(() => {
     void loadProfile();
@@ -233,6 +240,7 @@ export function ProfilePage() {
   const previewProfile: Profile | null = useMemo(
     () => ({
       id: '',
+      name: form.name,
       fullName: form.fullName,
       title: form.title,
       overview: form.overview,
@@ -268,7 +276,7 @@ export function ProfilePage() {
     }
     setSaving(true);
     try {
-      await updateProfile(token, toPayload(form));
+      await updateProfile(token, profileId!, toPayload(form));
       showNotification('Profile saved successfully!', 'success');
     } catch {
       showNotification('Failed to save profile.', 'error');
@@ -281,7 +289,7 @@ export function ProfilePage() {
     if (!optimizeMessage.trim()) return;
     setOptimizing(true);
     try {
-      const result = await optimizeProfile(token, optimizeMessage.trim());
+      const result = await optimizeProfile(token, profileId!, optimizeMessage.trim());
       setForm((f) => ({
         ...f,
         title: result.title,
@@ -306,6 +314,52 @@ export function ProfilePage() {
       showNotification('Failed to optimize profile. Please try again.', 'error');
     } finally {
       setOptimizing(false);
+    }
+  };
+
+  const importFromCv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    try {
+      const extracted = await extractProfileFromCv(token, profileId!, file);
+      setForm({
+        name: form.name,
+        fullName: extracted.fullName ?? '',
+        title: extracted.title ?? '',
+        overview: extracted.overview ?? '',
+        location: extracted.location ?? '',
+        contacts: {
+          email: extracted.contacts?.email ?? '',
+          phone: extracted.contacts?.phone ?? '',
+        },
+        workExperiences: (extracted.workExperiences ?? []).map((w) => ({
+          clientId: crypto.randomUUID(),
+          company: w.company,
+          role: w.role,
+          startDate: w.startDate,
+          endDate: w.endDate ?? '',
+          description: w.description ?? '',
+        })),
+        educations: (extracted.educations ?? []).map((e) => ({
+          clientId: crypto.randomUUID(),
+          institution: e.institution,
+          degree: e.degree,
+          field: e.field,
+          startYear: String(e.startYear),
+          endYear: e.endYear != null ? String(e.endYear) : '',
+        })),
+        skills: (extracted.skills ?? []).map((s) => ({
+          clientId: crypto.randomUUID(),
+          name: s.name,
+        })),
+      });
+      showNotification('Profile extracted from CV! Review the details and save when ready.', 'success');
+    } catch {
+      showNotification('Failed to extract profile from CV. Please try again.', 'error');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -415,37 +469,59 @@ export function ProfilePage() {
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-md transition-colors dark:bg-gray-800">
       <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">My Profile</h2>
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/job-profiles')}
+              className="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-sm text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
+            >
+              <span className="material-icons text-base">arrow_back</span>
+              <span className="hidden sm:inline">Job Profiles</span>
+            </button>
+          </div>
+          <h2 className="truncate text-xl font-bold text-gray-800 dark:text-white">
+            {form.name || 'Job Profile'}
+          </h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Fill in your details to generate an AI-powered CV
           </p>
         </div>
-        <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => setViewMode('list')}
-            className={
-              viewMode === 'list'
-                ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
-                : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-            }
+            onClick={() => navigate(`/job-profiles/${profileId}/cv`)}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-blue-400"
           >
-            <span className="material-icons text-base">list</span>
-            <span className="hidden sm:inline">Preview</span>
+            <span className="material-icons text-base">picture_as_pdf</span>
+            <span className="hidden sm:inline">Generate CV</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('form')}
-            className={
-              viewMode === 'form'
-                ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
-                : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-            }
-          >
-            <span className="material-icons text-base">edit</span>
-            <span className="hidden sm:inline">Edit</span>
-          </button>
+          <div className="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={
+                viewMode === 'list'
+                  ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
+                  : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+              }
+            >
+              <span className="material-icons text-base">list</span>
+              <span className="hidden sm:inline">Preview</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('form')}
+              className={
+                viewMode === 'form'
+                  ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
+                  : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+              }
+            >
+              <span className="material-icons text-base">edit</span>
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -489,6 +565,18 @@ export function ProfilePage() {
 
           {activeTab === 'overview' && (
             <div className="flex flex-col gap-4 px-6 py-6">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Profile Name
+                </label>
+                <input
+                  type="text"
+                  className={fieldClass}
+                  placeholder="e.g. Senior Backend Engineer, ML Researcher…"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </div>
               <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
                 Personal Information
               </h3>
@@ -1013,6 +1101,26 @@ export function ProfilePage() {
             >
               <span className="material-icons text-base">auto_fix_high</span> Optimize with AI
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt"
+              className="hidden"
+              onChange={(e) => void importFromCv(e)}
+            />
+            <button
+              type="button"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex cursor-pointer items-center gap-2 rounded-lg border border-green-600 bg-white px-5 py-2.5 text-sm font-medium text-green-600 transition-colors hover:bg-green-50 disabled:opacity-50 dark:border-green-400 dark:bg-transparent dark:text-green-400 dark:hover:bg-green-900/30"
+            >
+              {importing ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent dark:border-green-400" />
+              ) : (
+                <span className="material-icons text-base">upload_file</span>
+              )}
+              {importing ? 'Extracting…' : 'Import from CV'}
+            </button>
           </div>
         </div>
       )}
@@ -1025,6 +1133,13 @@ export function ProfilePage() {
             className="flex cursor-pointer items-center gap-2 rounded-lg border border-solid border-blue-600 bg-white px-5 py-2.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:border-blue-400 dark:bg-transparent dark:text-blue-400 dark:hover:bg-blue-900/30"
           >
             <span className="material-icons text-base">edit</span> Edit Profile
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`/job-profiles/${profileId}/cv`)}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-700"
+          >
+            <span className="material-icons text-base">picture_as_pdf</span> Generate CV
           </button>
         </div>
       )}

@@ -8,5 +8,5 @@ public class User
     public string? GoogleId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public Profile? Profile { get; set; }
+    public List<Profile> Profiles { get; set; } = [];
 }

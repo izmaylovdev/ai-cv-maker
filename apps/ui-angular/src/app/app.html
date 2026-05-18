@@ -7,11 +7,8 @@
 
     @if (auth.isLoggedIn()) {
       <nav class="flex flex-col gap-1 p-3 flex-1">
-        <a routerLink="/profile" routerLinkActive="active" class="sidebar-link">
-          <span class="material-icons text-[20px]">person</span> Profile
-        </a>
-        <a routerLink="/cv" routerLinkActive="active" class="sidebar-link">
-          <span class="material-icons text-[20px]">picture_as_pdf</span> Generate CV
+        <a routerLink="/job-profiles" routerLinkActive="active" class="sidebar-link">
+          <span class="material-icons text-[20px]">work</span> Job Profiles
         </a>
       </nav>
       <div class="p-3 border-t border-gray-100 dark:border-gray-800 flex flex-col gap-1 shrink-0">

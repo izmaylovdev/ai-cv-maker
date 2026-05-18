@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { useAppSelector } from '../../app/hooks';
 import { createCv, deleteCv, getCvPdf, getDefaultCvPdf, listCvs, type CvListItem } from '../../lib/cvApi';
@@ -12,6 +12,8 @@ function formatDate(iso: string) {
 
 export function CvPage() {
   const token = useAppSelector((s) => s.auth.token) ?? '';
+  const navigate = useNavigate();
+  const { id: profileId } = useParams<{ id: string }>();
 
   const [cvs, setCvs] = useState<CvListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,18 +29,18 @@ export function CvPage() {
   const rawBlobUrl = useRef<string | null>(null);
 
   const loadCvs = useCallback(async () => {
-    if (!token) return;
+    if (!token || !profileId) return;
     setLoading(true);
     setLoadError(false);
     try {
-      const data = await listCvs(token);
+      const data = await listCvs(token, profileId);
       setCvs(data);
     } catch {
       setLoadError(true);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, profileId]);
 
   useEffect(() => { void loadCvs(); }, [loadCvs]);
 
@@ -49,10 +51,10 @@ export function CvPage() {
   }, []);
 
   const generate = async () => {
-    if (!token) return;
+    if (!token || !profileId) return;
     setGenerating(true);
     try {
-      const cv = await createCv(token, optimizationNotes.trim() || null);
+      const cv = await createCv(token, profileId, optimizationNotes.trim() || null);
       setCvs((prev) => [cv, ...prev]);
       setCreating(false);
       setOptimizationNotes('');
@@ -64,13 +66,14 @@ export function CvPage() {
   };
 
   const openDefaultPdf = async () => {
+    if (!profileId) return;
     setSelectedCv(null);
     setMode('pdf');
     setPdfUrl(null);
     setPdfLoading(true);
     if (rawBlobUrl.current) { URL.revokeObjectURL(rawBlobUrl.current); rawBlobUrl.current = null; }
     try {
-      const blob = await getDefaultCvPdf(token);
+      const blob = await getDefaultCvPdf(token, profileId);
       const url = URL.createObjectURL(blob);
       rawBlobUrl.current = url;
       setPdfUrl(url);
@@ -82,13 +85,14 @@ export function CvPage() {
   };
 
   const openPdf = async (cv: CvListItem) => {
+    if (!profileId) return;
     setSelectedCv(cv);
     setMode('pdf');
     setPdfUrl(null);
     setPdfLoading(true);
     if (rawBlobUrl.current) { URL.revokeObjectURL(rawBlobUrl.current); rawBlobUrl.current = null; }
     try {
-      const blob = await getCvPdf(token, cv.id);
+      const blob = await getCvPdf(token, profileId, cv.id);
       const url = URL.createObjectURL(blob);
       rawBlobUrl.current = url;
       setPdfUrl(url);
@@ -109,7 +113,7 @@ export function CvPage() {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await deleteCv(token, id);
+      await deleteCv(token, profileId!, id);
       setCvs((prev) => prev.filter((c) => c.id !== id));
     } catch {
       /* ignore */
@@ -304,12 +308,13 @@ export function CvPage() {
 
       {/* Footer link */}
       <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-700">
-        <Link
-          to="/profile"
-          className="flex w-fit cursor-pointer items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+        <button
+          type="button"
+          onClick={() => navigate(`/job-profiles/${profileId}`)}
+          className="flex w-fit cursor-pointer items-center gap-1.5 border-0 bg-transparent text-sm text-gray-500 transition-colors hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
         >
-          <span className="material-icons text-base">person</span> Edit Profile
-        </Link>
+          <span className="material-icons text-base">arrow_back</span> Back to Profile
+        </button>
       </div>
     </div>
   );

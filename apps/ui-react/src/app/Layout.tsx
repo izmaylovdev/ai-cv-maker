@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { logout } from '../features/auth/authSlice';
 import { toggle } from '../features/theme/themeSlice';
@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from './hooks';
 export function Layout() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const token = useAppSelector((s) => s.auth.token);
   const isDark = useAppSelector((s) => s.theme.isDark);
 
@@ -16,6 +17,7 @@ export function Layout() {
   }, [isDark]);
 
   const isLoggedIn = !!token;
+  const isAuthPage = location.pathname.startsWith('/auth/');
 
   return (
     <>
@@ -24,20 +26,13 @@ export function Layout() {
           <span className="material-icons text-xl">description</span>
           <span className="ml-1 flex-1 text-lg font-semibold">AI CV Maker</span>
 
-          {isLoggedIn ? (
+          {!isAuthPage && isLoggedIn && (
             <>
               <Link
-                to="/profile"
+                to="/job-profiles"
                 className="flex cursor-pointer items-center gap-1 rounded px-3 py-1.5 text-sm transition-colors hover:bg-blue-700 dark:hover:bg-gray-800"
               >
-                <span className="material-icons text-base">person</span> Profile
-              </Link>
-              <Link
-                to="/cv"
-                className="flex cursor-pointer items-center gap-1 rounded px-3 py-1.5 text-sm transition-colors hover:bg-blue-700 dark:hover:bg-gray-800"
-              >
-                <span className="material-icons text-base">picture_as_pdf</span>{' '}
-                Generate CV
+                <span className="material-icons text-base">work</span> Job Profiles
               </Link>
               <button
                 type="button"
@@ -49,21 +44,6 @@ export function Layout() {
               >
                 <span className="material-icons text-base">logout</span> Logout
               </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/auth/login"
-                className="cursor-pointer rounded px-3 py-1.5 text-sm transition-colors hover:bg-blue-700 dark:hover:bg-gray-800"
-              >
-                Login
-              </Link>
-              <Link
-                to="/auth/register"
-                className="cursor-pointer rounded px-3 py-1.5 text-sm transition-colors hover:bg-blue-700 dark:hover:bg-gray-800"
-              >
-                Register
-              </Link>
             </>
           )}
 

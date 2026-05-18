@@ -118,10 +118,10 @@
 
     <!-- Footer link -->
     <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-700">
-      <a routerLink="/profile"
-        class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer w-fit">
-        <span class="material-icons text-base">person</span> Edit Profile
-      </a>
+      <button (click)="router.navigate(['/job-profiles', profileId])"
+        class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer w-fit bg-transparent border-0">
+        <span class="material-icons text-base">arrow_back</span> Back to Profile
+      </button>
     </div>
   </div>
 }
