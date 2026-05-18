@@ -1,5 +1,5 @@
 resource "azurerm_postgresql_flexible_server" "db" {
-  name                   = "${var.prefix}-postgres"
+  name                   = "${var.project_name}-postgres"
   resource_group_name    = azurerm_resource_group.rg.name
   location               = azurerm_resource_group.rg.location
   version                = "16"
@@ -13,6 +13,10 @@ resource "azurerm_postgresql_flexible_server" "db" {
   authentication {
     active_directory_auth_enabled = false
     password_auth_enabled         = true
+  }
+
+  lifecycle {
+    ignore_changes = [zone, high_availability]
   }
 }
 

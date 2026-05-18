@@ -1,7 +1,7 @@
 # Copy to terraform.tfvars (git-ignored) and fill in real values.
 
-prefix   = "aicvmaker"
-location = "westeurope"
+project_name = "ai-cv-maker"
+location = "swedencentral"
 
 postgres_admin_login    = "cvmaker"
 postgres_admin_password = "change-me-strong-password"
@@ -9,7 +9,22 @@ postgres_admin_password = "change-me-strong-password"
 jwt_secret       = "change-me-at-least-32-chars-long-secret"
 google_client_id = "your-client-id.apps.googleusercontent.com"
 
-# LLM settings — google (Gemini) is the default
-llm_provider  = "google"
+# --- LLM settings — google (Gemini) is the default ---
+llm_provider = "google"
+# llm_model       = "gemini-1.5-flash"   # optional override
+# llm_temperature = "0.4"                # optional, 0–2
+
+# --- LLM_PROVIDER=google ---
 google_api_key = "AIzaSy..."
-# llm_model   = "gemini-1.5-flash"   # optional override
+
+# --- LLM_PROVIDER=openai (LM Studio, local OpenAI-compatible, etc.) ---
+# openai_base_url = "http://127.0.0.1:1234/v1"
+# openai_api_key  = "lm-studio"
+# openai_model    = "local-model"
+
+# --- LLM_PROVIDER=foundry (Azure AI Foundry / Claude) ---
+# foundry_api_key             = ""
+# foundry_base_url            = "https://your-resource.services.ai.azure.com/anthropic"
+# foundry_deployment_name     = "your-resource"
+# anthropic_foundry_max_tokens = "8192"
+# llm_model                   = "claude-haiku-4-5"
