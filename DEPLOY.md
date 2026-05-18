@@ -240,6 +240,14 @@ terraform -chdir=infra destroy
 
 ---
 
+## Architecture notes
+
+### cv-api external ingress
+
+`cv-api` is deployed with `external_enabled = true` even though it is only called by the nginx proxy inside the same Container Apps environment. The reason is that Azure Container Apps internal FQDNs (`*.internal.*`) redirect plain HTTP to HTTPS, and their managed TLS certificates are not compatible with nginx's upstream SSL handshake — nginx gets a TCP RST during the ClientHello. The external FQDN uses Azure's standard managed certificate, which nginx can connect to normally. All sensitive cv-api routes require a valid JWT, so public exposure is acceptable.
+
+---
+
 ## Troubleshooting
 
 | Error | Cause | Fix |
@@ -250,3 +258,4 @@ terraform -chdir=infra destroy
 | `alpha numeric characters only are allowed in "name"` | ACR name contains hyphens | ACR name is auto-sanitised — check `terraform output acr_name` |
 | RG deletion blocked by nested resources | Non-Terraform resources in the RG | Delete them manually in the Portal first |
 | PostgreSQL `zone` conflict | Existing server has a pinned zone | `lifecycle { ignore_changes = [zone] }` is already set |
+| nginx 502 proxying to internal Container App | Azure internal FQDN TLS incompatible with nginx upstream SSL | Set `external_enabled = true` on the target app; nginx proxies its public FQDN instead |
