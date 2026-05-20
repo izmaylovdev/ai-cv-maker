@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../auth.service';
 import { environment } from '../../../environments/environment';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const google: any;
 
 @Component({

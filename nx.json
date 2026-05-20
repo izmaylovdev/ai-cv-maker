@@ -47,6 +47,11 @@
     "test": {
       "cache": true,
       "inputs": ["default", "^production"]
+    },
+    "e2e": {
+      "cache": false,
+      "inputs": ["default", "^production"],
+      "dependsOn": ["^build"]
     }
   },
   "generators": {
@@ -92,6 +97,13 @@
         "typecheckTargetName": "typecheck",
         "buildDepsTargetName": "build-deps",
         "watchDepsTargetName": "watch-deps"
+      }
+    },
+    {
+      "plugin": "@nx/playwright/plugin",
+      "options": {
+        "targetName": "e2e",
+        "ciTargetName": "e2e-ci"
       }
     }
   ]

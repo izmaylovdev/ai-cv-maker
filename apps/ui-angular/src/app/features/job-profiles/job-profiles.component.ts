@@ -1,18 +1,23 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { finalize } from 'rxjs';
 import { ProfileService } from '../profile/profile.service';
+import { CvService } from '../cv/cv.service';
 import { JobProfileListItem } from '../../shared/models/profile.model';
+import { PdfPreviewComponent } from '../../shared/components/pdf-preview/pdf-preview.component';
 
 @Component({
   selector: 'app-job-profiles',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, PdfPreviewComponent],
   templateUrl: './job-profiles.component.html',
 })
-export class JobProfilesComponent implements OnInit {
+export class JobProfilesComponent implements OnInit, OnDestroy {
   private profileService = inject(ProfileService);
+  private cvService = inject(CvService);
+  private sanitizer = inject(DomSanitizer);
   readonly router = inject(Router);
 
   readonly profiles = signal<JobProfileListItem[]>([]);
@@ -21,11 +26,24 @@ export class JobProfilesComponent implements OnInit {
   readonly creating = signal(false);
   readonly saving = signal(false);
   readonly deletingId = signal<string | null>(null);
+  readonly openingPdfId = signal<string | null>(null);
   readonly cvFile = signal<File | null>(null);
+
+  readonly pdfOpen = signal(false);
+  readonly pdfLoading = signal(false);
+  readonly pdfSafeUrl = signal<SafeResourceUrl | null>(null);
+  pdfTitle = '';
+  pdfFilename = '';
+  private rawBlobUrl: string | null = null;
+
   newName = '';
 
   ngOnInit() {
     this.load();
+  }
+
+  ngOnDestroy() {
+    this.revokeBlob();
   }
 
   load() {
@@ -86,9 +104,40 @@ export class JobProfilesComponent implements OnInit {
     });
   }
 
-  navigateToCv(id: string, event: Event) {
+  openDefaultPdf(profile: JobProfileListItem, event: Event) {
     event.stopPropagation();
-    this.router.navigate(['/job-profiles', id, 'cv']);
+    const clean = (s: string) => (s ?? '').trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    this.pdfTitle = profile.fullName ? `${profile.fullName} — ${profile.title}` : profile.name;
+    this.pdfFilename = `${clean(profile.fullName)}_${clean(profile.title)}.pdf`;
+    this.pdfSafeUrl.set(null);
+    this.pdfOpen.set(true);
+    this.pdfLoading.set(true);
+    this.openingPdfId.set(profile.id);
+    this.revokeBlob();
+
+    this.cvService.getDefaultPdf(profile.id)
+      .pipe(finalize(() => { this.pdfLoading.set(false); this.openingPdfId.set(null); }))
+      .subscribe({
+        next: (blob) => {
+          this.rawBlobUrl = URL.createObjectURL(blob);
+          this.pdfSafeUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawBlobUrl));
+        },
+        error: () => this.pdfOpen.set(false),
+      });
+  }
+
+  closePdf() {
+    this.pdfOpen.set(false);
+    this.pdfSafeUrl.set(null);
+    this.revokeBlob();
+  }
+
+  downloadPdf() {
+    if (!this.rawBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = this.rawBlobUrl;
+    a.download = this.pdfFilename;
+    a.click();
   }
 
   subtitle(profile: JobProfileListItem): string {
@@ -100,7 +149,12 @@ export class JobProfilesComponent implements OnInit {
     this.deletingId.set(id);
     this.profileService.deleteProfile(id).pipe(finalize(() => this.deletingId.set(null))).subscribe({
       next: () => this.profiles.update((list) => list.filter((p) => p.id !== id)),
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       error: () => {},
     });
+  }
+
+  private revokeBlob() {
+    if (this.rawBlobUrl) { URL.revokeObjectURL(this.rawBlobUrl); this.rawBlobUrl = null; }
   }
 }

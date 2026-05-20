@@ -12,6 +12,44 @@ body {
   @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors;
 }
 
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+html::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html::-webkit-scrollbar-track {
+  background: transparent;
+}
+html::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);
+  border-radius: 9999px;
+}
+.dark html::-webkit-scrollbar-thumb,
+html.dark::-webkit-scrollbar-thumb {
+  background-color: rgb(75 85 99);
+}
+
+textarea {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+textarea::-webkit-scrollbar {
+  width: 6px;
+}
+textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+textarea::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);
+  border-radius: 9999px;
+}
+.dark textarea::-webkit-scrollbar-thumb {
+  background-color: rgb(75 85 99);
+}
+
 .sidebar-link {
   @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium no-underline cursor-pointer
          text-gray-600 dark:text-gray-400
@@ -21,6 +59,31 @@ body {
 
 .sidebar-link.active {
   @apply bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);
+  border-radius: 9999px;
+}
+.dark .scrollbar-thin {
+  scrollbar-color: rgb(75 85 99) transparent;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(75 85 99);
+}
+
+.dialog-backdrop {
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* Google Sign-In button full-width fix */

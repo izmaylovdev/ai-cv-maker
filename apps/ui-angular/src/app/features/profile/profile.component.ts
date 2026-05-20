@@ -1,27 +1,33 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormArray, FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, AfterViewChecked, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
+import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ProfileService } from './profile.service';
 import { AuthService } from '../../auth/auth.service';
 import { ThemeService } from '../../core/theme.service';
-import { Profile } from '../../shared/models/profile.model';
+import { DialogService } from '../../shared/services/dialog.service';
+import { NotifyService } from '../../shared/services/notify.service';
+import { Education, Profile, WorkExperience } from '../../shared/models/profile.model';
 import { PhoneMaskDirective } from '../../shared/directives/phone-mask.directive';
 import { ProfilePreviewComponent } from '../../shared/components/profile-preview/profile-preview.component';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent],
+  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent],
   templateUrl: './profile.component.html',
 })
-export class ProfileComponent implements OnInit {
+export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   private fb = inject(FormBuilder);
   private profileService = inject(ProfileService);
   private auth = inject(AuthService);
   private route = inject(ActivatedRoute);
+  private dialogs = inject(DialogService);
+  private notify = inject(NotifyService);
+  private doc = inject(DOCUMENT);
   readonly router = inject(Router);
   readonly theme = inject(ThemeService);
 
@@ -30,18 +36,83 @@ export class ProfileComponent implements OnInit {
   readonly loading = signal(false);
   readonly loadError = signal(false);
   readonly saving = signal(false);
-  readonly notification = signal<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  readonly optimizeOpen = signal(false);
   readonly optimizing = signal(false);
-  optimizeMessage = '';
 
-  readonly importing = signal(false);
+  readonly sectionOrder = signal<string[]>(['workExperiences', 'educations', 'skills']);
+  readonly reorderOpen = signal(false);
+  readonly reorderDraft = signal<string[]>([]);
+
+  private readonly sectionLabels: Record<string, string> = {
+    workExperiences: 'Work Experience',
+    educations: 'Education',
+    skills: 'Skills',
+  };
+
+  @ViewChild('leftPersonal') private leftPersonal?: ElementRef<HTMLElement>;
+  @ViewChild('leftWork') private leftWork?: ElementRef<HTMLElement>;
+  @ViewChild('leftEdu') private leftEdu?: ElementRef<HTMLElement>;
+  @ViewChild('leftSkills') private leftSkills?: ElementRef<HTMLElement>;
+  @ViewChild('previewContainer') private previewContainer?: ElementRef<HTMLElement>;
+  @ViewChild(ProfilePreviewComponent) private previewRef?: ProfilePreviewComponent;
+
+  private lastActiveSection = 'personal';
+  private scrollSyncReady = false;
+  private scrollUnsubscribe?: () => void;
 
   ngOnInit() {
     this.profileId = this.route.snapshot.paramMap.get('id') ?? '';
     this.buildForm();
     this.loadProfile();
+  }
+
+  ngAfterViewChecked() {
+    if (!this.scrollSyncReady && this.leftPersonal?.nativeElement) {
+      this.scrollSyncReady = true;
+      this.setupScrollSync();
+    }
+  }
+
+  ngOnDestroy() {
+    this.scrollUnsubscribe?.();
+  }
+
+  private setupScrollSync() {
+    const scrollRoot = this.doc.querySelector('main');
+    if (!scrollRoot) return;
+
+    const onScroll = () => {
+      const sections = [
+        { el: this.leftPersonal?.nativeElement, key: 'personal' },
+        { el: this.leftWork?.nativeElement, key: 'workExperiences' },
+        { el: this.leftEdu?.nativeElement, key: 'educations' },
+        { el: this.leftSkills?.nativeElement, key: 'skills' },
+      ].filter((s): s is { el: HTMLElement; key: string } => s.el != null);
+
+      const scrollTop = scrollRoot.scrollTop;
+      const rootTop = scrollRoot.getBoundingClientRect().top;
+
+      let activeKey = sections[0]?.key ?? this.lastActiveSection;
+      for (const { el, key } of sections) {
+        const elAbsTop = el.getBoundingClientRect().top - rootTop + scrollTop;
+        if (scrollTop >= elAbsTop - 100) {
+          activeKey = key;
+        }
+      }
+
+      if (activeKey !== this.lastActiveSection) {
+        this.lastActiveSection = activeKey;
+        const previewEl = this.previewRef?.getSectionElement(activeKey);
+        const container = this.previewContainer?.nativeElement;
+        if (previewEl && container) {
+          const elTop = previewEl.getBoundingClientRect().top;
+          const containerTop = container.getBoundingClientRect().top;
+          container.scrollTo({ top: container.scrollTop + elTop - containerTop, behavior: 'smooth' });
+        }
+      }
+    };
+
+    scrollRoot.addEventListener('scroll', onScroll, { passive: true });
+    this.scrollUnsubscribe = () => scrollRoot.removeEventListener('scroll', onScroll);
   }
 
   get workExperiences() {
@@ -86,6 +157,45 @@ export class ProfileComponent implements OnInit {
     this.skills.insert(event.currentIndex, control);
   }
 
+  openReorderDialog() {
+    this.dialogs.openReorder(this.sectionOrder()).subscribe(result => {
+      if (result) this.sectionOrder.set(result);
+    });
+  }
+
+  openOptimizeDialog() {
+    this.dialogs.openOptimize().subscribe(message => {
+      if (!message) return;
+      this.optimizing.set(true);
+      this.profileService.optimizeProfile(this.profileId, message).subscribe({
+        next: (result) => {
+          this.form.patchValue({ title: result.title, overview: result.overview });
+          this.workExperiences.clear();
+          result.workExperiences.forEach((w) => this.workExperiences.push(this.createWorkExperienceGroup(w)));
+          this.skills.clear();
+          result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
+          this.optimizing.set(false);
+          this.notify.success('Profile optimized! Review the changes and save when ready.');
+        },
+        error: () => {
+          this.optimizing.set(false);
+          this.notify.error('Failed to optimize profile. Please try again.');
+        },
+      });
+    });
+  }
+
+  openPdfDialog() {
+    this.dialogs.openDownloadCv().subscribe(notes => {
+      if (notes === undefined) return;
+      const fullName = this.form.get('fullName')?.value ?? '';
+      const jobTitle = this.form.get('title')?.value ?? '';
+      this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
+        state: { notes, title: `${fullName} — ${jobTitle}` },
+      });
+    });
+  }
+
   save() {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -95,11 +205,12 @@ export class ProfileComponent implements OnInit {
     const payload = {
       ...raw,
       location: (raw.location as string)?.trim() || null,
-      workExperiences: (raw.workExperiences ?? []).map((w: any) => ({
+      sectionOrder: this.sectionOrder(),
+      workExperiences: (raw.workExperiences as WorkExperience[] ?? []).map((w) => ({
         ...w,
         endDate: w.endDate || null,
       })),
-      educations: (raw.educations ?? []).map((e: any) => ({
+      educations: (raw.educations as Education[] ?? []).map((e) => ({
         ...e,
         endYear: e.endYear || null,
       })),
@@ -108,80 +219,12 @@ export class ProfileComponent implements OnInit {
     this.profileService.updateProfile(this.profileId, payload).subscribe({
       next: () => {
         this.saving.set(false);
-        this.showNotification('Profile saved successfully!', 'success');
+        this.notify.success('Profile saved successfully!');
       },
       error: () => {
         this.saving.set(false);
-        this.showNotification('Failed to save profile.', 'error');
+        this.notify.error('Failed to save profile.');
       },
-    });
-  }
-
-  applyOptimization() {
-    const message = this.optimizeMessage.trim();
-    if (!message) return;
-    this.optimizing.set(true);
-    this.profileService.optimizeProfile(this.profileId, message).subscribe({
-      next: (result) => {
-        this.form.patchValue({ title: result.title, overview: result.overview });
-
-        this.workExperiences.clear();
-        result.workExperiences.forEach((w) =>
-          this.workExperiences.push(this.createWorkExperienceGroup(w))
-        );
-
-        this.skills.clear();
-        result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
-
-        this.optimizing.set(false);
-        this.optimizeOpen.set(false);
-        this.optimizeMessage = '';
-        this.showNotification('Profile optimized! Review the changes and save when ready.', 'success');
-      },
-      error: () => {
-        this.optimizing.set(false);
-        this.showNotification('Failed to optimize profile. Please try again.', 'error');
-      },
-    });
-  }
-
-  importFromCv(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    input.value = '';
-    this.importing.set(true);
-    this.profileService.extractFromCv(this.profileId, file).pipe(finalize(() => this.importing.set(false))).subscribe({
-      next: (extracted) => {
-        this.form.patchValue({
-          fullName: extracted.fullName ?? '',
-          title: extracted.title ?? '',
-          overview: extracted.overview ?? '',
-          location: extracted.location ?? '',
-          contacts: {
-            email: extracted.contacts?.email ?? '',
-            phone: extracted.contacts?.phone ?? '',
-          },
-        });
-
-        this.workExperiences.clear();
-        (extracted.workExperiences ?? []).forEach((w) =>
-          this.workExperiences.push(this.createWorkExperienceGroup(w))
-        );
-
-        this.educations.clear();
-        (extracted.educations ?? []).forEach((e) =>
-          this.educations.push(this.createEducationGroup(e))
-        );
-
-        this.skills.clear();
-        (extracted.skills ?? []).forEach((s) =>
-          this.skills.push(this.createSkillGroup(s))
-        );
-
-        this.showNotification('Profile extracted from CV! Review the details and save when ready.', 'success');
-      },
-      error: () => this.showNotification('Failed to extract profile from CV. Please try again.', 'error'),
     });
   }
 
@@ -194,16 +237,11 @@ export class ProfileComponent implements OnInit {
 
   get profilePreview(): Profile | null {
     if (!this.form) return null;
-    return { id: '', ...this.form.value } as Profile;
+    return { id: '', ...this.form.value, sectionOrder: this.sectionOrder() } as Profile;
   }
 
   get profileName(): string {
     return this.form?.get('name')?.value || 'Job Profile';
-  }
-
-  private showNotification(message: string, type: 'success' | 'error') {
-    this.notification.set({ message, type });
-    setTimeout(() => this.notification.set(null), 4000);
   }
 
   private buildForm() {
@@ -256,9 +294,10 @@ export class ProfileComponent implements OnInit {
           return b.startYear - a.startYear;
         });
         sortedEdu.forEach((e) => this.educations.push(this.createEducationGroup(e)));
-        profile.skills?.forEach((s) =>
-          this.skills.push(this.createSkillGroup(s))
-        );
+        profile.skills?.forEach((s) => this.skills.push(this.createSkillGroup(s)));
+        if (profile.sectionOrder?.length) {
+          this.sectionOrder.set(profile.sectionOrder);
+        }
       },
       error: (err: HttpErrorResponse) => {
         if (err.status === 401) {

@@ -31,10 +31,10 @@ export const appRoutes: Route[] = [
       import('./features/profile/profile.component').then((m) => m.ProfileComponent),
   },
   {
-    path: 'job-profiles/:id/cv',
+    path: 'job-profiles/:id/pdf',
     canActivate: [authGuard],
     loadComponent: () =>
-      import('./features/cv/cv.component').then((m) => m.CvComponent),
+      import('./features/pdf-preview/pdf-preview-page.component').then((m) => m.PdfPreviewPageComponent),
   },
-  { path: '**', redirectTo: '/job-profiles' },
+{ path: '**', redirectTo: '/job-profiles' },
 ];

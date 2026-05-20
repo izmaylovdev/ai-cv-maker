@@ -45,7 +45,8 @@ public record ProfileDto(
     ContactsDto? Contacts,
     List<WorkExperienceDto> WorkExperiences,
     List<EducationDto> Educations,
-    List<SkillDto> Skills
+    List<SkillDto> Skills,
+    List<string> SectionOrder
 );
 
 public record CreateJobProfileRequest(string Name);
@@ -59,7 +60,8 @@ public record UpdateProfileRequest(
     ContactsDto? Contacts,
     List<WorkExperienceDto> WorkExperiences,
     List<EducationDto> Educations,
-    List<SkillDto> Skills
+    List<SkillDto> Skills,
+    List<string>? SectionOrder = null
 );
 
 public record OptimizeProfileRequest(string Message);

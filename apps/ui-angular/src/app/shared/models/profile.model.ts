@@ -44,4 +44,5 @@ export interface Profile {
   workExperiences: WorkExperience[];
   educations: Education[];
   skills: Skill[];
+  sectionOrder?: string[];
 }

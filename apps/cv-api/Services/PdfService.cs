@@ -7,7 +7,7 @@ namespace CvApi.Services;
 
 public class PdfService
 {
-    public byte[] GenerateCv(LlmGenerateResponse cv, string fullName, string title, string? location = null, string? contactEmail = null, string? contactPhone = null)
+    public byte[] GenerateCv(LlmGenerateResponse cv, string fullName, string title, string? location = null, string? contactEmail = null, string? contactPhone = null, IList<string>? sectionOrder = null)
     {
         return Document.Create(container =>
         {
@@ -16,7 +16,7 @@ public class PdfService
                 page.Size(PageSizes.A4);
                 page.Margin(40);
                 page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
-                page.Content().Column(col => BuildContent(col, cv, fullName, title, location, contactEmail, contactPhone));
+                page.Content().Column(col => BuildContent(col, cv, fullName, title, location, contactEmail, contactPhone, sectionOrder));
             });
         }).GeneratePdf();
     }
@@ -28,7 +28,8 @@ public class PdfService
         string title,
         string? location,
         string? contactEmail,
-        string? contactPhone)
+        string? contactPhone,
+        IList<string>? sectionOrder)
     {
         col.Spacing(16);
 
@@ -63,14 +64,22 @@ public class PdfService
         if (cv.Highlights.Count > 0)
             col.Item().Column(h => BuildHighlights(h, cv.Highlights));
 
-        if (cv.WorkExperiences.Count > 0)
-            col.Item().Column(w => BuildWorkExperiences(w, cv.WorkExperiences));
-
-        if (cv.Skills.Count > 0)
-            col.Item().Column(sk => BuildSkills(sk, cv.Skills));
-
-        if (cv.Educations.Count > 0)
-            col.Item().Column(ed => BuildEducations(ed, cv.Educations));
+        var order = sectionOrder ?? ["workExperiences", "educations", "skills"];
+        foreach (var section in order)
+        {
+            switch (section)
+            {
+                case "workExperiences" when cv.WorkExperiences.Count > 0:
+                    col.Item().Column(w => BuildWorkExperiences(w, cv.WorkExperiences));
+                    break;
+                case "educations" when cv.Educations.Count > 0:
+                    col.Item().Column(ed => BuildEducations(ed, cv.Educations));
+                    break;
+                case "skills" when cv.Skills.Count > 0:
+                    col.Item().Column(sk => BuildSkills(sk, cv.Skills));
+                    break;
+            }
+        }
     }
 
     private static void BuildSummary(ColumnDescriptor col, string summary)

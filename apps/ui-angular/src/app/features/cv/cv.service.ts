@@ -19,10 +19,6 @@ export class CvService {
     return `${BASE}/${profileId}/cvs`;
   }
 
-  list(profileId: string) {
-    return this.http.get<CvListItem[]>(this.api(profileId));
-  }
-
   create(profileId: string, optimizationNotes?: string | null) {
     return this.http.post<CvListItem>(this.api(profileId), { optimizationNotes: optimizationNotes ?? null });
   }
@@ -35,7 +31,4 @@ export class CvService {
     return this.http.get(`${this.api(profileId)}/default/pdf`, { responseType: 'blob' });
   }
 
-  deleteCv(profileId: string, id: string) {
-    return this.http.delete(`${this.api(profileId)}/${id}`);
-  }
 }

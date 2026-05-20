@@ -2,9 +2,10 @@ import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { AuthService } from './auth/auth.service';
 import { ThemeService } from './core/theme.service';
+import { NotificationToastComponent } from './shared/components/notification-toast/notification-toast.component';
 
 @Component({
-  imports: [RouterModule],
+  imports: [RouterModule, NotificationToastComponent],
   selector: 'app-root',
   templateUrl: './app.html',
 })

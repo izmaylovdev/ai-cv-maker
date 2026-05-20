@@ -73,6 +73,8 @@ public class JobProfileController(AppDbContext db, LlmService llmService) : Cont
         profile.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
         profile.ContactEmail = request.Contacts?.Email;
         profile.ContactPhone = request.Contacts?.Phone;
+        if (request.SectionOrder is { Count: > 0 })
+            profile.SectionOrder = string.Join(",", request.SectionOrder);
 
         db.WorkExperiences.RemoveRange(profile.WorkExperiences);
         db.Educations.RemoveRange(profile.Educations);
@@ -254,7 +256,8 @@ public class JobProfileController(AppDbContext db, LlmService llmService) : Cont
             llmResponse.Educations.Select(e => new EducationDto(
                 null, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear
             )).ToList(),
-            llmResponse.Skills.Select(s => new SkillDto(null, s.Name)).ToList()
+            llmResponse.Skills.Select(s => new SkillDto(null, s.Name)).ToList(),
+            profile.SectionOrder.Split(',').ToList()
         ));
     }
 
@@ -270,6 +273,7 @@ public class JobProfileController(AppDbContext db, LlmService llmService) : Cont
             w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description)).ToList(),
         profile.Educations.Select(e => new EducationDto(
             e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear)).ToList(),
-        profile.Skills.OrderBy(s => s.Order).Select(s => new SkillDto(s.Id, s.Name)).ToList()
+        profile.Skills.OrderBy(s => s.Order).Select(s => new SkillDto(s.Id, s.Name)).ToList(),
+        profile.SectionOrder.Split(',').ToList()
     );
 }

@@ -2,7 +2,7 @@ import { Directive, ElementRef, HostListener, inject } from '@angular/core';
 import { NgControl } from '@angular/forms';
 
 @Directive({
-  selector: '[phoneMask]',
+  selector: '[appPhoneMask]',
   standalone: true,
 })
 export class PhoneMaskDirective {

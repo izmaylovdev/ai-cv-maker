@@ -111,7 +111,8 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
         var cvData = JsonSerializer.Deserialize<LlmGenerateResponse>(cv.CvDataJson, _jsonOptions);
         if (cvData is null) return StatusCode(500, "CV data is corrupted.");
 
-        var pdf = pdfService.GenerateCv(cvData, cv.FullName, cv.Title, cv.Location, cv.ContactEmail, cv.ContactPhone);
+        var sectionOrder = ownedProfile.SectionOrder.Split(',').ToList();
+        var pdf = pdfService.GenerateCv(cvData, cv.FullName, cv.Title, cv.Location, cv.ContactEmail, cv.ContactPhone, sectionOrder);
         return File(pdf, "application/pdf", $"{cv.FullName.Replace(" ", "_")}_CV.pdf");
     }
 
@@ -150,7 +151,8 @@ public class CvController(AppDbContext db, LlmService llmService, PdfService pdf
             Highlights: []
         );
 
-        var pdf = pdfService.GenerateCv(cvData, profile.FullName, profile.Title, profile.Location, profile.ContactEmail, profile.ContactPhone);
+        var sectionOrder = profile.SectionOrder.Split(',').ToList();
+        var pdf = pdfService.GenerateCv(cvData, profile.FullName, profile.Title, profile.Location, profile.ContactEmail, profile.ContactPhone, sectionOrder);
         return File(pdf, "application/pdf", $"{profile.FullName.Replace(" ", "_")}_CV.pdf");
     }
 

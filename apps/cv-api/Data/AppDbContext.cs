@@ -31,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(p => p.Id);
             e.Property(p => p.Name).HasMaxLength(200).HasDefaultValue("My Profile");
+            e.Property(p => p.SectionOrder).HasMaxLength(200).HasDefaultValue("workExperiences,educations,skills");
             e.Property(p => p.FullName).HasMaxLength(200);
             e.Property(p => p.Title).HasMaxLength(200);
             e.Property(p => p.Location).HasMaxLength(200);
