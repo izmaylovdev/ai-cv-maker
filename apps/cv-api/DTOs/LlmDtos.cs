@@ -84,3 +84,7 @@ public record LlmExtractResponse(
     List<LlmExtractEducation> Educations,
     List<LlmExtractSkill> Skills
 );
+
+public record LlmEnhanceFieldRequest(string Content, string FieldPurpose);
+
+public record LlmEnhanceFieldResponse(string Enhanced);

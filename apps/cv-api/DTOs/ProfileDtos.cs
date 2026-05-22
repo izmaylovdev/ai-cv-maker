@@ -82,3 +82,7 @@ public record OptimizeProfileResponse(
     List<OptimizeWorkExperienceDto> WorkExperiences,
     List<OptimizeSkillDto> Skills
 );
+
+public record EnhanceFieldRequest(string Content, string FieldPurpose);
+
+public record EnhanceFieldResponse(string Enhanced);

@@ -8,6 +8,7 @@ service LlmService {
   rpc Generate (GenerateRequest) returns (GenerateResponse);
   rpc Optimize (OptimizeRequest) returns (OptimizeResponse);
   rpc ExtractProfile (ExtractProfileRequest) returns (ExtractProfileResponse);
+  rpc EnhanceField (EnhanceFieldRequest) returns (EnhanceFieldResponse);
   rpc Health (HealthRequest) returns (HealthResponse);
 }
 
@@ -130,6 +131,15 @@ message ExtractProfileResponse {
   repeated ExtractWorkExperience work_experiences = 7;
   repeated ExtractEducation educations = 8;
   repeated ExtractSkill skills = 9;
+}
+
+message EnhanceFieldRequest {
+  string content = 1;
+  string field_purpose = 2;
+}
+
+message EnhanceFieldResponse {
+  string enhanced = 1;
 }
 
 message HealthRequest {}

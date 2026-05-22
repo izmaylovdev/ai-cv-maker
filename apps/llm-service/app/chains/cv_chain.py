@@ -315,6 +315,62 @@ async def optimize_profile(profile: ProfileInput, message: str) -> OptimizeRespo
     return result
 
 
+_ENHANCE_SYSTEM_PROMPT = """\
+You are an expert CV writer and career coach. Your task is to enhance a specific text field \
+from a candidate's profile to make it more professional, impactful, and compelling for recruiters.
+
+Rules:
+- Preserve all factual information exactly (company names, titles, dates, technologies, numbers)
+- Improve clarity, conciseness, and professional tone
+- Use strong action verbs; quantify achievements where possible
+- Do not invent new facts or responsibilities
+- Return ONLY the enhanced text — no explanations, no labels, no markdown formatting
+"""
+
+_ENHANCE_HUMAN_PROMPT = """\
+Enhance the following CV field.
+
+Field context: {field_purpose}
+
+Current text:
+{content}
+
+Return only the improved text, nothing else.
+"""
+
+
+async def _enhance_field_foundry(content: str, field_purpose: str) -> str:
+    model = app_settings.foundry_model()
+    if not model:
+        raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
+    client = _build_foundry_client()
+    user_content = _ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)
+    message = await client.messages.create(
+        model=model,
+        max_tokens=1024,
+        temperature=app_settings.llm_temperature(),
+        system=_ENHANCE_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return _anthropic_text_content(message).strip()
+
+
+async def enhance_field(content: str, field_purpose: str) -> str:
+    provider = app_settings.llm_provider()
+
+    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
+        return await _enhance_field_foundry(content, field_purpose)
+
+    llm = _build_llm()
+    from langchain_core.messages import HumanMessage, SystemMessage
+    messages = [
+        SystemMessage(content=_ENHANCE_SYSTEM_PROMPT),
+        HumanMessage(content=_ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)),
+    ]
+    response = await llm.ainvoke(messages)
+    return str(response.content).strip()
+
+
 _EXTRACT_SYSTEM_PROMPT = """\
 You are an expert CV parser. Your task is to extract structured profile information \
 from raw CV/resume text.

@@ -17,6 +17,7 @@ import { PhoneInput } from '../../shared/components/PhoneInput';
 import { ProfilePreview } from '../../shared/components/ProfilePreview';
 import type { Profile } from '../../shared/models/profile.model';
 import { SortableSkillChip, type SkillRow } from './SortableSkillChip';
+import { EnhancedTextarea } from '../../shared/components/EnhancedTextarea';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -626,12 +627,16 @@ export function ProfilePage() {
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Professional Overview
                 </label>
-                <textarea
+                <EnhancedTextarea
                   rows={5}
                   className={`${fieldClass} resize-none`}
                   placeholder="Brief description of your professional background, key achievements, and career goals..."
                   value={form.overview}
-                  onChange={(e) => setForm((f) => ({ ...f, overview: e.target.value }))}
+                  onChange={(v) => setForm((f) => ({ ...f, overview: v }))}
+                  profileId={profileId ?? ''}
+                  token={token}
+                  onError={(msg) => showNotification(msg, 'error')}
+                  fieldPurpose="Professional Overview / Summary for a CV. This is the main introduction paragraph that appears at the top of the CV. It should be 2-4 concise, compelling sentences capturing the candidate's professional identity, core strengths, and career goals. Maintain first or third person depending on the existing style."
                 />
                 {touched && !form.overview.trim() && (
                   <span className="text-xs text-red-500">Overview is required</span>
@@ -812,18 +817,22 @@ export function ProfilePage() {
                       <label className="text-xs font-medium text-gray-600 dark:text-gray-400">
                         Description
                       </label>
-                      <textarea
+                      <EnhancedTextarea
                         rows={3}
                         className={`${fieldClass} resize-none`}
                         placeholder="Key responsibilities and achievements..."
                         value={exp.description}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           setForm((f) => {
                             const next = [...f.workExperiences];
-                            next[i] = { ...next[i], description: e.target.value };
+                            next[i] = { ...next[i], description: v };
                             return { ...f, workExperiences: next };
                           })
                         }
+                        profileId={profileId ?? ''}
+                        token={token}
+                        onError={(msg) => showNotification(msg, 'error')}
+                        fieldPurpose={`Work Experience description for a CV — role: "${exp.role || 'this position'}" at "${exp.company || 'this company'}". Should describe 2-4 key responsibilities and achievements using strong action verbs. Quantify impact with metrics where possible. Write in past tense for previous roles, present tense for current.`}
                       />
                     </div>
                   </div>

@@ -48,6 +48,10 @@ export class ProfileService {
     return this.http.post<OptimizeProfileResponse>(`${BASE}/${id}/optimize`, { message });
   }
 
+  enhanceField(id: string, content: string, fieldPurpose: string) {
+    return this.http.post<{ enhanced: string }>(`${BASE}/${id}/enhance-field`, { content, fieldPurpose });
+  }
+
   extractFromCv(id: string, file: File) {
     const formData = new FormData();
     formData.append('file', file);

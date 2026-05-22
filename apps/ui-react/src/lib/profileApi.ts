@@ -84,6 +84,22 @@ export async function optimizeProfile(
   return res.json() as Promise<OptimizeProfileResponse>;
 }
 
+export async function enhanceField(
+  token: string,
+  id: string,
+  content: string,
+  fieldPurpose: string,
+): Promise<string> {
+  const res = await fetch(`${BASE}/${id}/enhance-field`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, fieldPurpose }),
+  });
+  if (!res.ok) throw res;
+  const data = await res.json() as { enhanced: string };
+  return data.enhanced;
+}
+
 export async function extractProfileFromCv(
   token: string,
   id: string,

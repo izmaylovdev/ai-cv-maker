@@ -49,6 +49,11 @@ class LlmServiceStub(object):
                 request_serializer=llm__service__pb2.ExtractProfileRequest.SerializeToString,
                 response_deserializer=llm__service__pb2.ExtractProfileResponse.FromString,
                 _registered_method=True)
+        self.EnhanceField = channel.unary_unary(
+                '/llm.LlmService/EnhanceField',
+                request_serializer=llm__service__pb2.EnhanceFieldRequest.SerializeToString,
+                response_deserializer=llm__service__pb2.EnhanceFieldResponse.FromString,
+                _registered_method=True)
         self.Health = channel.unary_unary(
                 '/llm.LlmService/Health',
                 request_serializer=llm__service__pb2.HealthRequest.SerializeToString,
@@ -77,6 +82,12 @@ class LlmServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def EnhanceField(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def Health(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -100,6 +111,11 @@ def add_LlmServiceServicer_to_server(servicer, server):
                     servicer.ExtractProfile,
                     request_deserializer=llm__service__pb2.ExtractProfileRequest.FromString,
                     response_serializer=llm__service__pb2.ExtractProfileResponse.SerializeToString,
+            ),
+            'EnhanceField': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnhanceField,
+                    request_deserializer=llm__service__pb2.EnhanceFieldRequest.FromString,
+                    response_serializer=llm__service__pb2.EnhanceFieldResponse.SerializeToString,
             ),
             'Health': grpc.unary_unary_rpc_method_handler(
                     servicer.Health,
@@ -188,6 +204,33 @@ class LlmService(object):
             '/llm.LlmService/ExtractProfile',
             llm__service__pb2.ExtractProfileRequest.SerializeToString,
             llm__service__pb2.ExtractProfileResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnhanceField(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.LlmService/EnhanceField',
+            llm__service__pb2.EnhanceFieldRequest.SerializeToString,
+            llm__service__pb2.EnhanceFieldResponse.FromString,
             options,
             channel_credentials,
             insecure,

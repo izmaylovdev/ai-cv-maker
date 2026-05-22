@@ -13,11 +13,12 @@ import { NotifyService } from '../../shared/services/notify.service';
 import { Education, Profile, WorkExperience } from '../../shared/models/profile.model';
 import { PhoneMaskDirective } from '../../shared/directives/phone-mask.directive';
 import { ProfilePreviewComponent } from '../../shared/components/profile-preview/profile-preview.component';
+import { EnhancedTextareaComponent } from '../../shared/components/enhanced-textarea/enhanced-textarea.component';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent],
+  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent, EnhancedTextareaComponent],
   templateUrl: './profile.component.html',
 })
 export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
@@ -155,6 +156,13 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
     const control = this.skills.at(event.previousIndex);
     this.skills.removeAt(event.previousIndex);
     this.skills.insert(event.currentIndex, control);
+  }
+
+  workDescPurpose(index: number): string {
+    const exp = this.workExperiences.at(index);
+    const role = exp?.get('role')?.value || 'this position';
+    const company = exp?.get('company')?.value || 'this company';
+    return `Work Experience description for a CV — role: "${role}" at "${company}". Should describe 2-4 key responsibilities and achievements using strong action verbs. Quantify impact with metrics where possible. Write in past tense for previous roles, present tense for current.`;
   }
 
   openReorderDialog() {

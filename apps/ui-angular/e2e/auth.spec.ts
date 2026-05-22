@@ -59,3 +59,30 @@ test.describe('Auth guard', () => {
     await expect(page).toHaveURL(/\/auth\/login/);
   });
 });
+
+// US-AUTH-5 — Logout
+test.describe('Logout', () => {
+  test('logs out and redirects to login page', async ({ page }) => {
+    const { setupAuth } = await import('./support/auth');
+    const { mockJobProfilesListApi } = await import('./support/mocks/job-profiles.mock');
+    await setupAuth(page);
+    await mockJobProfilesListApi(page);
+    await page.goto('/job-profiles');
+    await expect(page.getByRole('button', { name: /Logout/ })).toBeVisible();
+    await page.getByRole('button', { name: /Logout/ }).click();
+    await expect(page).toHaveURL(/\/auth\/login/);
+  });
+
+  test('sidebar shows Login and Register links after logout', async ({ page }) => {
+    const { setupAuth } = await import('./support/auth');
+    const { mockJobProfilesListApi } = await import('./support/mocks/job-profiles.mock');
+    await setupAuth(page);
+    await mockJobProfilesListApi(page);
+    await page.goto('/job-profiles');
+    await page.getByRole('button', { name: /Logout/ }).click();
+    // scope to sidebar to avoid matching links inside the login form body
+    const sidebar = page.locator('aside');
+    await expect(sidebar.getByRole('link', { name: /Login/ })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: /Register/ })).toBeVisible();
+  });
+});

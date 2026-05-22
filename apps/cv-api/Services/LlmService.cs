@@ -67,6 +67,16 @@ public class LlmService(CvApi.Grpc.LlmService.LlmServiceClient grpcClient)
         );
     }
 
+    public async Task<LlmEnhanceFieldResponse> EnhanceFieldAsync(LlmEnhanceFieldRequest request)
+    {
+        var reply = await grpcClient.EnhanceFieldAsync(new CvApi.Grpc.EnhanceFieldRequest
+        {
+            Content = request.Content,
+            FieldPurpose = request.FieldPurpose,
+        });
+        return new LlmEnhanceFieldResponse(reply.Enhanced);
+    }
+
     private static ProfileInput MapProfile(LlmProfileRequest p) => new()
     {
         FullName = p.FullName,

@@ -191,6 +191,35 @@ public class JobProfileController(AppDbContext db, LlmService llmService) : Cont
         ));
     }
 
+    [HttpPost("{id:guid}/enhance-field")]
+    public async Task<ActionResult<EnhanceFieldResponse>> EnhanceField(Guid id, EnhanceFieldRequest request)
+    {
+        var exists = await db.Profiles.AnyAsync(p => p.Id == id && p.UserId == UserId);
+        if (!exists) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest("Content is required.");
+
+        if (string.IsNullOrWhiteSpace(request.FieldPurpose))
+            return BadRequest("FieldPurpose is required.");
+
+        LlmEnhanceFieldResponse llmResponse;
+        try
+        {
+            llmResponse = await llmService.EnhanceFieldAsync(new LlmEnhanceFieldRequest(request.Content, request.FieldPurpose));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return StatusCode(502, $"AI enhancement failed: {ex.Message}");
+        }
+
+        return Ok(new EnhanceFieldResponse(llmResponse.Enhanced));
+    }
+
     [HttpPost("{id:guid}/extract")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<ActionResult<UpdateProfileRequest>> Extract(Guid id, IFormFile file)

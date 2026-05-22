@@ -1,6 +1,6 @@
 import grpc
 
-from app.chains.cv_chain import extract_profile, generate_cv, optimize_profile
+from app.chains.cv_chain import enhance_field, extract_profile, generate_cv, optimize_profile
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
 from app.schemas import (
     EducationInput,
@@ -136,6 +136,13 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                     for s in result.skills
                 ],
             )
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def EnhanceField(self, request, context):
+        try:
+            enhanced = await enhance_field(request.content, request.field_purpose)
+            return llm_service_pb2.EnhanceFieldResponse(enhanced=enhanced)
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
