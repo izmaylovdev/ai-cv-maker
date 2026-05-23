@@ -1,13 +1,24 @@
 <div class="flex h-screen overflow-hidden">
-  <aside class="w-56 shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
+
+  @if (sidebarOpen()) {
+    <div class="fixed inset-0 z-30 bg-black/40 md:hidden" (click)="closeSidebar()"></div>
+  }
+
+  <aside
+    class="fixed md:relative z-40 w-56 h-full shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0"
+    [ngClass]="sidebarOpen() ? 'translate-x-0' : '-translate-x-full'">
+
     <div class="px-5 h-14 flex items-center gap-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
       <span class="material-icons text-blue-600 dark:text-blue-400">description</span>
-      <span class="font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
+      <span class="font-semibold text-sm text-gray-900 dark:text-white flex-1">AI CV Maker</span>
+      <button class="md:hidden flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-0 cursor-pointer" (click)="closeSidebar()">
+        <span class="material-icons text-[20px]">close</span>
+      </button>
     </div>
 
     @if (auth.isLoggedIn()) {
       <nav class="flex flex-col gap-1 p-3 flex-1">
-        <a routerLink="/job-profiles" routerLinkActive="active" class="sidebar-link">
+        <a routerLink="/job-profiles" routerLinkActive="active" class="sidebar-link" (click)="closeSidebar()">
           <span class="material-icons text-[20px]">work</span> Job Profiles
         </a>
       </nav>
@@ -24,10 +35,10 @@
       </div>
     } @else {
       <nav class="flex flex-col gap-1 p-3 flex-1">
-        <a routerLink="/auth/login" routerLinkActive="active" class="sidebar-link">
+        <a routerLink="/auth/login" routerLinkActive="active" class="sidebar-link" (click)="closeSidebar()">
           <span class="material-icons text-[20px]">login</span> Login
         </a>
-        <a routerLink="/auth/register" routerLinkActive="active" class="sidebar-link">
+        <a routerLink="/auth/register" routerLinkActive="active" class="sidebar-link" (click)="closeSidebar()">
           <span class="material-icons text-[20px]">person_add</span> Register
         </a>
       </nav>
@@ -41,9 +52,19 @@
     }
   </aside>
 
-  <main class="flex-1 overflow-y-auto px-8">
-    <router-outlet />
-  </main>
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div class="md:hidden flex items-center h-14 px-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
+      <button (click)="toggleSidebar()" class="flex items-center justify-center w-9 h-9 -ml-1 text-gray-500 dark:text-gray-400 bg-transparent border-0 cursor-pointer">
+        <span class="material-icons">menu</span>
+      </button>
+      <span class="ml-2 font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
+    </div>
+
+    <main class="flex-1 overflow-y-auto px-4 md:px-8">
+      <router-outlet />
+    </main>
+  </div>
+
 </div>
 
 <app-notification-toast />
