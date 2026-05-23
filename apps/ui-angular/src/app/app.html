@@ -9,7 +9,7 @@
     [ngClass]="sidebarOpen() ? 'translate-x-0' : '-translate-x-full'">
 
     <div class="px-5 h-14 flex items-center gap-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
-      <span class="material-icons text-blue-600 dark:text-blue-400">description</span>
+      <img src="favicon.svg" alt="AI CV Maker" class="w-6 h-6" />
       <span class="font-semibold text-sm text-gray-900 dark:text-white flex-1">AI CV Maker</span>
       <button class="md:hidden flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-0 cursor-pointer" (click)="closeSidebar()">
         <span class="material-icons text-[20px]">close</span>
@@ -57,7 +57,8 @@
       <button (click)="toggleSidebar()" class="flex items-center justify-center w-9 h-9 -ml-1 text-gray-500 dark:text-gray-400 bg-transparent border-0 cursor-pointer">
         <span class="material-icons">menu</span>
       </button>
-      <span class="ml-2 font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
+      <img src="favicon.svg" alt="" class="ml-2 w-5 h-5" />
+      <span class="ml-1.5 font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
     </div>
 
     <main class="flex-1 overflow-y-auto px-4 md:px-8">
