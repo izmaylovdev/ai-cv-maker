@@ -178,6 +178,16 @@ def _build_llm() -> BaseChatModel:
             base_url=app_settings.openai_base_url(),
         )
 
+    if provider == "azure_openai":
+        from langchain_openai import AzureChatOpenAI
+        return AzureChatOpenAI(
+            azure_deployment=app_settings.foundry_model(),
+            azure_endpoint=app_settings.foundry_base_url(),
+            api_key=app_settings.foundry_api_key(),
+            api_version=app_settings.azure_openai_api_version(),
+            temperature=temperature,
+        )
+
     if provider == "google":
         return ChatGoogleGenerativeAI(
             model=app_settings.google_model(),

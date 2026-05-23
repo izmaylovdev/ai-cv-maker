@@ -69,3 +69,7 @@ def foundry_max_tokens() -> int:
         return max(256, int(raw))
     except ValueError:
         return 8192
+
+
+def azure_openai_api_version() -> str:
+    return os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")

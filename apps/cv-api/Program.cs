@@ -1,6 +1,10 @@
 using System.Text;
-using CvApi.Data;
-using CvApi.Services;
+using CvApi.Features.Auth;
+using CvApi.Features.Cvs;
+using CvApi.Features.JobProfiles;
+using CvApi.Infrastructure.ExternalServices.Llm;
+using CvApi.Infrastructure.ExternalServices.Pdf;
+using CvApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -68,13 +72,15 @@ builder.Services.AddCors(opt =>
               .AllowAnyMethod()));
 
 // Services
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<PdfService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
 {
     o.Address = new Uri(builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051");
 });
-builder.Services.AddScoped<LlmService>();
+builder.Services.AddScoped<ILlmService, LlmService>();
+builder.Services.AddScoped<IJobProfileService, JobProfileService>();
+builder.Services.AddScoped<ICvService, CvService>();
 
 var app = builder.Build();
 
