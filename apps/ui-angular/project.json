@@ -20,7 +20,8 @@
             "input": "apps/ui-angular/public"
           }
         ],
-        "styles": ["apps/ui-angular/src/styles.css"]
+        "styles": ["apps/ui-angular/src/styles.css"],
+        "serviceWorker": "apps/ui-angular/ngsw-config.json"
       },
       "configurations": {
         "production": {
