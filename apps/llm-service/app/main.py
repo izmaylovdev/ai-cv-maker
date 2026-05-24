@@ -8,8 +8,10 @@ from contextlib import asynccontextmanager
 import grpc.aio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 
 from app.chains.cv_chain import extract_profile, generate_cv, optimize_profile
+from app.grpc.metrics_interceptor import MetricsInterceptor
 from app.grpc.servicer import LlmServiceImpl
 from app.grpc.llm_service_pb2_grpc import add_LlmServiceServicer_to_server
 from app.schemas import ExtractRequest, ExtractResponse, GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse
@@ -19,7 +21,7 @@ _GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    grpc_server = grpc.aio.server()
+    grpc_server = grpc.aio.server(interceptors=[MetricsInterceptor()])
     add_LlmServiceServicer_to_server(LlmServiceImpl(), grpc_server)
     grpc_server.add_insecure_port(f"[::]:{_GRPC_PORT}")
     await grpc_server.start()
@@ -35,6 +37,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/health")

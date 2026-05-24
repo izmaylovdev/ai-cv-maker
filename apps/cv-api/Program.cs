@@ -4,11 +4,14 @@ using CvApi.Features.Cvs;
 using CvApi.Features.JobProfiles;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
+using CvApi.Infrastructure.Middleware;
 using CvApi.Infrastructure.Persistence;
+using CvApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Prometheus;
 using QuestPDF.Infrastructure;
 
 QuestPDF.Settings.License = LicenseType.Community;
@@ -71,6 +74,9 @@ builder.Services.AddCors(opt =>
               .AllowAnyHeader()
               .AllowAnyMethod()));
 
+// Tracing
+builder.Services.AddScoped<TraceContext>();
+
 // Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
@@ -95,6 +101,9 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseCors();
+app.UseMetricServer("/metrics");
+app.UseHttpMetrics();
+app.UseMiddleware<RequestTracingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
