@@ -9,6 +9,7 @@
 body {
   margin: 0;
   font-family: Roboto, 'Helvetica Neue', sans-serif;
+  overflow-x: hidden;
   @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors;
 }
 

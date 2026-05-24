@@ -145,6 +145,7 @@ export function ProfilePage() {
   const [optimizeMessage, setOptimizeMessage] = useState('');
   const [optimizing, setOptimizing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hash = route.hash.replace('#', '');
@@ -469,61 +470,102 @@ export function ProfilePage() {
 
   return (
     <div className="overflow-hidden rounded-2xl bg-white shadow-md transition-colors dark:bg-gray-800">
-      <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/job-profiles')}
-              className="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-sm text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
-            >
-              <span className="material-icons text-base">arrow_back</span>
-              <span className="hidden sm:inline">Job Profiles</span>
-            </button>
-          </div>
-          <h2 className="truncate text-xl font-bold text-gray-800 dark:text-white">
-            {form.name || 'Job Profile'}
-          </h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Fill in your details to generate an AI-powered CV
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+      <div className="px-6 pb-4 pt-6">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => navigate(`/job-profiles/${profileId}/cv`)}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-blue-400"
+            onClick={() => navigate('/job-profiles')}
+            className="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-sm text-gray-400 transition-colors hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400"
           >
-            <span className="material-icons text-base">picture_as_pdf</span>
-            <span className="hidden sm:inline">Generate CV</span>
+            <span className="material-icons text-base">arrow_back</span>
+            <span className="hidden sm:inline">Job Profiles</span>
           </button>
-          <div className="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+          <div className="hidden items-center gap-2 sm:flex">
             <button
               type="button"
-              onClick={() => setViewMode('list')}
-              className={
-                viewMode === 'list'
-                  ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
-                  : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-              }
+              onClick={() => navigate(`/job-profiles/${profileId}/cv`)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-blue-400"
+            >
+              <span className="material-icons text-base">picture_as_pdf</span>
+              Generate CV
+            </button>
+            <div className="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={
+                  viewMode === 'list'
+                    ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
+                    : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                }
+              >
+                <span className="material-icons text-base">list</span>
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('form')}
+                className={
+                  viewMode === 'form'
+                    ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
+                    : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                }
+              >
+                <span className="material-icons text-base">edit</span>
+                Edit
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionsOpen((o) => !o)}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-400 hover:text-blue-600 sm:hidden dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-blue-400"
+          >
+            <span className="material-icons text-base">{actionsOpen ? 'close' : 'more_vert'}</span>
+          </button>
+        </div>
+        <h2 className="truncate text-xl font-bold text-gray-800 dark:text-white">
+          {form.name || 'Job Profile'}
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Fill in your details to generate an AI-powered CV
+        </p>
+        {actionsOpen && (
+          <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 sm:hidden dark:border-gray-600 dark:bg-gray-700/50">
+            <button
+              type="button"
+              onClick={() => { setViewMode('list'); setActionsOpen(false); }}
+              className={`flex w-full items-center gap-3 px-4 py-3 text-sm transition-colors ${viewMode === 'list' ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}`}
             >
               <span className="material-icons text-base">list</span>
-              <span className="hidden sm:inline">Preview</span>
+              Preview
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('form')}
-              className={
-                viewMode === 'form'
-                  ? 'flex cursor-pointer items-center gap-1.5 border-0 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors'
-                  : 'flex cursor-pointer items-center gap-1.5 border-0 bg-white px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-              }
+              onClick={() => { setViewMode('form'); setActionsOpen(false); }}
+              className={`flex w-full items-center gap-3 border-t border-gray-200 px-4 py-3 text-sm transition-colors dark:border-gray-600 ${viewMode === 'form' ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}`}
             >
               <span className="material-icons text-base">edit</span>
-              <span className="hidden sm:inline">Edit</span>
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => { navigate(`/job-profiles/${profileId}/cv`); setActionsOpen(false); }}
+              className="flex w-full items-center gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              <span className="material-icons text-base">picture_as_pdf</span>
+              Generate CV
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimizeOpen((o) => !o); setOptimizeMessage(''); setActionsOpen(false); }}
+              className="flex w-full items-center gap-3 border-t border-gray-200 px-4 py-3 text-sm text-purple-600 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-purple-400 dark:hover:bg-gray-700"
+            >
+              <span className="material-icons text-base">auto_fix_high</span>
+              Optimize with AI
             </button>
           </div>
-        </div>
+        )}
       </div>
 
       {notification && (
@@ -1022,7 +1064,7 @@ export function ProfilePage() {
                   items={form.skills.map((s) => s.clientId)}
                   strategy={rectSortingStrategy}
                 >
-                  <div className="flex min-h-12 flex-wrap gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2 dark:border-gray-600 dark:bg-gray-700/30">
+                  <div className="grid min-h-12 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2 [grid-template-columns:repeat(auto-fill,minmax(8rem,1fr))] dark:border-gray-600 dark:bg-gray-700/30">
                     {form.skills.map((skill, i) => (
                       <SortableSkillChip
                         key={skill.clientId}
@@ -1104,8 +1146,8 @@ export function ProfilePage() {
               onClick={() => { setOptimizeOpen((o) => !o); setOptimizeMessage(''); }}
               className={
                 optimizeOpen
-                  ? 'flex cursor-pointer items-center gap-2 rounded-lg border-0 bg-purple-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-purple-700'
-                  : 'flex cursor-pointer items-center gap-2 rounded-lg border border-purple-600 bg-white px-5 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:bg-purple-50 dark:border-purple-400 dark:bg-transparent dark:text-purple-400 dark:hover:bg-purple-900/30'
+                  ? 'hidden cursor-pointer items-center gap-2 rounded-lg border-0 bg-purple-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-purple-700 sm:flex'
+                  : 'hidden cursor-pointer items-center gap-2 rounded-lg border border-purple-600 bg-white px-5 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:bg-purple-50 sm:flex dark:border-purple-400 dark:bg-transparent dark:text-purple-400 dark:hover:bg-purple-900/30'
               }
             >
               <span className="material-icons text-base">auto_fix_high</span> Optimize with AI

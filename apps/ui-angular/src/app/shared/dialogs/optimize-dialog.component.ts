@@ -7,7 +7,7 @@ import { DialogRef } from '@angular/cdk/dialog';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-[480px] flex flex-col gap-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-[calc(100vw-2rem)] max-w-[480px] flex flex-col gap-4">
       <h3 class="text-base font-semibold text-gray-900 dark:text-white">Optimize with AI</h3>
       <p class="text-sm text-gray-500 dark:text-gray-400">Describe the role or goal you're optimizing for</p>
       <textarea rows="4" [(ngModel)]="message"

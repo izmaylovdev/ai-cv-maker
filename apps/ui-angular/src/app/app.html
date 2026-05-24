@@ -1,11 +1,11 @@
-<div class="flex h-screen overflow-hidden">
+<div class="flex min-h-screen">
 
   @if (sidebarOpen()) {
     <div class="fixed inset-0 z-30 bg-black/40 md:hidden" (click)="closeSidebar()"></div>
   }
 
   <aside
-    class="fixed md:relative z-40 w-56 h-full shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0"
+    class="fixed z-40 w-56 h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0"
     [ngClass]="sidebarOpen() ? 'translate-x-0' : '-translate-x-full'">
 
     <div class="px-5 h-14 flex items-center gap-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
@@ -52,8 +52,8 @@
     }
   </aside>
 
-  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-    <div class="md:hidden flex items-center h-14 px-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
+  <div class="flex-1 flex flex-col min-w-0 md:ml-56">
+    <div class="sticky top-0 z-30 md:hidden flex items-center h-14 px-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
       <button (click)="toggleSidebar()" class="flex items-center justify-center w-9 h-9 -ml-1 text-gray-500 dark:text-gray-400 bg-transparent border-0 cursor-pointer">
         <span class="material-icons">menu</span>
       </button>
@@ -61,7 +61,7 @@
       <span class="ml-1.5 font-semibold text-sm text-gray-900 dark:text-white">AI CV Maker</span>
     </div>
 
-    <main class="flex-1 overflow-y-auto px-4 md:px-8">
+    <main class="flex-1 px-4 md:px-8">
       <router-outlet />
     </main>
   </div>

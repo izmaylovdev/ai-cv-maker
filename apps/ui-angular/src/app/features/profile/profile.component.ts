@@ -14,11 +14,14 @@ import { Education, Profile, WorkExperience } from '../../shared/models/profile.
 import { PhoneMaskDirective } from '../../shared/directives/phone-mask.directive';
 import { ProfilePreviewComponent } from '../../shared/components/profile-preview/profile-preview.component';
 import { EnhancedTextareaComponent } from '../../shared/components/enhanced-textarea/enhanced-textarea.component';
+import { DropdownComponent } from '../../shared/components/dropdown/dropdown.component';
+import { DropdownItemDirective } from '../../shared/components/dropdown/dropdown-item.directive';
+import { DropdownTriggerDirective } from '../../shared/components/dropdown/dropdown-trigger.directive';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent, EnhancedTextareaComponent],
+  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent, EnhancedTextareaComponent, DropdownComponent, DropdownItemDirective, DropdownTriggerDirective],
   templateUrl: './profile.component.html',
 })
 export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
@@ -78,8 +81,8 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   private setupScrollSync() {
-    const scrollRoot = this.doc.querySelector('main');
-    if (!scrollRoot) return;
+    const win = this.doc.defaultView;
+    if (!win) return;
 
     const onScroll = () => {
       const sections = [
@@ -89,12 +92,11 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
         { el: this.leftSkills?.nativeElement, key: 'skills' },
       ].filter((s): s is { el: HTMLElement; key: string } => s.el != null);
 
-      const scrollTop = scrollRoot.scrollTop;
-      const rootTop = scrollRoot.getBoundingClientRect().top;
+      const scrollTop = win.scrollY;
 
       let activeKey = sections[0]?.key ?? this.lastActiveSection;
       for (const { el, key } of sections) {
-        const elAbsTop = el.getBoundingClientRect().top - rootTop + scrollTop;
+        const elAbsTop = el.getBoundingClientRect().top + scrollTop;
         if (scrollTop >= elAbsTop - 100) {
           activeKey = key;
         }
@@ -112,8 +114,8 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       }
     };
 
-    scrollRoot.addEventListener('scroll', onScroll, { passive: true });
-    this.scrollUnsubscribe = () => scrollRoot.removeEventListener('scroll', onScroll);
+    win.addEventListener('scroll', onScroll, { passive: true });
+    this.scrollUnsubscribe = () => win.removeEventListener('scroll', onScroll);
   }
 
   get workExperiences() {

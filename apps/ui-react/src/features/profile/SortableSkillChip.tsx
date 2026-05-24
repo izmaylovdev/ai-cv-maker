@@ -22,7 +22,7 @@ export function SortableSkillChip({ skill, onNameChange, onRemove }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-1 rounded-full border border-blue-200 bg-blue-100 py-1 pl-1 pr-1.5 dark:border-blue-700 dark:bg-blue-900/40 ${
+      className={`flex w-full items-center gap-1 rounded-full border border-blue-200 bg-blue-100 py-1 pl-1 pr-1.5 dark:border-blue-700 dark:bg-blue-900/40 ${
         isDragging ? 'z-10 opacity-90 shadow-md' : ''
       }`}
     >
@@ -38,7 +38,7 @@ export function SortableSkillChip({ skill, onNameChange, onRemove }: Props) {
         placeholder="Skill"
         value={skill.name}
         onChange={(e) => onNameChange(e.target.value)}
-        className="min-w-[3rem] max-w-[10rem] w-20 border-0 bg-transparent p-0 text-sm text-blue-800 outline-none placeholder-blue-300 dark:text-blue-200 dark:placeholder-blue-600"
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-blue-800 outline-none placeholder-blue-300 dark:text-blue-200 dark:placeholder-blue-600"
       />
       <button
         type="button"

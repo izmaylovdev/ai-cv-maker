@@ -7,7 +7,7 @@ import { DialogRef } from '@angular/cdk/dialog';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-[480px] flex flex-col gap-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-[calc(100vw-2rem)] max-w-[480px] flex flex-col gap-4">
       <h3 class="text-base font-semibold text-gray-900 dark:text-white">Preview CV</h3>
       <div class="flex flex-col gap-1">
         <label for="cv-notes" class="text-sm font-medium text-gray-700 dark:text-gray-300">
