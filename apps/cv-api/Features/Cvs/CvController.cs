@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CvApi.Features.Cvs.Dtos;
+using CvApi.Features.JobProfiles.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -53,6 +54,13 @@ public class CvController(ICvService cvService) : ControllerBase
         var result = await cvService.GetDefaultPdfAsync(profileId, UserId);
         if (result is null) return NotFound();
         return File(result.Value.Bytes, "application/pdf", result.Value.Filename);
+    }
+
+    [HttpPost("/api/cvs/draft-pdf")]
+    public async Task<IActionResult> GetDraftPdf(UpdateProfileRequest request)
+    {
+        var result = await cvService.GetDraftPdfAsync(request);
+        return File(result.Bytes, "application/pdf", result.Filename);
     }
 
     [HttpDelete("{id:guid}")]

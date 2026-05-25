@@ -64,7 +64,6 @@ export class EnhancedTextareaComponent implements ControlValueAccessor, OnDestro
   @Input() rows = 3;
   @Input() textareaClass = '';
   @Input() placeholder = '';
-  @Input() profileId = '';
   @Input() fieldPurpose = '';
 
   private profileService = inject(ProfileService);
@@ -112,7 +111,7 @@ export class EnhancedTextareaComponent implements ControlValueAccessor, OnDestro
     if (!this.value.trim() || this.enhancing()) return;
     this.enhancing.set(true);
     this.enhanceSub = this.profileService
-      .enhanceField(this.profileId, this.value, this.fieldPurpose)
+      .enhanceField(this.value, this.fieldPurpose)
       .subscribe({
         next: ({ enhanced }) => {
           this.value = enhanced;

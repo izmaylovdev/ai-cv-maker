@@ -48,8 +48,8 @@ export class ProfileService {
     return this.http.post<OptimizeProfileResponse>(`${BASE}/${id}/optimize`, { message });
   }
 
-  enhanceField(id: string, content: string, fieldPurpose: string) {
-    return this.http.post<{ enhanced: string }>(`${BASE}/${id}/enhance-field`, { content, fieldPurpose });
+  enhanceField(content: string, fieldPurpose: string) {
+    return this.http.post<{ enhanced: string }>(`${environment.apiUrl}/ai/enhance-field`, { content, fieldPurpose });
   }
 
   extractFromCv(id: string, file: File) {

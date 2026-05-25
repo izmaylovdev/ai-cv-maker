@@ -31,4 +31,8 @@ export class CvService {
     return this.http.get(`${this.api(profileId)}/default/pdf`, { responseType: 'blob' });
   }
 
+  getDraftPdf(data: unknown) {
+    return this.http.post(`${environment.apiUrl}/cvs/draft-pdf`, data, { responseType: 'blob' });
+  }
+
 }

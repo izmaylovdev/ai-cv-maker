@@ -161,15 +161,6 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
         );
     }
 
-    public async Task<EnhanceFieldResponse?> EnhanceFieldAsync(Guid id, Guid userId, EnhanceFieldRequest request)
-    {
-        var exists = await db.Profiles.AnyAsync(p => p.Id == id && p.UserId == userId);
-        if (!exists) return null;
-
-        var llmResponse = await llmService.EnhanceFieldAsync(new LlmEnhanceFieldRequest(request.Content, request.FieldPurpose));
-        return new EnhanceFieldResponse(llmResponse.Enhanced);
-    }
-
     public async Task<UpdateProfileRequest?> ExtractAsync(Guid id, Guid userId, IFormFile file)
     {
         var exists = await db.Profiles.AnyAsync(p => p.Id == id && p.UserId == userId);

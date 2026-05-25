@@ -4,6 +4,7 @@ using CvApi.Features.Cvs;
 using CvApi.Features.JobProfiles;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
+using CvApi.Infrastructure.Json;
 using CvApi.Infrastructure.Middleware;
 using CvApi.Infrastructure.Persistence;
 using CvApi.Infrastructure.Services;
@@ -18,7 +19,12 @@ QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opt =>
+    {
+        opt.JsonSerializerOptions.Converters.Add(new LenientDateOnlyConverter());
+        opt.JsonSerializerOptions.Converters.Add(new LenientNullableDateOnlyConverter());
+    });
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

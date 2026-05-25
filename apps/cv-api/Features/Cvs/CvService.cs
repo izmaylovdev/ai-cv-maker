@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CvApi.Domain.Entities;
 using CvApi.Features.Cvs.Dtos;
+using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
 using CvApi.Infrastructure.Persistence;
@@ -124,6 +125,30 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         var sectionOrder = profile.SectionOrder.Split(',').ToList();
         var pdf = pdfService.GenerateCv(cvData, profile.FullName, profile.Title, profile.Location, profile.ContactEmail, profile.ContactPhone, sectionOrder);
         return (pdf, $"{profile.FullName.Replace(" ", "_")}_CV.pdf");
+    }
+
+    public Task<(byte[] Bytes, string Filename)> GetDraftPdfAsync(UpdateProfileRequest data)
+    {
+        var cvData = new LlmGenerateResponse(
+            Summary: data.Overview,
+            WorkExperiences: data.WorkExperiences
+                .Select(w => new LlmWorkExperience(w.Company, w.Role, FormatPeriod(w.StartDate, w.EndDate), w.Description ?? ""))
+                .ToList(),
+            Educations: data.Educations
+                .Select(e => new LlmEducation(
+                    e.Institution, e.Degree, e.Field,
+                    e.EndYear.HasValue ? $"{e.StartYear} – {e.EndYear}" : $"{e.StartYear} – Present"))
+                .ToList(),
+            Skills: data.Skills.Select(s => s.Name).ToList(),
+            Highlights: []
+        );
+
+        var sectionOrder = data.SectionOrder is { Count: > 0 }
+            ? data.SectionOrder
+            : ["workExperiences", "educations", "skills"];
+
+        var pdf = pdfService.GenerateCv(cvData, data.FullName, data.Title, data.Location, data.Contacts?.Email, data.Contacts?.Phone, sectionOrder);
+        return Task.FromResult((pdf, $"{data.FullName.Replace(" ", "_")}_CV.pdf"));
     }
 
     public async Task<bool> DeleteAsync(Guid profileId, Guid id, Guid userId)

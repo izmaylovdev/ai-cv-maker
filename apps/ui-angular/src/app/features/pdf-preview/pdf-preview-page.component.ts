@@ -9,6 +9,7 @@ import { PdfPreviewComponent } from '../../shared/components/pdf-preview/pdf-pre
 interface PdfNavState {
   notes?: string;
   title?: string;
+  draft?: unknown;
 }
 
 @Component({
@@ -42,7 +43,11 @@ export class PdfPreviewPageComponent implements OnInit, OnDestroy {
     this.profileId = this.route.snapshot.paramMap.get('id') ?? '';
     const state = this.router.lastSuccessfulNavigation()?.extras.state as PdfNavState | null;
     this.title.set(state?.title ?? 'CV Preview');
-    this.generate(state?.notes ?? '');
+    if (state?.draft != null) {
+      this.generateDraft(state.draft);
+    } else {
+      this.generate(state?.notes ?? '');
+    }
   }
 
   ngOnDestroy() {
@@ -59,6 +64,19 @@ export class PdfPreviewPageComponent implements OnInit, OnDestroy {
     a.href = this.rawBlobUrl;
     a.download = `${this.title().replace(/[\s/\\:*?"<>|]/g, '_')}.pdf`;
     a.click();
+  }
+
+  private generateDraft(draft: unknown) {
+    this.cvService.getDraftPdf(draft)
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: (blob) => {
+          this.revokeBlob();
+          this.rawBlobUrl = URL.createObjectURL(blob);
+          this.safeUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawBlobUrl));
+        },
+        error: () => this.notify.error('Failed to load PDF.'),
+      });
   }
 
   private generate(notes: string) {

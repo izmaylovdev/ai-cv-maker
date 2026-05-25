@@ -196,13 +196,24 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   openPdfDialog() {
-    this.dialogs.openDownloadCv().subscribe(notes => {
-      if (notes === undefined) return;
-      const fullName = this.form.get('fullName')?.value ?? '';
-      const jobTitle = this.form.get('title')?.value ?? '';
-      this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
-        state: { notes, title: `${fullName} — ${jobTitle}` },
-      });
+    const raw = this.form.value;
+    const fullName = (raw.fullName as string) ?? '';
+    const jobTitle = (raw.title as string) ?? '';
+    const draft = {
+      ...raw,
+      location: (raw.location as string)?.trim() || null,
+      sectionOrder: this.sectionOrder(),
+      workExperiences: (raw.workExperiences as WorkExperience[] ?? []).map((w) => ({
+        ...w,
+        endDate: w.endDate || null,
+      })),
+      educations: (raw.educations as Education[] ?? []).map((e) => ({
+        ...e,
+        endYear: e.endYear || null,
+      })),
+    };
+    this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
+      state: { draft, title: `${fullName} — ${jobTitle}` },
     });
   }
 

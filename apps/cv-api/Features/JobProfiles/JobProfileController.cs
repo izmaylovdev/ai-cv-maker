@@ -64,32 +64,6 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         return result is null ? NotFound() : Ok(result);
     }
 
-    [HttpPost("{id:guid}/enhance-field")]
-    public async Task<ActionResult<EnhanceFieldResponse>> EnhanceField(Guid id, EnhanceFieldRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Content))
-            return BadRequest("Content is required.");
-
-        if (string.IsNullOrWhiteSpace(request.FieldPurpose))
-            return BadRequest("FieldPurpose is required.");
-
-        EnhanceFieldResponse? result;
-        try
-        {
-            result = await jobProfileService.EnhanceFieldAsync(id, UserId, request);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-        {
-            return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");
-        }
-        catch (HttpRequestException ex)
-        {
-            return StatusCode(502, $"AI enhancement failed: {ex.Message}");
-        }
-
-        return result is null ? NotFound() : Ok(result);
-    }
-
     [HttpPost("{id:guid}/extract")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<ActionResult<UpdateProfileRequest>> Extract(Guid id, IFormFile file)

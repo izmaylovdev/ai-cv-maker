@@ -137,7 +137,6 @@
                 [rows]="5"
                 placeholder="Brief description of your professional background, key achievements, and career goals..."
                 textareaClass="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
-                [profileId]="profileId"
                 fieldPurpose="Professional Overview / Summary for a CV. This is the main introduction paragraph that appears at the top of the CV. It should be 2-4 concise, compelling sentences capturing the candidate's professional identity, core strengths, and career goals. Maintain first or third person depending on the existing style."
               />
               @if (form.get('overview')?.hasError('required') && form.get('overview')?.touched) {
@@ -247,7 +246,6 @@
                                 [rows]="3"
                                 placeholder="Key responsibilities and achievements..."
                                 textareaClass="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
-                                [profileId]="profileId"
                                 [fieldPurpose]="workDescPurpose($index)"
                               />
                             </div>
