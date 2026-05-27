@@ -14,8 +14,17 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@ai-cv-maker/auth": ["../../libs/auth/src/index.ts"],
+      "@ai-cv-maker/theme": ["../../libs/theme/src/index.ts"],
+      "@ai-cv-maker/dev-shell": ["../../libs/dev-shell/src/index.ts"]
+    }
   },
   "include": ["src"],
-  "references": [{ "path": "./tsconfig.app.json" }]
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }

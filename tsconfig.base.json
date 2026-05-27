@@ -15,7 +15,9 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@ai-cv-maker/auth": ["libs/auth/src/index.ts"]
+      "@ai-cv-maker/auth": ["libs/auth/src/index.ts"],
+      "@ai-cv-maker/theme": ["libs/theme/src/index.ts"],
+      "@ai-cv-maker/dev-shell": ["libs/dev-shell/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

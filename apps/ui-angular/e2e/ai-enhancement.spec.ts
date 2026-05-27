@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL, TEST_PROFILE_ID } from './support/constants';
 import { mockProfileApi } from './support/mocks/profile.mock';
-import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockOptimizeApi, mockOptimizeFailApi, mockOptimizeUrlFetchErrorApi, mockChatApi, mockChatApiError, registerFakeChatWidget } from './support/mocks/ai.mock';
+import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockOptimizeApi, mockOptimizeFailApi, mockOptimizeUrlFetchErrorApi, registerFakeChatWidget } from './support/mocks/ai.mock';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 

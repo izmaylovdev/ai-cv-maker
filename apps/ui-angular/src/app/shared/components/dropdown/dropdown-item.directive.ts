@@ -7,10 +7,10 @@ import { DropdownComponent } from './dropdown.component';
  * Add color/hover classes directly on the element to customise appearance.
  *
  * Example:
- *   <button dropdownItem class="text-red-600 hover:bg-red-50" (click)="delete()">Delete</button>
+ *   <button appDropdownItem class="text-red-600 hover:bg-red-50" (click)="delete()">Delete</button>
  */
 @Directive({
-  selector: '[dropdownItem]',
+  selector: '[appDropdownItem]',
   standalone: true,
   host: {
     class:

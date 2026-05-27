@@ -32,7 +32,7 @@ public class RequestTracingMiddleware(RequestDelegate next)
 
             try
             {
-                db.RequestSpans.AddRange([httpSpan, ..trace.PendingSpans]);
+                db.RequestSpans.AddRange([httpSpan, .. trace.PendingSpans]);
                 await db.SaveChangesAsync();
             }
             catch

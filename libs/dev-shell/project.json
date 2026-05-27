@@ -1,0 +1,8 @@
+{
+  "name": "dev-shell",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/dev-shell/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {}
+}

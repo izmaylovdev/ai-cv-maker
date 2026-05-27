@@ -1,23 +1,18 @@
 import { Injectable, signal } from '@angular/core';
+import { applyTheme, getTheme, saveTheme } from '@ai-cv-maker/theme';
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-  isDark = signal(false);
+  isDark = signal(getTheme() === 'dark');
 
   constructor() {
-    const saved = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    this.isDark.set(saved ? saved === 'dark' : prefersDark);
-    this.applyTheme();
+    applyTheme(getTheme());
   }
 
   toggle() {
     this.isDark.update((v) => !v);
-    this.applyTheme();
-    localStorage.setItem('theme', this.isDark() ? 'dark' : 'light');
-  }
-
-  private applyTheme() {
-    document.documentElement.classList.toggle('dark', this.isDark());
+    const theme = this.isDark() ? 'dark' : 'light';
+    saveTheme(theme);
+    applyTheme(theme);
   }
 }

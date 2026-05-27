@@ -1,5 +1,16 @@
-import { Directive } from '@angular/core';
+import { Directive, HostListener, inject } from '@angular/core';
+import { DropdownComponent } from './dropdown.component';
 
 /** Marks the element that opens/closes the dropdown when clicked. */
-@Directive({ selector: '[dropdownTrigger]', standalone: true })
-export class DropdownTriggerDirective {}
+@Directive({ selector: '[appDropdownTrigger]', standalone: true })
+export class DropdownTriggerDirective {
+  private readonly dropdown = inject(DropdownComponent);
+
+  @HostListener('click')
+  @HostListener('keydown.enter')
+  @HostListener('keydown.space', ['$event'])
+  toggle(event?: KeyboardEvent) {
+    event?.preventDefault();
+    this.dropdown.toggle();
+  }
+}

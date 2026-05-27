@@ -24,6 +24,7 @@ import { NotifyService } from '../../services/notify.service';
   template: `
     <div class="relative">
       <textarea
+        [id]="inputId || null"
         [rows]="rows"
         [class]="textareaClass"
         [placeholder]="placeholder"
@@ -61,6 +62,7 @@ import { NotifyService } from '../../services/notify.service';
   `,
 })
 export class EnhancedTextareaComponent implements ControlValueAccessor, OnDestroy {
+  @Input() inputId = '';
   @Input() rows = 3;
   @Input() textareaClass = '';
   @Input() placeholder = '';
@@ -74,7 +76,9 @@ export class EnhancedTextareaComponent implements ControlValueAccessor, OnDestro
   readonly focused = signal(false);
   readonly enhancing = signal(false);
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private onChange: (v: string) => void = () => {};
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private onTouched: () => void = () => {};
   private enhanceSub?: Subscription;
 

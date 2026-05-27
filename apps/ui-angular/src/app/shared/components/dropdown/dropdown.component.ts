@@ -5,16 +5,16 @@ import { Component, ElementRef, HostListener, computed, inject, input, signal } 
  *
  * Usage:
  *   <app-dropdown>
- *     <button dropdownTrigger class="...">⋮</button>
+ *     <button appDropdownTrigger class="...">⋮</button>
  *
- *     <button dropdownItem class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
+ *     <button appDropdownItem class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
  *             (click)="action()">
  *       <span class="material-icons text-base">edit</span> Edit
  *     </button>
  *
  *     <hr class="my-0.5 border-gray-100 dark:border-gray-700">
  *
- *     <button dropdownItem class="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+ *     <button appDropdownItem class="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
  *             (click)="delete()">
  *       <span class="material-icons text-base">delete</span> Delete
  *     </button>
@@ -28,12 +28,10 @@ import { Component, ElementRef, HostListener, computed, inject, input, signal } 
   standalone: true,
   host: { class: 'relative inline-block' },
   template: `
-    <div class="contents" (click)="toggle()">
-      <ng-content select="[dropdownTrigger]"></ng-content>
-    </div>
+    <ng-content select="[appDropdownTrigger]"></ng-content>
 
     @if (open()) {
-      <div [class]="panelClass()" (click)="open.set(false)">
+      <div [class]="panelClass()">
         <ng-content></ng-content>
       </div>
     }

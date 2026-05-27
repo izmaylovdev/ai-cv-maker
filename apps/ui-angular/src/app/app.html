@@ -1,7 +1,7 @@
 <div class="flex min-h-screen">
 
   @if (sidebarOpen()) {
-    <div class="fixed inset-0 z-30 bg-black/40 md:hidden" (click)="closeSidebar()"></div>
+    <div class="fixed inset-0 z-30 bg-black/40 md:hidden" role="button" tabindex="0" aria-label="Close sidebar" (click)="closeSidebar()" (keydown.enter)="closeSidebar()" (keydown.escape)="closeSidebar()"></div>
   }
 
   <aside

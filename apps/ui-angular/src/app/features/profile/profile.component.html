@@ -47,16 +47,16 @@
       </button>
       <!-- Mobile: three-dot menu -->
       <app-dropdown class="sm:hidden">
-        <button dropdownTrigger type="button" title="More actions"
+        <button appDropdownTrigger type="button" title="More actions"
                 class="flex items-center justify-center w-9 h-9 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer">
           <span class="material-icons text-base">more_vert</span>
         </button>
 
-        <button dropdownItem type="button" (click)="openReorderDialog()"
+        <button appDropdownItem type="button" (click)="openReorderDialog()"
                 class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
           <span class="material-icons text-base">sort</span> Reorder
         </button>
-        <button dropdownItem type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()"
+        <button appDropdownItem type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()"
                 class="text-purple-600 hover:bg-gray-50 disabled:opacity-50 dark:text-purple-400 dark:hover:bg-gray-700">
           @if (optimizing()) {
             <span class="w-4 h-4 border-2 border-purple-600 dark:border-purple-400 border-t-transparent rounded-full animate-spin"></span>
@@ -65,7 +65,7 @@
           }
           Optimize with AI
         </button>
-        <button dropdownItem type="button" (click)="openPdfDialog()"
+        <button appDropdownItem type="button" (click)="openPdfDialog()"
                 class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
           <span class="material-icons text-base">picture_as_pdf</span> PDF
         </button>
@@ -130,8 +130,9 @@
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Professional Overview</label>
+              <label for="profile-overview" class="text-sm font-medium text-gray-700 dark:text-gray-300">Professional Overview</label>
               <app-enhanced-textarea
+                inputId="profile-overview"
                 formControlName="overview"
                 [rows]="5"
                 placeholder="Brief description of your professional background, key achievements, and career goals..."
@@ -239,8 +240,9 @@
                             </div>
 
                             <div class="flex flex-col gap-1">
-                              <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Description</label>
+                              <label [for]="'work-desc-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Description</label>
                               <app-enhanced-textarea
+                                [inputId]="'work-desc-' + $index"
                                 formControlName="description"
                                 [rows]="3"
                                 placeholder="Key responsibilities and achievements..."

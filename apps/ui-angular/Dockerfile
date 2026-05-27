@@ -4,6 +4,7 @@ RUN npm install -g npm@11
 COPY package.json package-lock.json nx.json .postcssrc.json tsconfig.base.json ./
 RUN npm ci
 COPY apps/ui-angular/ apps/ui-angular/
+COPY libs/ libs/
 RUN NX_NO_CLOUD=true npx nx build ui-angular --configuration=production
 
 FROM nginx:alpine
