@@ -36,5 +36,11 @@ export const appRoutes: Route[] = [
     loadComponent: () =>
       import('./features/pdf-preview/pdf-preview-page.component').then((m) => m.PdfPreviewPageComponent),
   },
-{ path: '**', redirectTo: '/job-profiles' },
+  {
+    path: 'chat',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/chat/chat-page.component').then((m) => m.ChatPageComponent),
+  },
+  { path: '**', redirectTo: '/job-profiles' },
 ];

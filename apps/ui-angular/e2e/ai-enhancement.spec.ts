@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL, TEST_PROFILE_ID } from './support/constants';
 import { mockProfileApi } from './support/mocks/profile.mock';
-import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockOptimizeApi, mockOptimizeFailApi } from './support/mocks/ai.mock';
+import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockOptimizeApi, mockOptimizeFailApi, mockOptimizeUrlFetchErrorApi, mockChatApi, mockChatApiError, registerFakeChatWidget } from './support/mocks/ai.mock';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
@@ -160,6 +160,61 @@ test.describe('AI profile optimization', () => {
   });
 });
 
+// US-AI-5 — Job posting URL optimization
+test.describe('AI optimization with job posting URL', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
+    await mockProfileApi(page);
+    await page.goto(`/job-profiles/${PROFILE_ID}`);
+  });
+
+  test('accepts a job posting URL in the target role field', async ({ page }) => {
+    await mockOptimizeApi(page, PROFILE_ID);
+
+    await page.getByRole('button', { name: /Optimize with AI/ }).click();
+    await page.getByPlaceholder(/Senior React developer/).fill('https://jobs.example.com/senior-engineer-123');
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeEnabled();
+  });
+
+  test('shows API error message in the dialog when the job posting URL cannot be fetched', async ({ page }) => {
+    await mockOptimizeUrlFetchErrorApi(
+      page,
+      PROFILE_ID,
+      'Could not reach the job posting URL. Please check the link or paste the job description manually.',
+    );
+
+    await page.getByRole('button', { name: /Optimize with AI/ }).click();
+    await page.getByPlaceholder(/Senior React developer/).fill('https://unreachable.example.com/job');
+    await page.getByRole('button', { name: 'Apply' }).click();
+
+    await expect(
+      page.getByText('Could not reach the job posting URL. Please check the link or paste the job description manually.'),
+    ).toBeVisible();
+  });
+
+  test('dialog stays open after a URL fetch error so the user can correct input', async ({ page }) => {
+    await mockOptimizeUrlFetchErrorApi(page, PROFILE_ID, 'Could not reach the job posting URL.');
+
+    await page.getByRole('button', { name: /Optimize with AI/ }).click();
+    await page.getByPlaceholder(/Senior React developer/).fill('https://unreachable.example.com/job');
+    await page.getByRole('button', { name: 'Apply' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Optimize with AI' })).toBeVisible();
+  });
+
+  test('profile is unchanged after a URL fetch error', async ({ page }) => {
+    await mockOptimizeUrlFetchErrorApi(page, PROFILE_ID, 'Could not reach the job posting URL.');
+    const titleInput = page.getByPlaceholder('Senior Software Engineer');
+    const originalTitle = await titleInput.inputValue();
+
+    await page.getByRole('button', { name: /Optimize with AI/ }).click();
+    await page.getByPlaceholder(/Senior React developer/).fill('https://unreachable.example.com/job');
+    await page.getByRole('button', { name: 'Apply' }).click();
+
+    await expect(titleInput).toHaveValue(originalTitle);
+  });
+});
+
 // US-AI-2 — Rate limiting / service error
 test.describe('AI optimization error handling', () => {
   test('shows error when AI service returns 503', async ({ page }) => {
@@ -176,5 +231,57 @@ test.describe('AI optimization error handling', () => {
     await page.getByRole('button', { name: 'Apply' }).click();
 
     await expect(page.getByText('Failed to optimize profile. Please try again.')).toBeVisible();
+  });
+});
+
+// US-AI-4 — Conversational profile chat (web component)
+test.describe('Chat widget', () => {
+  test.beforeEach(async ({ page }) => {
+    await registerFakeChatWidget(page);
+    await setupAuth(page);
+    await mockProfileApi(page);
+    await page.goto(`/job-profiles/${PROFILE_ID}`);
+  });
+
+  test('shows Chat button on the profile page', async ({ page }) => {
+    await expect(
+      page.getByRole('button', { name: /Chat/i }).or(page.getByRole('link', { name: /Chat/i }))
+    ).toBeVisible();
+  });
+
+  test('opens chat panel containing the widget when Chat button is clicked', async ({ page }) => {
+    await page.getByRole('button', { name: /Chat/i }).click();
+    await expect(page.locator('ai-chat-widget')).toBeVisible();
+  });
+
+  test('passes correct profile-id attribute to the widget', async ({ page }) => {
+    await page.getByRole('button', { name: /Chat/i }).click();
+    await expect(page.locator('ai-chat-widget')).toHaveAttribute('profile-id', PROFILE_ID);
+  });
+
+  test('passes auth-token attribute to the widget', async ({ page }) => {
+    await page.getByRole('button', { name: /Chat/i }).click();
+    await expect(page.locator('ai-chat-widget')).toHaveAttribute('auth-token', 'fake-test-token');
+  });
+
+  test('applies patch and saves profile when widget emits profile-change event', async ({ page }) => {
+    await page.getByRole('button', { name: /Chat/i }).click();
+    await page.locator('ai-chat-widget').waitFor({ state: 'visible' });
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) => req.url().includes(`/job-profiles/${PROFILE_ID}`) && req.method() === 'PUT'
+      ),
+      page.evaluate(() => {
+        document.querySelector('ai-chat-widget')?.dispatchEvent(
+          new CustomEvent('profile-change', {
+            detail: { patch: { skills: [{ name: 'Rust' }] } },
+            bubbles: true,
+          })
+        );
+      }),
+    ]);
+
+    expect(putRequest).not.toBeNull();
   });
 });

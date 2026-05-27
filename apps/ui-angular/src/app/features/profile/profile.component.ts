@@ -4,7 +4,7 @@ import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } fr
 import { finalize } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
+import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 import { ProfileService } from './profile.service';
 import { AuthService } from '../../auth/auth.service';
 import { ThemeService } from '../../core/theme.service';
@@ -43,8 +43,6 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly optimizing = signal(false);
 
   readonly sectionOrder = signal<string[]>(['workExperiences', 'educations', 'skills']);
-  readonly reorderOpen = signal(false);
-  readonly reorderDraft = signal<string[]>([]);
 
   private readonly sectionLabels: Record<string, string> = {
     workExperiences: 'Work Experience',
@@ -174,24 +172,14 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   openOptimizeDialog() {
-    this.dialogs.openOptimize().subscribe(message => {
-      if (!message) return;
-      this.optimizing.set(true);
-      this.profileService.optimizeProfile(this.profileId, message).subscribe({
-        next: (result) => {
-          this.form.patchValue({ title: result.title, overview: result.overview });
-          this.workExperiences.clear();
-          result.workExperiences.forEach((w) => this.workExperiences.push(this.createWorkExperienceGroup(w)));
-          this.skills.clear();
-          result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
-          this.optimizing.set(false);
-          this.notify.success('Profile optimized! Review the changes and save when ready.');
-        },
-        error: () => {
-          this.optimizing.set(false);
-          this.notify.error('Failed to optimize profile. Please try again.');
-        },
-      });
+    this.dialogs.openOptimize(this.profileId).subscribe(result => {
+      if (!result) return;
+      this.form.patchValue({ title: result.title, overview: result.overview });
+      this.workExperiences.clear();
+      result.workExperiences.forEach((w) => this.workExperiences.push(this.createWorkExperienceGroup(w)));
+      this.skills.clear();
+      result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
+      this.notify.success('Profile optimized! Review the changes and save when ready.');
     });
   }
 

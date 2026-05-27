@@ -1,40 +1,43 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+_SHORT = 200    # names, titles, company names, roles
+_LONG = 5_000   # free-text fields: overview, job descriptions
 
 
 class WorkExperienceInput(BaseModel):
     id: Optional[str] = None
-    company: str
-    role: str
+    company: Annotated[str, Field(max_length=_SHORT)]
+    role: Annotated[str, Field(max_length=_SHORT)]
     startDate: str
     endDate: Optional[str] = None
-    description: str
+    description: Annotated[str, Field(max_length=_LONG)]
 
 
 class EducationInput(BaseModel):
     id: Optional[str] = None
-    institution: str
-    degree: str
-    field: str
+    institution: Annotated[str, Field(max_length=_SHORT)]
+    degree: Annotated[str, Field(max_length=_SHORT)]
+    field: Annotated[str, Field(max_length=_SHORT)]
     startYear: int
     endYear: Optional[int] = None
 
 
 class SkillInput(BaseModel):
     id: Optional[str] = None
-    name: str
+    name: Annotated[str, Field(max_length=_SHORT)]
     level: Optional[str] = None
 
 
 class ProfileInput(BaseModel):
-    fullName: str
-    title: str
-    overview: str
-    location: str | None = None
+    fullName: Annotated[str, Field(max_length=_SHORT)]
+    title: Annotated[str, Field(max_length=_SHORT)]
+    overview: Annotated[str, Field(max_length=_LONG)]
+    location: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
     workExperiences: list[WorkExperienceInput] = []
     educations: list[EducationInput] = []
     skills: list[SkillInput] = []

@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import llm_service_pb2 as llm__service__pb2
+import llm_service_pb2 as llm__service__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -54,6 +54,16 @@ class LlmServiceStub(object):
                 request_serializer=llm__service__pb2.EnhanceFieldRequest.SerializeToString,
                 response_deserializer=llm__service__pb2.EnhanceFieldResponse.FromString,
                 _registered_method=True)
+        self.Chat = channel.unary_unary(
+                '/llm.LlmService/Chat',
+                request_serializer=llm__service__pb2.ChatRequest.SerializeToString,
+                response_deserializer=llm__service__pb2.ChatResponse.FromString,
+                _registered_method=True)
+        self.UserChat = channel.unary_unary(
+                '/llm.LlmService/UserChat',
+                request_serializer=llm__service__pb2.UserChatRequest.SerializeToString,
+                response_deserializer=llm__service__pb2.UserChatResponse.FromString,
+                _registered_method=True)
         self.Health = channel.unary_unary(
                 '/llm.LlmService/Health',
                 request_serializer=llm__service__pb2.HealthRequest.SerializeToString,
@@ -88,6 +98,18 @@ class LlmServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Chat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UserChat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def Health(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -116,6 +138,16 @@ def add_LlmServiceServicer_to_server(servicer, server):
                     servicer.EnhanceField,
                     request_deserializer=llm__service__pb2.EnhanceFieldRequest.FromString,
                     response_serializer=llm__service__pb2.EnhanceFieldResponse.SerializeToString,
+            ),
+            'Chat': grpc.unary_unary_rpc_method_handler(
+                    servicer.Chat,
+                    request_deserializer=llm__service__pb2.ChatRequest.FromString,
+                    response_serializer=llm__service__pb2.ChatResponse.SerializeToString,
+            ),
+            'UserChat': grpc.unary_unary_rpc_method_handler(
+                    servicer.UserChat,
+                    request_deserializer=llm__service__pb2.UserChatRequest.FromString,
+                    response_serializer=llm__service__pb2.UserChatResponse.SerializeToString,
             ),
             'Health': grpc.unary_unary_rpc_method_handler(
                     servicer.Health,
@@ -231,6 +263,60 @@ class LlmService(object):
             '/llm.LlmService/EnhanceField',
             llm__service__pb2.EnhanceFieldRequest.SerializeToString,
             llm__service__pb2.EnhanceFieldResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Chat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.LlmService/Chat',
+            llm__service__pb2.ChatRequest.SerializeToString,
+            llm__service__pb2.ChatResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UserChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.LlmService/UserChat',
+            llm__service__pb2.UserChatRequest.SerializeToString,
+            llm__service__pb2.UserChatResponse.FromString,
             options,
             channel_credentials,
             insecure,

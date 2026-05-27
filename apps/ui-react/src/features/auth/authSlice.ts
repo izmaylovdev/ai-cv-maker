@@ -1,73 +1,57 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
-
+import {
+  AuthRequest,
+  AuthResponse,
+  clearSession,
+  getSession,
+  googleLoginApi,
+  loginApi,
+  registerApi,
+  saveSession,
+} from '@ai-cv-maker/auth';
 import { environment } from '../../environments/environment';
-import type { AuthRequest, AuthResponse } from '../../shared/models/auth.model';
 
-const TOKEN_KEY = 'cv_token';
-const EMAIL_KEY = 'cv_email';
-
-const AUTH_BASE = `${environment.apiUrl}/auth`;
+const API = environment.apiUrl;
 
 export type AuthState = {
   token: string | null;
   email: string;
 };
 
-function readStorage(): AuthState {
-  return {
-    token: localStorage.getItem(TOKEN_KEY),
-    email: localStorage.getItem(EMAIL_KEY) ?? '',
-  };
-}
+const initialState: AuthState = getSession();
 
-function persistSession(token: string, email: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(EMAIL_KEY, email);
-}
+export const login = createAsyncThunk<AuthResponse, AuthRequest, { rejectValue: number }>(
+  'auth/login',
+  async (body, { rejectWithValue }) => {
+    try {
+      return await loginApi(body, API);
+    } catch (e) {
+      return rejectWithValue((e as Error & { status?: number }).status ?? 0);
+    }
+  }
+);
 
-const initialState: AuthState = readStorage();
+export const register = createAsyncThunk<AuthResponse, AuthRequest, { rejectValue: number }>(
+  'auth/register',
+  async (body, { rejectWithValue }) => {
+    try {
+      return await registerApi(body, API);
+    } catch (e) {
+      return rejectWithValue((e as Error & { status?: number }).status ?? 0);
+    }
+  }
+);
 
-export const login = createAsyncThunk<
-  AuthResponse,
-  AuthRequest,
-  { rejectValue: number }
->('auth/login', async (body, { rejectWithValue }) => {
-  const res = await fetch(`${AUTH_BASE}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return rejectWithValue(res.status);
-  return res.json() as Promise<AuthResponse>;
-});
-
-export const register = createAsyncThunk<
-  AuthResponse,
-  AuthRequest,
-  { rejectValue: number }
->('auth/register', async (body, { rejectWithValue }) => {
-  const res = await fetch(`${AUTH_BASE}/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return rejectWithValue(res.status);
-  return res.json() as Promise<AuthResponse>;
-});
-
-export const googleLogin = createAsyncThunk<
-  AuthResponse,
-  string,
-  { rejectValue: void }
->('auth/google', async (credential, { rejectWithValue }) => {
-  const res = await fetch(`${AUTH_BASE}/google`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential }),
-  });
-  if (!res.ok) return rejectWithValue(undefined);
-  return res.json() as Promise<AuthResponse>;
-});
+export const googleLogin = createAsyncThunk<AuthResponse, string, { rejectValue: void }>(
+  'auth/google',
+  async (credential, { rejectWithValue }) => {
+    try {
+      return await googleLoginApi(credential, API);
+    } catch {
+      return rejectWithValue(undefined);
+    }
+  }
+);
 
 const authSlice = createSlice({
   name: 'auth',
@@ -76,26 +60,25 @@ const authSlice = createSlice({
     logout(state) {
       state.token = null;
       state.email = '';
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(EMAIL_KEY);
+      clearSession();
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(login.fulfilled, (state, action) => {
-        state.token = action.payload.token;
-        state.email = action.payload.email;
-        persistSession(action.payload.token, action.payload.email);
+      .addCase(login.fulfilled, (state, { payload }) => {
+        state.token = payload.token;
+        state.email = payload.email;
+        saveSession(payload.token, payload.email);
       })
-      .addCase(register.fulfilled, (state, action) => {
-        state.token = action.payload.token;
-        state.email = action.payload.email;
-        persistSession(action.payload.token, action.payload.email);
+      .addCase(register.fulfilled, (state, { payload }) => {
+        state.token = payload.token;
+        state.email = payload.email;
+        saveSession(payload.token, payload.email);
       })
-      .addCase(googleLogin.fulfilled, (state, action) => {
-        state.token = action.payload.token;
-        state.email = action.payload.email;
-        persistSession(action.payload.token, action.payload.email);
+      .addCase(googleLogin.fulfilled, (state, { payload }) => {
+        state.token = payload.token;
+        state.email = payload.email;
+        saveSession(payload.token, payload.email);
       });
   },
 });

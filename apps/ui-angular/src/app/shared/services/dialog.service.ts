@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { GenerateCvDialogComponent } from '../dialogs/generate-cv-dialog.component';
 import { OptimizeDialogComponent } from '../dialogs/optimize-dialog.component';
 import { ReorderDialogComponent } from '../dialogs/reorder-dialog.component';
+import { OptimizeProfileResponse } from '../../features/profile/profile.service';
 
 @Injectable({ providedIn: 'root' })
 export class DialogService {
@@ -15,9 +16,10 @@ export class DialogService {
     }).closed;
   }
 
-  openOptimize(): Observable<string | undefined> {
-    return this.dialog.open<string>(OptimizeDialogComponent, {
+  openOptimize(profileId: string): Observable<OptimizeProfileResponse | undefined> {
+    return this.dialog.open<OptimizeProfileResponse, { profileId: string }>(OptimizeDialogComponent, {
       backdropClass: 'dialog-backdrop',
+      data: { profileId },
     }).closed;
   }
 

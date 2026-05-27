@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "../../dist/apps/chat-ui"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

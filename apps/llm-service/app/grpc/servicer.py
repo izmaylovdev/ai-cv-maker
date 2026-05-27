@@ -1,13 +1,24 @@
 import grpc
+from pydantic import ValidationError
 
+from app.chains.chat_chain import ChatMessage, chat_reply
+from app.chains.user_chat_chain import (
+    ChatMessage as UserChatMessage,
+    ProfileSummary,
+    user_chat_reply,
+)
 from app.chains.cv_chain import enhance_field, extract_profile, generate_cv, optimize_profile
+from app.preprocessing.link_enricher import LinkFetchError
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
+from app.guards import InputTooLongError, InvalidInputError
 from app.schemas import (
     EducationInput,
     ProfileInput,
     SkillInput,
     WorkExperienceInput,
 )
+
+_INVALID_ARG_EXCEPTIONS = (ValidationError, InputTooLongError, InvalidInputError, LinkFetchError)
 
 
 def _proto_to_profile(proto) -> ProfileInput:
@@ -73,6 +84,8 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 skills=result.skills,
                 highlights=result.highlights,
             )
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
@@ -98,6 +111,8 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                     for s in result.skills
                 ],
             )
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
@@ -136,6 +151,8 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                     for s in result.skills
                 ],
             )
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
@@ -143,6 +160,43 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
         try:
             enhanced = await enhance_field(request.content, request.field_purpose)
             return llm_service_pb2.EnhanceFieldResponse(enhanced=enhanced)
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def Chat(self, request, context):
+        try:
+            profile = _proto_to_profile(request.profile)
+            history = [ChatMessage(role=m.role, content=m.content) for m in request.history]
+            result = await chat_reply(profile, request.message, history)
+            proposal = llm_service_pb2.ChatProposal(
+                type=result.proposal.type,
+                description=result.proposal.description,
+                patch_json=result.proposal.patch_json,
+            ) if result.proposal else llm_service_pb2.ChatProposal()
+            return llm_service_pb2.ChatResponse(reply=result.reply, proposal=proposal)
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def UserChat(self, request, context):
+        try:
+            profiles = [
+                ProfileSummary(
+                    name=p.name,
+                    title=p.title,
+                    overview=p.overview,
+                    skills=list(p.skills),
+                )
+                for p in request.profiles
+            ]
+            history = [UserChatMessage(role=m.role, content=m.content) for m in request.history]
+            result = await user_chat_reply(profiles, request.message, history)
+            return llm_service_pb2.UserChatResponse(reply=result.reply)
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 

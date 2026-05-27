@@ -6,4 +6,6 @@ public interface ILlmService
     Task<LlmOptimizeResponse> OptimizeAsync(LlmOptimizeRequest request);
     Task<LlmExtractResponse> ExtractAsync(LlmExtractRequest request);
     Task<LlmEnhanceFieldResponse> EnhanceFieldAsync(LlmEnhanceFieldRequest request);
+    Task<LlmChatResponse> ChatAsync(LlmChatRequest request);
+    Task<LlmUserChatResponse> UserChatAsync(LlmUserChatRequest request);
 }

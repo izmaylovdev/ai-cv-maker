@@ -67,3 +67,7 @@ __pycache__/
 *.egg-info/
 
 vite.config.*.timestamp*
+# LLM eval results
+apps/llm-service/evals/results/*.json
+
+vitest.config.*.timestamp*

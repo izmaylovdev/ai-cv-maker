@@ -6,12 +6,81 @@ AI CV Maker is a three-tier web application that lets users manage job profiles 
 
 ```
 Browser
-  └─ ui-angular (Angular SPA, served via Nginx)
+  ├─ ui-angular (Angular SPA)  ─┐
+  │    └─ <ai-chat-widget>       ├─ share @ai-cv-maker/auth
+  └─ ui-react  (React SPA)     ─┘
+       │
        └─ REST/HTTP ──→ cv-api (ASP.NET Core)
                              ├─ PostgreSQL (EF Core)
                              └─ gRPC ──→ llm-service (Python / FastAPI)
                                               └─ LLM provider (Google, OpenAI-compat, Azure Foundry)
+
+Nginx (ui-angular container)
+  ├─ /api/*          → cv-api
+  └─ /chat-widget/*  → chat-ui (Nginx serving chat-widget.js IIFE)
 ```
+
+---
+
+## Shared Libraries
+
+### `libs/auth` — `@ai-cv-maker/auth`
+
+Framework-agnostic TypeScript library shared by `ui-angular` and `ui-react`.
+
+| Module | Purpose |
+|---|---|
+| `models` | `AuthRequest`, `AuthResponse`, `AuthSession`, `JwtPayload` interfaces |
+| `constants` | `TOKEN_KEY` / `EMAIL_KEY` — single source of truth for localStorage keys |
+| `storage` | `getToken()`, `getSession()`, `saveSession()`, `clearSession()` |
+| `token` | `parseJwt()`, `isTokenExpired()`, `getTokenExpiry()` — client-side JWT decode |
+| `api` | `loginApi()`, `registerApi()`, `googleLoginApi()` — plain `fetch` wrappers |
+| `broadcast` | `createAuthBroadcast()` — cross-tab logout sync via `BroadcastChannel` |
+
+Import path: `@ai-cv-maker/auth` (path alias registered in `tsconfig.base.json`, picked up automatically by `nxViteTsPaths()` in Vite apps and the Angular compiler via tsconfig extends).
+
+See [`libs/auth/README.md`](libs/auth/README.md) for usage examples and design rationale.
+
+---
+
+## Authentication Flow
+
+```
+User submits credentials
+        │
+        ▼
+  loginApi() / registerApi() / googleLoginApi()   ← @ai-cv-maker/auth
+        │  POST /api/auth/{login|register|google}
+        ▼
+    cv-api validates → issues HS256 JWT (7-day expiry)
+        │
+        ▼
+  saveSession(token, email)   ← @ai-cv-maker/auth
+  writes to localStorage['cv_token'] + ['cv_email']
+        │
+        ├─ ui-angular: AuthService.isLoggedIn signal → authGuard allows routing
+        │               apiInterceptor reads getToken() → adds Authorization header
+        │
+        └─ ui-react:   Redux authSlice.token → ProtectedRoute allows routing
+                        each API call reads token from store
+
+On logout:
+  clearSession() → broadcast.notifyLogout() → all same-origin tabs dispatch logout
+```
+
+**Token storage:** localStorage (same key in both apps, same origin in production).  
+**Transport:** `Authorization: Bearer <token>` header on every API request.  
+**Expiry:** 7-day flat JWT, no refresh mechanism. The `isTokenExpired()` utility
+checks the `exp` claim with a 30-second buffer to detect stale sessions before
+making API calls.
+
+**Known limitations / upgrade path:**
+- Tokens cannot be revoked before expiry (no blocklist). Mitigation: shorten
+  expiry + implement refresh tokens with HttpOnly cookie.
+- `localStorage` is readable by JS — XSS can steal the token. Mitigation:
+  Content-Security-Policy, framework sanitisation. Long-term: migrate to
+  HttpOnly cookies set by `cv-api`.
+- CORS is currently `AllowAnyOrigin`. Should be locked to known front-end origins.
 
 ---
 
@@ -34,6 +103,81 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 - Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`)
 - Live profile preview (`ProfilePreviewComponent`)
 - Theme service (dark/light)
+
+---
+
+### `apps/chat-ui` — AI Chat Widget (React Web Component)
+
+A self-contained React chat interface packaged as a [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<ai-chat-widget>`). It is **not a standalone SPA** — it is built as a single IIFE JavaScript file and embedded inside `ui-angular`.
+
+**Build output**
+
+Vite builds the entire app — React, CSS, and all — into one file:
+
+```
+dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~50 kB gzipped)
+```
+
+CSS is injected at runtime by `vite-plugin-css-injected-by-js`, so the single script file is fully standalone with no separate stylesheet.
+
+**How it is loaded**
+
+`ChatLoaderService` (in `ui-angular`) lazily injects a `<script>` tag into `<head>` the first time the Chat page is visited:
+
+```
+User navigates to /chat
+  → ChatLoaderService.load()
+  → <script src="/chat-widget/chat-widget.js"> injected into <head>
+  → customElements.whenDefined('ai-chat-widget') resolves
+  → ChatPageComponent renders <ai-chat-widget auth-token="…" api-base="…">
+```
+
+The promise is cached — subsequent navigations to the Chat page reuse the already-loaded element.
+
+**Auth**
+
+The widget has no auth of its own. `ChatPageComponent` passes the current JWT as an HTML attribute:
+
+```html
+<ai-chat-widget
+  auth-token="eyJ..."
+  api-base="https://…/api">
+</ai-chat-widget>
+```
+
+`ChatApp` reads `authToken` from the attribute and adds it as an `Authorization: Bearer` header on every `POST /api/chat` request. The token is sourced from `AuthService.getToken()` in Angular — which in turn reads from `@ai-cv-maker/auth`'s `getToken()`.
+
+**API**
+
+| Method | Endpoint | Body | Purpose |
+|---|---|---|---|
+| `POST` | `/api/chat` | `{ message, history[] }` | Send a message; receive `{ reply }` |
+
+`history` is the in-memory conversation array (filtered to `user`/`assistant` roles), sent with every request so `cv-api` can forward full context to the LLM.
+
+**Components**
+
+| Component | File | Role |
+|---|---|---|
+| `ChatApp` | `src/ChatApp.tsx` | Root — owns message state, calls the API, renders the layout |
+| `MessageList` | `src/components/MessageList.tsx` | Renders the conversation; shows an empty-state prompt when no messages exist |
+| `MessageInput` | `src/components/MessageInput.tsx` | Textarea + Send button; `Enter` submits, `Shift+Enter` inserts a newline |
+
+**Local development**
+
+```sh
+npx nx dev chat-ui   # starts Vite dev server on port 4202
+```
+
+A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.
+
+**Deployment**
+
+The widget is served from its own Nginx Docker container. Angular's Nginx proxies `/chat-widget/*` to this container via `CHAT_UI_UPSTREAM`:
+
+```
+Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widget.js
+```
 
 ---
 
@@ -140,7 +284,8 @@ Managed by Terraform in `infra/`. All three services run as **Azure Container Ap
 |---|---|---|---|
 | `llm-service` | 0–2 | Internal, HTTP/2 (gRPC), port 50051 | Scale-to-zero enabled |
 | `cv-api` | 1–2 | External HTTPS, port 8080 | Always-on |
-| `ui-angular` | 0–2 | External HTTPS, port 80 | Scale-to-zero; injects `CV_API_UPSTREAM` via `envsubst` |
+| `chat-ui` | 0–2 | Internal, HTTP, port 80 | Scale-to-zero; serves `chat-widget.js` IIFE; reachable only via `ui-angular` Nginx proxy |
+| `ui-angular` | 0–2 | External HTTPS, port 80 | Scale-to-zero; injects `CV_API_UPSTREAM` + `CHAT_UI_UPSTREAM` via `envsubst` |
 
 Database: **Azure Database for PostgreSQL Flexible Server** (SSL required).  
 Images: stored in an **Azure Container Registry**.

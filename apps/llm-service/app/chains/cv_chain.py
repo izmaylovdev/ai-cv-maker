@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
 from app import settings as app_settings
+from app.guards import guard_cv_text, guard_free_text
 from app.schemas import (
     ExtractResponse,
     GenerateResponse,
@@ -147,7 +148,7 @@ def _build_foundry_client() -> AsyncAnthropicFoundry:
     )
 
 
-async def _generate_cv_foundry(inputs: dict[str, str]) -> GenerateResponse:
+async def _generate_cv_foundry_raw(inputs: dict[str, str]):
     model = app_settings.foundry_model()
     if not model:
         raise ValueError(
@@ -163,7 +164,12 @@ async def _generate_cv_foundry(inputs: dict[str, str]) -> GenerateResponse:
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_generate_response_json(_anthropic_text_content(message))
+    return _parse_generate_response_json(_anthropic_text_content(message)), message.usage
+
+
+async def _generate_cv_foundry(inputs: dict[str, str]) -> GenerateResponse:
+    result, _ = await _generate_cv_foundry_raw(inputs)
+    return result
 
 
 def _build_llm() -> BaseChatModel:
@@ -286,7 +292,7 @@ def _parse_optimize_response_json(text: str) -> OptimizeResponse:
         raise ValueError(f"Model did not return valid optimize JSON: {exc}\n---\n{snippet}") from exc
 
 
-async def _optimize_profile_foundry(inputs: dict[str, str]) -> OptimizeResponse:
+async def _optimize_profile_foundry_raw(inputs: dict[str, str]):
     model = app_settings.foundry_model()
     if not model:
         raise ValueError(
@@ -301,7 +307,12 @@ async def _optimize_profile_foundry(inputs: dict[str, str]) -> OptimizeResponse:
         system=_OPTIMIZE_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_optimize_response_json(_anthropic_text_content(message))
+    return _parse_optimize_response_json(_anthropic_text_content(message)), message.usage
+
+
+async def _optimize_profile_foundry(inputs: dict[str, str]) -> OptimizeResponse:
+    result, _ = await _optimize_profile_foundry_raw(inputs)
+    return result
 
 
 def build_optimize_chain():
@@ -314,7 +325,9 @@ def build_optimize_chain():
 
 
 async def optimize_profile(profile: ProfileInput, message: str) -> OptimizeResponse:
-    inputs = _build_optimize_inputs(profile, message)
+    from app.preprocessing.link_enricher import enrich
+    enriched = await enrich(message)
+    inputs = _build_optimize_inputs(profile, enriched.text)
     provider = app_settings.llm_provider()
 
     if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
@@ -349,7 +362,9 @@ Return only the improved text, nothing else.
 """
 
 
-async def _enhance_field_foundry(content: str, field_purpose: str) -> str:
+async def _enhance_field_foundry_raw(content: str, field_purpose: str):
+    guard_free_text(content, "content")
+    guard_free_text(field_purpose, "field_purpose")
     model = app_settings.foundry_model()
     if not model:
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
@@ -362,7 +377,12 @@ async def _enhance_field_foundry(content: str, field_purpose: str) -> str:
         system=_ENHANCE_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _anthropic_text_content(message).strip()
+    return _anthropic_text_content(message).strip(), message.usage
+
+
+async def _enhance_field_foundry(content: str, field_purpose: str) -> str:
+    result, _ = await _enhance_field_foundry_raw(content, field_purpose)
+    return result
 
 
 async def enhance_field(content: str, field_purpose: str) -> str:
@@ -421,7 +441,8 @@ def _parse_extract_response_json(text: str) -> ExtractResponse:
         raise ValueError(f"Model did not return valid extract JSON: {exc}\n---\n{snippet}") from exc
 
 
-async def _extract_profile_foundry(cv_text: str) -> ExtractResponse:
+async def _extract_profile_foundry_raw(cv_text: str):
+    guard_cv_text(cv_text)
     model = app_settings.foundry_model()
     if not model:
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
@@ -434,7 +455,12 @@ async def _extract_profile_foundry(cv_text: str) -> ExtractResponse:
         system=_EXTRACT_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_extract_response_json(_anthropic_text_content(message))
+    return _parse_extract_response_json(_anthropic_text_content(message)), message.usage
+
+
+async def _extract_profile_foundry(cv_text: str) -> ExtractResponse:
+    result, _ = await _extract_profile_foundry_raw(cv_text)
+    return result
 
 
 def build_extract_chain():

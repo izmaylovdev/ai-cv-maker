@@ -1,0 +1,16 @@
+{
+  "content": "i work at stripe and build payment stuff. we process lots of money daily and i help the team.",
+  "field_purpose": "Work experience description for a Senior Software Engineer role",
+  "query": "Work experience description for Stripe Senior Software Engineer"
+}
+{
+  "content": "backend developer. know python and go. worked on databases before.",
+  "field_purpose": "Professional Overview / Summary for a CV. This is the main introduction paragraph that appears at the top of the CV.",
+  "query": "Professional summary for backend developer"
+}
+{"content": "Led a team that redesigned the onboarding. users liked it better and more people finished setup.", "field_purpose": "Work experience description for a Senior Product Designer role at Notion", "query": "Work experience description for Notion product designer"}
+{"content": "i studied machine learning at oxford and did research stuff", "field_purpose": "Education description for a Ph.D. in Machine Learning", "query": "Education description for Oxford ML PhD"}
+{"content": "Was responsible for managing 8 engineers. I did code reviews and also the team shipped 3 major features. Sprint planning was handled by me.", "field_purpose": "Work experience description for an Engineering Manager role", "query": "Engineering manager experience with mixed passive voice and first-person — needs consistent active-voice rewrite"}
+{"content": "sales. quota. customers. revenue. growth.", "field_purpose": "Work experience description for a Senior Account Executive at a B2B SaaS company", "query": "Extremely sparse account executive experience that needs full expansion from near-nothing"}
+{"content": "Leverage synergies across cross-functional stakeholder alignment to drive impactful deliverables utilizing best-in-class methodologies for holistic value creation in an agile environment.", "field_purpose": "Professional Overview for a Senior Project Manager", "query": "Corporate jargon-heavy summary that must be made concrete — no vague buzzwords in output"}
+{"content": "helped customers and fixed bugs. also wrote some docs.", "field_purpose": "Work experience description for a Customer Success Engineer role", "query": "Work experience description for customer success engineer"}

@@ -1,9 +1,2 @@
-export interface AuthRequest {
-  email: string;
-  password: string;
-}
-
-export interface AuthResponse {
-  token: string;
-  email: string;
-}
+// Re-export shared types so existing imports keep working
+export type { AuthRequest, AuthResponse } from '@ai-cv-maker/auth';

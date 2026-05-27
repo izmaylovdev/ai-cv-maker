@@ -52,3 +52,37 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 **Acceptance criteria:**
 - The review step shows both the original and AI-suggested versions side-by-side or sequentially.
 - Discarding reverts the field to its pre-optimization state with no data loss.
+
+---
+
+### US-AI-4 — Chat with AI to edit profile and ask questions
+
+**As a** user managing my CV profile,
+**I want to** open a chat interface where I can ask questions about my profile and instruct the AI to make edits through natural conversation,
+**so that** I can refine my profile quickly without navigating individual form fields.
+
+**Acceptance criteria:**
+- A dedicated "Chat" page is accessible from the main navigation.
+- I can send free-text messages to an AI assistant.
+- The AI can answer questions about my profile (e.g., "What skills do I have listed?", "How many years of experience do I have?").
+- I can instruct the AI to edit my profile through natural language (e.g., "Add Python to my skills", "Update my summary to mention leadership experience").
+- The AI proposes each change before applying it; I confirm or reject.
+- Applied changes are immediately reflected in my profile and persisted.
+- The chat history is shown in the current session (scrollable, most recent at bottom).
+- A loading indicator appears while the AI is responding.
+- If the request fails, an error message is shown in the chat and the profile is unchanged.
+
+---
+
+### US-AI-5 — Optimize profile for a specific job posting via URL
+
+**As a** job seeker who has found a specific job posting I want to apply for,
+**I want to** paste the URL of the job posting into the optimize prompt and have the AI fetch and use the actual job description for optimization,
+**so that** my CV is tailored precisely to that vacancy rather than a generic role description I type by hand.
+
+**Acceptance criteria:**
+- The user types or pastes their target into the existing free-text field in the "Optimize with AI" dialog — either a plain role description (e.g. "Senior React developer at a fintech startup") or a job posting URL.
+- The LLM inspects the input: if it contains a URL, it calls a fetch tool to retrieve the page and extract the job description before running optimization.
+- The AI uses the extracted job description (title, responsibilities, required skills) as the optimization target.
+- If the fetch fails or the page contains no recognizable job content, the AI proceeds using the raw input text as the role description.
+- The rest of the optimization review flow (suggestions, accept/discard) is unchanged.

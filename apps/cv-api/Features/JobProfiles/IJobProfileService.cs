@@ -12,4 +12,5 @@ public interface IJobProfileService
     Task<bool> DeleteAsync(Guid id, Guid userId);
     Task<OptimizeProfileResponse?> OptimizeAsync(Guid id, Guid userId, OptimizeProfileRequest request);
     Task<UpdateProfileRequest?> ExtractAsync(Guid id, Guid userId, IFormFile file);
+    Task<ChatResponse?> ChatAsync(Guid id, Guid userId, ChatRequest request);
 }

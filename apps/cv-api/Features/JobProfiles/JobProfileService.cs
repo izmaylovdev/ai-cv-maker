@@ -214,6 +214,44 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
         );
     }
 
+    public async Task<ChatResponse?> ChatAsync(Guid id, Guid userId, ChatRequest request)
+    {
+        var profile = await db.Profiles
+            .Include(p => p.WorkExperiences)
+            .Include(p => p.Educations)
+            .Include(p => p.Skills)
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+
+        if (profile is null) return null;
+
+        var llmRequest = new LlmChatRequest(
+            new LlmProfileRequest(
+                profile.FullName,
+                profile.Title,
+                profile.Overview,
+                profile.Location,
+                profile.WorkExperiences
+                    .OrderByDescending(w => w.StartDate)
+                    .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
+                    .ToList(),
+                profile.Educations
+                    .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
+                    .ToList(),
+                profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
+            ),
+            request.Message,
+            (request.History ?? []).Select(h => new LlmChatMessage(h.Role, h.Content)).ToList()
+        );
+
+        var llmResponse = await llmService.ChatAsync(llmRequest);
+
+        ChatProposalDto? proposal = null;
+        if (llmResponse.Proposal is not null)
+            proposal = new ChatProposalDto(llmResponse.Proposal.Type, llmResponse.Proposal.Description, llmResponse.Proposal.PatchJson);
+
+        return new ChatResponse(llmResponse.Reply, proposal);
+    }
+
     private static ProfileDto MapToDto(Profile profile) => new(
         profile.Id,
         profile.Name,

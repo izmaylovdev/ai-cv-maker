@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Widget Dev</title>
+    <style>
+      body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: sans-serif; }
+      h3 { margin: 8px 16px; font-size: 13px; color: #888; }
+      ai-chat-widget { flex: 1; display: block; min-height: 0; }
+    </style>
+  </head>
+  <body>
+    <h3>Chat Widget — standalone dev preview (api-base proxied to localhost:5050)</h3>
+    <script type="module" src="/src/main.tsx"></script>
+    <ai-chat-widget
+      api-base="http://localhost:5050/api"
+      auth-token="dev-token">
+    </ai-chat-widget>
+  </body>
+</html>

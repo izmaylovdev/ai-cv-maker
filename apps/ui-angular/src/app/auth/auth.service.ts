@@ -1,56 +1,88 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { tap } from 'rxjs';
+import { from } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import {
+  AuthBroadcast,
+  AuthRequest,
+  clearSession,
+  createAuthBroadcast,
+  getToken,
+  googleLoginApi,
+  isTokenExpired,
+  loginApi,
+  registerApi,
+  saveSession,
+} from '@ai-cv-maker/auth';
 import { environment } from '../../environments/environment';
-import { AuthRequest, AuthResponse } from './auth.model';
 
-const TOKEN_KEY = 'cv_token';
-const EMAIL_KEY = 'cv_email';
-const API = `${environment.apiUrl}/auth`;
+const API = environment.apiUrl;
 
 @Injectable({ providedIn: 'root' })
-export class AuthService {
-  private http = inject(HttpClient);
+export class AuthService implements OnDestroy {
   private router = inject(Router);
+  // HttpClient kept for any Angular-specific needs (interceptors, progress events)
+  // Raw API calls go through the shared lib so both apps use identical logic
+  private _http = inject(HttpClient);
 
-  readonly isLoggedIn = signal(!!localStorage.getItem(TOKEN_KEY));
-  readonly currentEmail = signal(localStorage.getItem(EMAIL_KEY) ?? '');
+  private broadcast: AuthBroadcast = createAuthBroadcast();
+  private unsubLogout: () => void;
 
-  register(request: AuthRequest) {
-    return this.http.post<AuthResponse>(`${API}/register`, request).pipe(
-      tap((res) => this.storeSession(res))
-    );
+  readonly isLoggedIn = signal(!isTokenExpired(getToken()));
+  readonly currentEmail = signal(
+    typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('cv_email') ?? '')
+      : ''
+  );
+
+  constructor() {
+    // Sync logout across tabs (e.g. user logs out in the React app)
+    this.unsubLogout = this.broadcast.onLogout(() => this._applyLogout(false));
+  }
+
+  ngOnDestroy() {
+    this.unsubLogout();
+    this.broadcast.destroy();
   }
 
   login(request: AuthRequest) {
-    return this.http.post<AuthResponse>(`${API}/login`, request).pipe(
-      tap((res) => this.storeSession(res))
+    return from(loginApi(request, API)).pipe(
+      tap((res) => this._storeSession(res.token, res.email))
+    );
+  }
+
+  register(request: AuthRequest) {
+    return from(registerApi(request, API)).pipe(
+      tap((res) => this._storeSession(res.token, res.email))
     );
   }
 
   googleLogin(credential: string) {
-    return this.http.post<AuthResponse>(`${API}/google`, { credential }).pipe(
-      tap((res) => this.storeSession(res))
+    return from(googleLoginApi(credential, API)).pipe(
+      tap((res) => this._storeSession(res.token, res.email))
     );
   }
 
   logout() {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EMAIL_KEY);
-    this.isLoggedIn.set(false);
-    this.currentEmail.set('');
-    this.router.navigate(['/auth/login']);
+    this.broadcast.notifyLogout(); // tell other tabs first
+    this._applyLogout(true);
   }
 
   getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+    return getToken();
   }
 
-  private storeSession(res: AuthResponse) {
-    localStorage.setItem(TOKEN_KEY, res.token);
-    localStorage.setItem(EMAIL_KEY, res.email);
+  private _storeSession(token: string, email: string) {
+    saveSession(token, email);
     this.isLoggedIn.set(true);
-    this.currentEmail.set(res.email);
+    this.currentEmail.set(email);
+  }
+
+  private _applyLogout(navigate: boolean) {
+    clearSession();
+    this.isLoggedIn.set(false);
+    this.currentEmail.set('');
+    if (navigate) this.router.navigate(['/auth/login']);
   }
 }

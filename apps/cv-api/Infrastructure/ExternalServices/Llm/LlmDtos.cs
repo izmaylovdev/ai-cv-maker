@@ -59,3 +59,12 @@ public record LlmExtractResponse(
 
 public record LlmEnhanceFieldRequest(string Content, string FieldPurpose);
 public record LlmEnhanceFieldResponse(string Enhanced);
+
+public record LlmChatMessage(string Role, string Content);
+public record LlmChatRequest(LlmProfileRequest Profile, string Message, List<LlmChatMessage> History);
+public record LlmChatProposal(string Type, string Description, string PatchJson);
+public record LlmChatResponse(string Reply, LlmChatProposal? Proposal);
+
+public record LlmProfileSummary(string Name, string Title, string Overview, List<string> Skills);
+public record LlmUserChatRequest(List<LlmProfileSummary> Profiles, string Message, List<LlmChatMessage> History);
+public record LlmUserChatResponse(string Reply);

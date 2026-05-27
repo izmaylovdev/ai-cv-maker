@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CvApi.Features.JobProfiles.Dtos;
+using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -52,6 +53,10 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         {
             result = await jobProfileService.OptimizeAsync(id, UserId, request);
         }
+        catch (RpcException ex) when (ex.StatusCode == global::Grpc.Core.StatusCode.InvalidArgument)
+        {
+            return UnprocessableEntity(new { error = ex.Status.Detail });
+        }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
             return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
@@ -59,6 +64,25 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         catch (HttpRequestException ex)
         {
             return StatusCode(502, $"Profile optimization failed: {ex.Message}");
+        }
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{id:guid}/chat")]
+    public async Task<ActionResult<ChatResponse>> Chat(Guid id, ChatRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest("Message is required.");
+
+        ChatResponse? result;
+        try
+        {
+            result = await jobProfileService.ChatAsync(id, UserId, request);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(502, $"Chat failed: {ex.Message}");
         }
 
         return result is null ? NotFound() : Ok(result);

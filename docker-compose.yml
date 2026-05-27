@@ -43,11 +43,21 @@ services:
     restart: unless-stopped
     environment:
       CV_API_UPSTREAM: http://cv-api:8080
-      NGINX_ENVSUBST_TEMPLATE_VARS: CV_API_UPSTREAM
+      CHAT_UI_UPSTREAM: http://chat-ui:80
+      NGINX_ENVSUBST_TEMPLATE_VARS: CV_API_UPSTREAM CHAT_UI_UPSTREAM
     ports:
       - "4200:80"
     depends_on:
       - cv-api
+      - chat-ui
+
+  chat-ui:
+    build:
+      context: .
+      dockerfile: apps/chat-ui/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4202:80"
 
   # LLM_PROVIDER=openai + OPENAI_BASE_URL=http://host.docker.internal:1234/v1 targets LM Studio on the host.
   # LLM_PROVIDER=foundry + FOUNDRY_API_KEY + FOUNDRY_BASE_URL (or FOUNDRY_DEPLOYMENT_NAME) + LLM_MODEL (see .env.example).

@@ -9,5 +9,5 @@ RUN NX_NO_CLOUD=true npx nx build ui-angular --configuration=production
 FROM nginx:alpine
 COPY --from=builder /app/dist/apps/ui-angular/browser /usr/share/nginx/html
 COPY apps/ui-angular/nginx.conf /etc/nginx/nginx.conf.template
-CMD ["/bin/sh", "-c", "envsubst '${CV_API_UPSTREAM}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '${CV_API_UPSTREAM} ${CHAT_UI_UPSTREAM}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
 EXPOSE 80

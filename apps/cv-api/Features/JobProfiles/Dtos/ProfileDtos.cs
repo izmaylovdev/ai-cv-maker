@@ -67,3 +67,8 @@ public record OptimizeProfileResponse(
 
 public record EnhanceFieldRequest(string Content, string FieldPurpose);
 public record EnhanceFieldResponse(string Enhanced);
+
+public record ChatMessageDto(string Role, string Content);
+public record ChatRequest(string Message, List<ChatMessageDto>? History = null);
+public record ChatProposalDto(string Type, string Description, string PatchJson);
+public record ChatResponse(string Reply, ChatProposalDto? Proposal);

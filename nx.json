@@ -105,6 +105,14 @@
         "targetName": "e2e",
         "ciTargetName": "e2e-ci"
       }
+    },
+    {
+      "plugin": "@nx/vitest",
+      "options": {
+        "testTargetName": "test",
+        "ciTargetName": "test-ci",
+        "testMode": "watch"
+      }
     }
   ]
 }

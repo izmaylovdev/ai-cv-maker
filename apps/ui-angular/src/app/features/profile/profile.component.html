@@ -45,7 +45,6 @@
               class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         <span class="material-icons text-base">picture_as_pdf</span><span class="hidden lg:inline"> PDF</span>
       </button>
-
       <!-- Mobile: three-dot menu -->
       <app-dropdown class="sm:hidden">
         <button dropdownTrigger type="button" title="More actions"
@@ -419,7 +418,7 @@
     </div><!-- end outer left column -->
 
     <!-- Right: live preview (hidden on mobile and tablet) -->
-    <div class="hidden lg:flex lg:sticky h-[calc(100vh-56px)] flex-col pb-6 top-14">
+    <div class="hidden lg:flex lg:sticky h-[calc(100vh-90px)] flex-col pb-6 top-14">
       <div #previewContainer
         class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden transition-colors flex-1 min-h-0 overflow-y-auto scrollbar-thin">
         <app-profile-preview [profile]="profilePreview" />
@@ -427,4 +426,5 @@
     </div>
 
   </div>
+
 }

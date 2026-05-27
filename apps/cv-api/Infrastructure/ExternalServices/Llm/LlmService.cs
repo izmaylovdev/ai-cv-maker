@@ -140,6 +140,82 @@ public class LlmService(CvApi.Grpc.LlmService.LlmServiceClient grpcClient, Trace
         }
     }
 
+    public async Task<LlmChatResponse> ChatAsync(LlmChatRequest request)
+    {
+        var sw = Stopwatch.StartNew();
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            var grpcRequest = new CvApi.Grpc.ChatRequest
+            {
+                Profile = MapProfile(request.Profile),
+                Message = request.Message,
+            };
+            grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
+            {
+                Role = h.Role,
+                Content = h.Content,
+            }));
+
+            var reply = await grpcClient.ChatAsync(grpcRequest);
+
+            AddSpan("LlmService/Chat", false, sw.ElapsedMilliseconds, startedAt);
+
+            LlmChatProposal? proposal = null;
+            if (!string.IsNullOrEmpty(reply.Proposal?.Type))
+            {
+                proposal = new LlmChatProposal(
+                    reply.Proposal.Type,
+                    reply.Proposal.Description,
+                    reply.Proposal.PatchJson
+                );
+            }
+
+            return new LlmChatResponse(reply.Reply, proposal);
+        }
+        catch
+        {
+            AddSpan("LlmService/Chat", true, sw.ElapsedMilliseconds, startedAt);
+            throw;
+        }
+    }
+
+    public async Task<LlmUserChatResponse> UserChatAsync(LlmUserChatRequest request)
+    {
+        var sw = Stopwatch.StartNew();
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            var grpcRequest = new CvApi.Grpc.UserChatRequest
+            {
+                Message = request.Message,
+            };
+            grpcRequest.Profiles.AddRange(request.Profiles.Select(p => new CvApi.Grpc.ProfileSummary
+            {
+                Name = p.Name,
+                Title = p.Title,
+                Overview = p.Overview,
+                Skills = { p.Skills },
+            }));
+            grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
+            {
+                Role = h.Role,
+                Content = h.Content,
+            }));
+
+            var reply = await grpcClient.UserChatAsync(grpcRequest);
+
+            AddSpan("LlmService/UserChat", false, sw.ElapsedMilliseconds, startedAt);
+
+            return new LlmUserChatResponse(reply.Reply);
+        }
+        catch
+        {
+            AddSpan("LlmService/UserChat", true, sw.ElapsedMilliseconds, startedAt);
+            throw;
+        }
+    }
+
     private static ProfileInput MapProfile(LlmProfileRequest p) => new()
     {
         FullName = p.FullName,
