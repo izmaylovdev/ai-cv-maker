@@ -104,7 +104,7 @@ function mountDevShell(config: DevShellConfig): void;
    - Right: auth section — login form (email + password + submit) or logged-in row (email span + "Log out" button).
 5. On mount, call `applyTheme(getTheme())` so the host page starts in the correct colour scheme.
 6. On login form submit: call `loginApi` from `@ai-cv-maker/auth`; on success call `saveSession` and set `auth-token` on the widget element; re-render auth section.
-7. On "Sign in with Google" click: initialise the Google Identity Services SDK (loaded lazily via script tag), trigger One-Tap / popup flow, call `googleLoginApi` from `@ai-cv-maker/auth` with the returned credential; on success call `saveSession` and set `auth-token` on the widget element. The Google Client ID is passed via `DevShellConfig.googleClientId`.
+7. On `renderAuth` (unauthenticated state): load the GIS SDK lazily via a `<script>` tag if `window.google` is not already present; once the SDK is available, call `accounts.id.initialize()` with the client ID and a credential callback, then `accounts.id.renderButton()` to render the official Google Sign-In button into a container `<div>`. On credential callback: call `googleLoginApi` from `@ai-cv-maker/auth`; on success call `saveSession` and set `auth-token` on the widget element. The Google Client ID is passed via `DevShellConfig.googleClientId`.
 8. On logout: call `clearSession`; remove `auth-token` attribute from widget element; re-render auth section.
 
 **Usage in `chat-ui` dev entry:**

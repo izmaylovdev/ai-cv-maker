@@ -166,7 +166,7 @@ The widget has no auth of its own. `ChatPageComponent` passes the current JWT as
 **Local development**
 
 ```sh
-npx nx dev chat-ui   # starts Vite dev server on port 4202
+npm run serve:chat   # starts Vite dev server on port 4202 (wraps npx nx run chat-ui:dev)
 ```
 
 A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.

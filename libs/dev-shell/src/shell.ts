@@ -8,7 +8,7 @@ type GoogleAccounts = {
   accounts: {
     id: {
       initialize(opts: { client_id: string; callback: (r: { credential: string }) => void }): void;
-      prompt(): void;
+      renderButton(parent: HTMLElement, opts: { theme: string; size: string }): void;
     };
   };
 };
@@ -80,39 +80,36 @@ function renderAuth(container: HTMLElement, config: DevShellConfig): void {
     }
   });
 
-  const googleBtn = document.createElement('button');
-  googleBtn.dataset['testid'] = 'google-signin';
-  googleBtn.type = 'button';
-  googleBtn.textContent = 'Sign in with Google';
-  googleBtn.addEventListener('click', () => {
-    const initGis = () => {
-      getGoogleAccounts()!.accounts.id.initialize({
-        client_id: config.googleClientId,
-        callback: async ({ credential }) => {
-          try {
-            const res = await googleLoginApi(credential, config.apiBase);
-            saveSession(res.token, res.email);
-            setWidgetToken(config.widgetSelector, res.token);
-            renderAuth(container, config);
-          } catch {
-            // errors visible in the console during dev
-          }
-        },
-      });
-      getGoogleAccounts()!.accounts.id.prompt();
-    };
+  const googleBtnContainer = document.createElement('div');
+  googleBtnContainer.dataset['testid'] = 'google-signin';
 
-    if (getGoogleAccounts()) {
-      initGis();
-    } else {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.onload = initGis;
-      document.head.appendChild(script);
-    }
-  });
+  const initGis = () => {
+    getGoogleAccounts()!.accounts.id.initialize({
+      client_id: config.googleClientId,
+      callback: async ({ credential }) => {
+        try {
+          const res = await googleLoginApi(credential, config.apiBase);
+          saveSession(res.token, res.email);
+          setWidgetToken(config.widgetSelector, res.token);
+          renderAuth(container, config);
+        } catch {
+          // errors visible in the console during dev
+        }
+      },
+    });
+    getGoogleAccounts()!.accounts.id.renderButton(googleBtnContainer, { theme: 'filled_blue', size: 'small' });
+  };
 
-  container.append(form, googleBtn);
+  if (getGoogleAccounts()) {
+    initGis();
+  } else {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.onload = initGis;
+    document.head.appendChild(script);
+  }
+
+  container.append(form, googleBtnContainer);
 }
 
 export function mountDevShell(config: DevShellConfig): void {
@@ -120,6 +117,7 @@ export function mountDevShell(config: DevShellConfig): void {
   style.textContent = BAR_STYLES;
   document.head.appendChild(style);
 
+  document.body.style.boxSizing = 'border-box';
   document.body.style.paddingTop = '40px';
 
   const bar = document.createElement('div');

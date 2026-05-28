@@ -8,6 +8,12 @@
   background: #fff;
 }
 
+.dark :host,
+.dark .chat-app {
+  color: #f4f4f5;
+  background: #18181b;
+}
+
 .chat-app {
   display: flex;
   flex-direction: column;
@@ -178,4 +184,65 @@
 .chat-input__send:disabled {
   background: #94a3b8;
   cursor: not-allowed;
+}
+
+/* Dark mode */
+.dark .chat-empty {
+  color: #71717a;
+}
+
+.dark .chat-message--assistant {
+  background: #27272a;
+  color: #f4f4f5;
+}
+
+.dark .chat-message--error {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.dark .chat-typing {
+  background: #27272a;
+}
+
+.dark .chat-typing span {
+  background: #71717a;
+}
+
+.dark .proposal-card {
+  background: #27272a;
+  border-color: #3f3f46;
+}
+
+.dark .proposal-card__description {
+  color: #a1a1aa;
+}
+
+.dark .proposal-card__btn--reject {
+  background: #3f3f46;
+  color: #d4d4d8;
+}
+
+.dark .proposal-card__btn--reject:hover {
+  background: #52525b;
+}
+
+.dark .chat-input {
+  background: #18181b;
+  border-top-color: #3f3f46;
+}
+
+.dark .chat-input__textarea {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #f4f4f5;
+}
+
+.dark .chat-input__textarea::placeholder {
+  color: #71717a;
+}
+
+.dark .chat-input__textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }

@@ -129,19 +129,18 @@ describe('mountDevShell', () => {
 
   // --- Google login ---
 
-  it('initialises GIS with googleClientId on Google button click', () => {
+  it('initialises GIS with googleClientId on mount when google is available', () => {
     let capturedClientId = '';
     vi.stubGlobal('google', {
       accounts: {
         id: {
           initialize: vi.fn((opts: { client_id: string }) => { capturedClientId = opts.client_id; }),
-          prompt: vi.fn(),
+          renderButton: vi.fn(),
         },
       },
     });
 
     mountDevShell(CONFIG);
-    document.querySelector<HTMLButtonElement>('[data-testid="google-signin"]')!.click();
 
     expect(capturedClientId).toBe('test-client-id');
     vi.unstubAllGlobals();
@@ -157,13 +156,12 @@ describe('mountDevShell', () => {
           initialize: vi.fn((opts: { callback: typeof credentialCallback }) => {
             credentialCallback = opts.callback;
           }),
-          prompt: vi.fn(),
+          renderButton: vi.fn(),
         },
       },
     });
 
     mountDevShell(CONFIG);
-    document.querySelector<HTMLButtonElement>('[data-testid="google-signin"]')!.click();
     credentialCallback({ credential: 'google-id-token' });
 
     await flushPromises();
