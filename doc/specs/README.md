@@ -13,6 +13,7 @@ Each spec covers: functional requirements (what the feature must do), API contra
 | [profile-editing.md](profile-editing.md) | Profile editor, live preview, save | US-EDIT-1 – US-EDIT-7 |
 | [ai-enhancement.md](ai-enhancement.md) | Field enhancement & full profile optimization | US-AI-1 – US-AI-3 |
 | [cv-generation.md](cv-generation.md) | AI CV generation & PDF export | US-CV-1 – US-CV-6 |
+| [chat.md](chat.md) | Conversational AI career assistant | US-AI-4 |
 
 ## Conventions
 
