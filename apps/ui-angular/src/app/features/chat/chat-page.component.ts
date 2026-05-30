@@ -9,9 +9,9 @@ import { environment } from '../../../environments/environment';
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: `
     <div class="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen -mx-4 md:-mx-8">
-      <div class="px-4 md:px-8 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+      <div class="px-4 md:px-8 py-4 border-b border-gray-200 dark:border-zinc-700 shrink-0">
         <h1 class="text-lg font-bold text-gray-900 dark:text-white">AI Career Assistant</h1>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           Ask about your profiles, career strategy, or how to improve your CV
         </p>
       </div>
@@ -28,7 +28,7 @@ import { environment } from '../../../environments/environment';
             <p class="text-sm text-red-600 dark:text-red-400">
               Could not load the chat widget. Make sure the chat-ui dev server is running on port 4202.
             </p>
-            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded">npm run serve:chat</code>
+            <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:chat</code>
           </div>
         } @else {
           <div class="flex items-center justify-center h-full">

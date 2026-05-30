@@ -51,7 +51,7 @@ import { NotifyService } from '../../services/notify.service';
             }
           </button>
           @if (!enhancing()) {
-            <div class="pointer-events-none absolute bottom-full right-0 mb-1.5 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100 dark:bg-gray-700">
+            <div class="pointer-events-none absolute bottom-full right-0 mb-1.5 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
               Enhance with AI
             </div>
           }

@@ -9,7 +9,7 @@ export class DropdownTriggerDirective {
   @HostListener('click')
   @HostListener('keydown.enter')
   @HostListener('keydown.space', ['$event'])
-  toggle(event?: KeyboardEvent) {
+  toggle(event?: Event) {
     event?.preventDefault();
     this.dropdown.toggle();
   }

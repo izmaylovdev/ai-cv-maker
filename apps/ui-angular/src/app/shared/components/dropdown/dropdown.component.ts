@@ -7,12 +7,12 @@ import { Component, ElementRef, HostListener, computed, inject, input, signal } 
  *   <app-dropdown>
  *     <button appDropdownTrigger class="...">⋮</button>
  *
- *     <button appDropdownItem class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
+ *     <button appDropdownItem class="text-gray-700 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-700"
  *             (click)="action()">
  *       <span class="material-icons text-base">edit</span> Edit
  *     </button>
  *
- *     <hr class="my-0.5 border-gray-100 dark:border-gray-700">
+ *     <hr class="my-0.5 border-gray-100 dark:border-zinc-700">
  *
  *     <button appDropdownItem class="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
  *             (click)="delete()">
@@ -45,7 +45,7 @@ export class DropdownComponent {
 
   readonly panelClass = computed(() => {
     const side = this.align() === 'left' ? 'left-0' : 'right-0';
-    return `absolute top-full ${side} z-50 mt-1 min-w-[11rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800`;
+    return `absolute top-full ${side} z-50 mt-1 min-w-[11rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg dark:border-zinc-600 dark:bg-zinc-800`;
   });
 
   toggle() {

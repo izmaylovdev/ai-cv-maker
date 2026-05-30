@@ -9,12 +9,12 @@ import { ProfileService, OptimizeProfileResponse } from '../../features/profile/
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-[calc(100vw-2rem)] max-w-[480px] flex flex-col gap-4">
+    <div class="bg-white dark:bg-zinc-800 rounded-2xl shadow-xl p-6 w-[calc(100vw-2rem)] max-w-[480px] flex flex-col gap-4">
       <h3 class="text-base font-semibold text-gray-900 dark:text-white">Optimize with AI</h3>
-      <p class="text-sm text-gray-500 dark:text-gray-400">Describe the role or goal you're optimizing for, or paste a job posting URL</p>
+      <p class="text-sm text-gray-500 dark:text-zinc-400">Describe the role or goal you're optimizing for, or paste a job posting URL</p>
       <textarea rows="4" [(ngModel)]="message"
         placeholder="e.g. Senior React developer at a fintech startup, Staff engineer focused on distributed systems..."
-        class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-y">
+        class="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-y">
       </textarea>
       @if (error()) {
         <p class="text-sm text-red-600 dark:text-red-400">{{ error() }}</p>
@@ -30,7 +30,7 @@ import { ProfileService, OptimizeProfileResponse } from '../../features/profile/
           Apply
         </button>
         <button type="button" (click)="ref.close()" [disabled]="loading()"
-          class="flex items-center gap-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-medium rounded-lg px-4 py-2 text-sm transition-colors cursor-pointer">
+          class="flex items-center gap-2 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 font-medium rounded-lg px-4 py-2 text-sm transition-colors cursor-pointer">
           Cancel
         </button>
       </div>

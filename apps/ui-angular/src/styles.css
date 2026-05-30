@@ -10,7 +10,7 @@ body {
   margin: 0;
   font-family: Roboto, 'Helvetica Neue', sans-serif;
   overflow-x: hidden;
-  @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors;
+  @apply bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 transition-colors;
 }
 
 html {
@@ -30,7 +30,7 @@ html::-webkit-scrollbar-thumb {
 }
 .dark html::-webkit-scrollbar-thumb,
 html.dark::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
+  background-color: rgb(82 82 91);
 }
 
 textarea {
@@ -48,13 +48,13 @@ textarea::-webkit-scrollbar-thumb {
   border-radius: 9999px;
 }
 .dark textarea::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
+  background-color: rgb(82 82 91);
 }
 
 .sidebar-link {
   @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium no-underline cursor-pointer
-         text-gray-600 dark:text-gray-400
-         hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white
+         text-gray-600 dark:text-zinc-400
+         hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white
          transition-colors;
 }
 
@@ -77,10 +77,10 @@ textarea::-webkit-scrollbar-thumb {
   border-radius: 9999px;
 }
 .dark .scrollbar-thin {
-  scrollbar-color: rgb(75 85 99) transparent;
+  scrollbar-color: rgb(82 82 91) transparent;
 }
 .dark .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: rgb(75 85 99);
+  background-color: rgb(82 82 91);
 }
 
 .dialog-backdrop {

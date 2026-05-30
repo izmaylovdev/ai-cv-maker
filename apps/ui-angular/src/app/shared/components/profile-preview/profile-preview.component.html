@@ -7,23 +7,23 @@
     <div>
 
       <!-- Header -->
-      <div #previewPersonal class="pb-5 mb-5 border-b-2 border-gray-200 dark:border-gray-600">
+      <div #previewPersonal class="pb-5 mb-5 border-b-2 border-gray-200 dark:border-zinc-600">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">{{ profile()!.fullName }}</h1>
         <p class="text-base text-indigo-600 dark:text-indigo-400 mt-1 font-medium">{{ profile()!.title }}</p>
         @if (profile()!.location) {
-          <p class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <p class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 mt-1">
             <span class="material-icons text-[14px]">place</span>{{ profile()!.location }}
           </p>
         }
         @if (profile()!.contacts?.email || profile()!.contacts?.phone) {
           <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2">
             @if (profile()!.contacts?.email) {
-              <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">
                 <span class="material-icons text-[14px]">email</span>{{ profile()!.contacts!.email }}
               </span>
             }
             @if (profile()!.contacts?.phone) {
-              <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">
                 <span class="material-icons text-[14px]">phone</span>{{ profile()!.contacts!.phone }}
               </span>
             }
@@ -34,31 +34,31 @@
       <!-- Summary -->
       @if (profile()!.overview) {
         <section class="mb-6">
-          <h2 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.15em] mb-2">Summary</h2>
-          <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ profile()!.overview }}</p>
+          <h2 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-[0.15em] mb-2">Summary</h2>
+          <p class="text-sm text-gray-700 dark:text-zinc-300 leading-relaxed">{{ profile()!.overview }}</p>
         </section>
       }
 
       @for (section of (profile()!.sectionOrder ?? ['workExperiences', 'educations', 'skills']); track section) {
         @switch (section) {
           @case ('workExperiences') {
-            @if (profile()!.workExperiences?.length) {
+            @if (profile()!.workExperiences.length) {
               <section #previewWork class="mb-6">
-                <h2 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.15em] mb-3">Experience</h2>
+                <h2 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-[0.15em] mb-3">Experience</h2>
                 <div class="space-y-4">
                   @for (job of profile()!.workExperiences; track $index) {
                     <div>
                       <div class="flex items-start justify-between gap-3">
                         <div>
                           <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ job.role }}</h3>
-                          <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ job.company }}</p>
+                          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-0.5">{{ job.company }}</p>
                         </div>
-                        <span class="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5">
+                        <span class="text-xs text-gray-400 dark:text-zinc-500 whitespace-nowrap pt-0.5">
                           {{ job.startDate }} – {{ job.endDate || 'Present' }}
                         </span>
                       </div>
                       @if (job.description) {
-                        <p class="text-xs text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">{{ job.description }}</p>
+                        <p class="text-xs text-gray-600 dark:text-zinc-400 mt-2 leading-relaxed">{{ job.description }}</p>
                       }
                     </div>
                   }
@@ -67,17 +67,17 @@
             }
           }
           @case ('educations') {
-            @if (profile()!.educations?.length) {
+            @if (profile()!.educations.length) {
               <section #previewEdu class="mb-6">
-                <h2 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.15em] mb-3">Education</h2>
+                <h2 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-[0.15em] mb-3">Education</h2>
                 <div class="space-y-3">
                   @for (edu of profile()!.educations; track $index) {
                     <div class="flex items-start justify-between gap-3">
                       <div>
                         <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ edu.degree }}{{ edu.field ? ' in ' + edu.field : '' }}</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ edu.institution }}</p>
+                        <p class="text-sm text-gray-500 dark:text-zinc-400 mt-0.5">{{ edu.institution }}</p>
                       </div>
-                      <span class="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5">
+                      <span class="text-xs text-gray-400 dark:text-zinc-500 whitespace-nowrap pt-0.5">
                         {{ edu.startYear }} – {{ edu.endYear || 'Present' }}
                       </span>
                     </div>
@@ -87,12 +87,12 @@
             }
           }
           @case ('skills') {
-            @if (profile()!.skills?.length) {
+            @if (profile()!.skills.length) {
               <section #previewSkills class="mb-6">
-                <h2 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-[0.15em] mb-3">Skills</h2>
+                <h2 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-[0.15em] mb-3">Skills</h2>
                 <div class="flex flex-wrap gap-2">
                   @for (skill of profile()!.skills; track $index) {
-                    <span class="inline-flex items-center px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded-full border border-gray-200 dark:border-gray-600">
+                    <span class="inline-flex items-center px-3 py-1 bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-zinc-300 text-xs rounded-full border border-gray-200 dark:border-zinc-600">
                       {{ skill.name }}
                     </span>
                   }
@@ -104,10 +104,10 @@
       }
 
       <!-- Empty state -->
-      @if (!profile()!.overview && !profile()!.location && !profile()!.workExperiences?.length && !profile()!.educations?.length && !profile()!.skills?.length) {
+      @if (!profile()!.overview && !profile()!.location && !profile()!.workExperiences.length && !profile()!.educations.length && !profile()!.skills.length) {
         <div class="flex flex-col items-center text-center py-16">
-          <span class="material-icons text-5xl text-gray-200 dark:text-gray-700">description</span>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">Your profile is empty.</p>
+          <span class="material-icons text-5xl text-gray-200 dark:text-zinc-700">description</span>
+          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-4">Your profile is empty.</p>
           <a routerLink="/profile" class="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1">Fill in your profile →</a>
         </div>
       }
@@ -116,8 +116,8 @@
   </div>
 } @else {
   <div class="flex flex-col items-center text-center py-16 px-4">
-    <span class="material-icons text-5xl text-gray-200 dark:text-gray-700">person_off</span>
-    <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">Could not load profile.</p>
+    <span class="material-icons text-5xl text-gray-200 dark:text-zinc-700">person_off</span>
+    <p class="text-sm text-gray-500 dark:text-zinc-400 mt-4">Could not load profile.</p>
     <a routerLink="/profile" class="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1">Go to Profile →</a>
   </div>
 }

@@ -5,7 +5,7 @@
 } @else if (loadError()) {
   <div class="flex flex-col items-center justify-center py-24 text-center">
     <span class="material-icons text-[48px] text-red-500">error_outline</span>
-    <p class="text-gray-500 dark:text-gray-400 mt-4 mb-4 text-sm">Failed to load profile. Please check your connection
+    <p class="text-gray-500 dark:text-zinc-400 mt-4 mb-4 text-sm">Failed to load profile. Please check your connection
       and try again.</p>
     <button (click)="retryLoad()"
             class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-5 py-2.5 text-sm transition-colors cursor-pointer border-0">
@@ -14,22 +14,22 @@
   </div>
 } @else {
   <div
-    class="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 md:px-8 py-3">
+    class="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
     <div class="flex items-center gap-3 min-w-0">
       <button (click)="router.navigate(['/job-profiles'])"
               aria-label="Back to job profiles"
-              class="flex items-center gap-1 text-sm text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer bg-transparent border-0 shrink-0">
+              class="flex items-center gap-1 text-sm text-gray-400 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer bg-transparent border-0 shrink-0">
         <span class="material-icons text-base">arrow_back</span>
       </button>
       <div class="min-w-0">
         <h1 class="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">{{ profileName }}</h1>
-        <p class="hidden text-xs text-gray-500 sm:block dark:text-gray-400">Fill in your details to generate an AI-powered CV</p>
+        <p class="hidden text-xs text-gray-500 sm:block dark:text-zinc-400">Fill in your details to generate an AI-powered CV</p>
       </div>
     </div>
     <div class="flex items-center gap-2 shrink-0">
       <!-- Desktop: all three secondary actions inline -->
       <button type="button" (click)="openReorderDialog()" title="Reorder sections"
-              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
+              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         <span class="material-icons text-base">sort</span><span class="hidden lg:inline">Reorder</span>
       </button>
       <button type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()" title="Optimize with AI"
@@ -42,22 +42,22 @@
         <span class="hidden lg:inline">Optimize with AI</span>
       </button>
       <button type="button" (click)="openPdfDialog()" title="Open PDF"
-              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
+              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         <span class="material-icons text-base">picture_as_pdf</span><span class="hidden lg:inline"> PDF</span>
       </button>
       <!-- Mobile: three-dot menu -->
       <app-dropdown class="sm:hidden">
         <button appDropdownTrigger type="button" title="More actions"
-                class="flex items-center justify-center w-9 h-9 border border-gray-300 dark:border-gray-600 bg-white dark:bg-transparent text-gray-600 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer">
+                class="flex items-center justify-center w-9 h-9 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer">
           <span class="material-icons text-base">more_vert</span>
         </button>
 
         <button appDropdownItem type="button" (click)="openReorderDialog()"
-                class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
+                class="text-gray-700 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-700">
           <span class="material-icons text-base">sort</span> Reorder
         </button>
         <button appDropdownItem type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()"
-                class="text-purple-600 hover:bg-gray-50 disabled:opacity-50 dark:text-purple-400 dark:hover:bg-gray-700">
+                class="text-purple-600 hover:bg-gray-50 disabled:opacity-50 dark:text-purple-400 dark:hover:bg-zinc-700">
           @if (optimizing()) {
             <span class="w-4 h-4 border-2 border-purple-600 dark:border-purple-400 border-t-transparent rounded-full animate-spin"></span>
           } @else {
@@ -66,7 +66,7 @@
           Optimize with AI
         </button>
         <button appDropdownItem type="button" (click)="openPdfDialog()"
-                class="text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
+                class="text-gray-700 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-700">
           <span class="material-icons text-base">picture_as_pdf</span> PDF
         </button>
       </app-dropdown>
@@ -94,11 +94,11 @@
 
           <!-- Personal Information -->
           <div #leftPersonal
-               class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 flex flex-col gap-4 transition-colors">
+               class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 flex flex-col gap-4 transition-colors">
             <div class="flex flex-col gap-1">
-              <label for="profile-name" class="text-sm font-medium text-gray-700 dark:text-gray-300">Profile Name</label>
+              <label for="profile-name" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Profile Name</label>
               <input id="profile-name" type="text" formControlName="name" placeholder="e.g. Senior Backend Engineer, ML Researcher…"
-                     class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
             </div>
 
             <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Personal
@@ -106,17 +106,17 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="flex flex-col gap-1">
-                <label for="profile-full-name" class="text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                <label for="profile-full-name" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Full Name</label>
                 <input id="profile-full-name" type="text" formControlName="fullName" placeholder="John Doe"
-                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                 @if (form.get('fullName')?.hasError('required') && form.get('fullName')?.touched) {
                   <span class="text-xs text-red-500">Full name is required</span>
                 }
               </div>
               <div class="flex flex-col gap-1">
-                <label for="profile-title" class="text-sm font-medium text-gray-700 dark:text-gray-300">Professional Title</label>
+                <label for="profile-title" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Professional Title</label>
                 <input id="profile-title" type="text" formControlName="title" placeholder="Senior Software Engineer"
-                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                 @if (form.get('title')?.hasError('required') && form.get('title')?.touched) {
                   <span class="text-xs text-red-500">Title is required</span>
                 }
@@ -124,19 +124,19 @@
             </div>
 
             <div class="flex flex-col gap-1">
-              <label for="profile-location" class="text-sm font-medium text-gray-700 dark:text-gray-300">Location</label>
+              <label for="profile-location" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Location</label>
               <input id="profile-location" type="text" formControlName="location" placeholder="Berlin, Germany"
-                     class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
             </div>
 
             <div class="flex flex-col gap-1">
-              <label for="profile-overview" class="text-sm font-medium text-gray-700 dark:text-gray-300">Professional Overview</label>
+              <label for="profile-overview" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Professional Overview</label>
               <app-enhanced-textarea
                 inputId="profile-overview"
                 formControlName="overview"
                 [rows]="5"
                 placeholder="Brief description of your professional background, key achievements, and career goals..."
-                textareaClass="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
+                textareaClass="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
                 fieldPurpose="Professional Overview / Summary for a CV. This is the main introduction paragraph that appears at the top of the CV. It should be 2-4 concise, compelling sentences capturing the candidate's professional identity, core strengths, and career goals. Maintain first or third person depending on the existing style."
               />
               @if (form.get('overview')?.hasError('required') && form.get('overview')?.touched) {
@@ -149,17 +149,17 @@
 
             <div formGroupName="contacts" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="flex flex-col gap-1">
-                <label for="profile-email" class="text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                <label for="profile-email" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Email</label>
                 <input id="profile-email" type="email" formControlName="email" placeholder="john@example.com"
-                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                 @if (form.get('contacts.email')?.hasError('email') && form.get('contacts.email')?.touched) {
                   <span class="text-xs text-red-500">Enter a valid email address</span>
                 }
               </div>
               <div class="flex flex-col gap-1">
-                <label for="profile-phone" class="text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
+                <label for="profile-phone" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Phone</label>
                 <input id="profile-phone" type="tel" formControlName="phone" appPhoneMask placeholder="+38 (063) 78-312-49"
-                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
               </div>
             </div>
           </div>
@@ -172,7 +172,7 @@
 
                   @case ('workExperiences') {
                     <!-- Work Experience -->
-                    <div #leftWork class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 transition-colors">
+                    <div #leftWork class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
                       <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                           <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
@@ -185,14 +185,14 @@
                       </div>
 
                       @if (workExperiences.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-gray-500 italic text-sm py-8">No work experience
+                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No work experience
                           added yet. Click "Add Experience" to start.</p>
                       }
 
                       <div formArrayName="workExperiences" class="flex flex-col gap-4">
                         @for (exp of workExperiences.controls; track $index) {
                           <div [formGroupName]="$index"
-                               class="border border-gray-200 dark:border-gray-600 rounded-xl p-4 bg-gray-50 dark:bg-gray-700/50 transition-colors">
+                               class="border border-gray-200 dark:border-zinc-600 rounded-xl p-4 bg-gray-50 dark:bg-zinc-700/50 transition-colors">
                             <div class="flex items-center justify-between mb-4">
                               <span
                                 class="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Experience {{ $index + 1 }}</span>
@@ -204,17 +204,17 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                               <div class="flex flex-col gap-1">
-                                <label [for]="'work-company-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Company</label>
+                                <label [for]="'work-company-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Company</label>
                                 <input [id]="'work-company-' + $index" type="text" formControlName="company" placeholder="Acme Corp"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                                 @if (exp.get('company')?.hasError('required') && exp.get('company')?.touched) {
                                   <span class="text-xs text-red-500">Company is required</span>
                                 }
                               </div>
                               <div class="flex flex-col gap-1">
-                                <label [for]="'work-role-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Role</label>
+                                <label [for]="'work-role-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Role</label>
                                 <input [id]="'work-role-' + $index" type="text" formControlName="role" placeholder="Software Engineer"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                                 @if (exp.get('role')?.hasError('required') && exp.get('role')?.touched) {
                                   <span class="text-xs text-red-500">Role is required</span>
                                 }
@@ -223,30 +223,30 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                               <div class="flex flex-col gap-1">
-                                <label [for]="'work-start-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Start Date</label>
+                                <label [for]="'work-start-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Start Date</label>
                                 <input [id]="'work-start-' + $index" type="text" formControlName="startDate" placeholder="2020-01-15"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-gray-500">Format: YYYY-MM-DD</span>
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                <span class="text-xs text-gray-400 dark:text-zinc-500">Format: YYYY-MM-DD</span>
                                 @if (exp.get('startDate')?.hasError('required') && exp.get('startDate')?.touched) {
                                   <span class="text-xs text-red-500">Start date is required</span>
                                 }
                               </div>
                               <div class="flex flex-col gap-1">
-                                <label [for]="'work-end-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">End Date</label>
+                                <label [for]="'work-end-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">End Date</label>
                                 <input [id]="'work-end-' + $index" type="text" formControlName="endDate" placeholder="2023-06-30 or leave blank"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-gray-500">Leave blank if current</span>
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                <span class="text-xs text-gray-400 dark:text-zinc-500">Leave blank if current</span>
                               </div>
                             </div>
 
                             <div class="flex flex-col gap-1">
-                              <label [for]="'work-desc-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Description</label>
+                              <label [for]="'work-desc-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Description</label>
                               <app-enhanced-textarea
                                 [inputId]="'work-desc-' + $index"
                                 formControlName="description"
                                 [rows]="3"
                                 placeholder="Key responsibilities and achievements..."
-                                textareaClass="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
+                                textareaClass="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
                                 [fieldPurpose]="workDescPurpose($index)"
                               />
                             </div>
@@ -259,7 +259,7 @@
 
                   @case ('educations') {
                     <!-- Education -->
-                    <div #leftEdu class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 transition-colors">
+                    <div #leftEdu class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
                       <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                           <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
@@ -272,14 +272,14 @@
                       </div>
 
                       @if (educations.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-gray-500 italic text-sm py-8">No education added
+                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No education added
                           yet. Click "Add Education" to start.</p>
                       }
 
                       <div formArrayName="educations" class="flex flex-col gap-4">
                         @for (edu of educations.controls; track $index) {
                           <div [formGroupName]="$index"
-                               class="border border-gray-200 dark:border-gray-600 rounded-xl p-4 bg-gray-50 dark:bg-gray-700/50 transition-colors">
+                               class="border border-gray-200 dark:border-zinc-600 rounded-xl p-4 bg-gray-50 dark:bg-zinc-700/50 transition-colors">
                             <div class="flex items-center justify-between mb-4">
                               <span
                                 class="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Education {{ $index + 1 }}</span>
@@ -290,9 +290,9 @@
                             </div>
 
                             <div class="flex flex-col gap-1 mb-3">
-                              <label [for]="'edu-institution-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Institution</label>
+                              <label [for]="'edu-institution-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Institution</label>
                               <input [id]="'edu-institution-' + $index" type="text" formControlName="institution" placeholder="MIT"
-                                     class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                               @if (edu.get('institution')?.hasError('required') && edu.get('institution')?.touched) {
                                 <span class="text-xs text-red-500">Institution is required</span>
                               }
@@ -300,17 +300,17 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                               <div class="flex flex-col gap-1">
-                                <label [for]="'edu-degree-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Degree</label>
+                                <label [for]="'edu-degree-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Degree</label>
                                 <input [id]="'edu-degree-' + $index" type="text" formControlName="degree" placeholder="Bachelor of Science"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                                 @if (edu.get('degree')?.hasError('required') && edu.get('degree')?.touched) {
                                   <span class="text-xs text-red-500">Degree is required</span>
                                 }
                               </div>
                               <div class="flex flex-col gap-1">
-                                <label [for]="'edu-field-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Field of Study</label>
+                                <label [for]="'edu-field-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Field of Study</label>
                                 <input [id]="'edu-field-' + $index" type="text" formControlName="field" placeholder="Computer Science"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                                 @if (edu.get('field')?.hasError('required') && edu.get('field')?.touched) {
                                   <span class="text-xs text-red-500">Field is required</span>
                                 }
@@ -319,18 +319,18 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div class="flex flex-col gap-1">
-                                <label [for]="'edu-start-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">Start Year</label>
+                                <label [for]="'edu-start-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">Start Year</label>
                                 <input [id]="'edu-start-' + $index" type="number" formControlName="startYear" placeholder="2016"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                                 @if (edu.get('startYear')?.hasError('required') && edu.get('startYear')?.touched) {
                                   <span class="text-xs text-red-500">Start year is required</span>
                                 }
                               </div>
                               <div class="flex flex-col gap-1">
-                                <label [for]="'edu-end-' + $index" class="text-xs font-medium text-gray-600 dark:text-gray-400">End Year</label>
+                                <label [for]="'edu-end-' + $index" class="text-xs font-medium text-gray-600 dark:text-zinc-400">End Year</label>
                                 <input [id]="'edu-end-' + $index" type="number" formControlName="endYear" placeholder="2020 or leave blank"
-                                       class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-gray-500">Leave blank if current</span>
+                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                                <span class="text-xs text-gray-400 dark:text-zinc-500">Leave blank if current</span>
                               </div>
                             </div>
                           </div>
@@ -342,7 +342,7 @@
 
                   @case ('skills') {
                     <!-- Skills -->
-                    <div #leftSkills class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 transition-colors">
+                    <div #leftSkills class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
                       <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                           <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
@@ -355,12 +355,12 @@
                       </div>
 
                       @if (skills.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-gray-500 italic text-sm py-8">No skills added yet.
+                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No skills added yet.
                           Click "Add Skill" to start.</p>
                       }
 
                       <div formArrayName="skills"
-                           class="flex flex-wrap gap-2 min-h-12 p-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/30"
+                           class="flex flex-wrap gap-2 min-h-12 p-2 rounded-xl border border-gray-200 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-700/30"
                            cdkDropList cdkDropListOrientation="mixed" (cdkDropListDropped)="dropSkill($event)">
                         @for (skill of skills.controls; track skill; let i = $index) {
                           <div [formGroupName]="i" cdkDrag
@@ -404,7 +404,7 @@
                           </div>
                         }
                       </div>
-                      <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Drag chips to reorder</p>
+                      <p class="text-xs text-gray-400 dark:text-zinc-500 mt-2">Drag chips to reorder</p>
                     </div>
                   } <!-- end skills case -->
 
@@ -422,7 +422,7 @@
     <!-- Right: live preview (hidden on mobile and tablet) -->
     <div class="hidden lg:flex lg:sticky h-[calc(100vh-90px)] flex-col pb-6 top-14">
       <div #previewContainer
-        class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden transition-colors flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+        class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm overflow-hidden transition-colors flex-1 min-h-0 overflow-y-auto scrollbar-thin">
         <app-profile-preview [profile]="profilePreview" />
       </div>
     </div>
