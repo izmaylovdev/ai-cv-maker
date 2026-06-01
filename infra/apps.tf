@@ -354,3 +354,314 @@ resource "azurerm_container_app" "ui_angular" {
 
   depends_on = [azurerm_container_app.cv_api, azurerm_container_app.chat_ui]
 }
+
+# ── prometheus ─────────────────────────────────────────────────────────────────
+
+resource "azurerm_container_app" "prometheus" {
+  name                         = "prometheus"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  registry {
+    server               = local.acr_server
+    username             = local.acr_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = local.acr_password
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "prometheus"
+      image  = "${local.acr_server}/prometheus:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 9090
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  depends_on = [azurerm_container_app.cv_api]
+}
+
+# ── grafana ────────────────────────────────────────────────────────────────────
+
+resource "azurerm_container_app" "grafana" {
+  name                         = "grafana"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  registry {
+    server               = local.acr_server
+    username             = local.acr_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = local.acr_password
+  }
+
+  secret {
+    name  = "grafana-admin-password"
+    value = var.grafana_admin_password
+  }
+
+  secret {
+    name  = "postgres-password"
+    value = var.postgres_admin_password
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "grafana"
+      image  = "${local.acr_server}/grafana:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "GF_SECURITY_ADMIN_PASSWORD"
+        secret_name = "grafana-admin-password"
+      }
+      env {
+        name  = "GF_SECURITY_ADMIN_USER"
+        value = var.grafana_admin_user
+      }
+      env {
+        name  = "GF_AUTH_ANONYMOUS_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "PROMETHEUS_URL"
+        value = "http://prometheus"
+      }
+      env {
+        name  = "POSTGRES_HOST"
+        value = azurerm_postgresql_flexible_server.db.fqdn
+      }
+      env {
+        name  = "POSTGRES_PORT"
+        value = "5432"
+      }
+      env {
+        name  = "POSTGRES_DB"
+        value = "cvmaker"
+      }
+      env {
+        name  = "POSTGRES_USER"
+        value = var.postgres_admin_login
+      }
+      env {
+        name        = "POSTGRES_PASSWORD"
+        secret_name = "postgres-password"
+      }
+      env {
+        name  = "POSTGRES_SSL_MODE"
+        value = "require"
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/api/health"
+        initial_delay          = 10
+        interval_seconds       = 30
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/api/health"
+        interval_seconds       = 10
+        failure_count_threshold = 3
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 3000
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  depends_on = [azurerm_container_app.prometheus]
+}
+
+# ── admin-api ──────────────────────────────────────────────────────────────────
+
+resource "azurerm_container_app" "admin_api" {
+  name                         = "admin-api"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  registry {
+    server               = local.acr_server
+    username             = local.acr_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = local.acr_password
+  }
+
+  secret {
+    name  = "postgres-password"
+    value = var.postgres_admin_password
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "admin-api"
+      image  = "${local.acr_server}/admin-api:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "DB_HOST"
+        value = azurerm_postgresql_flexible_server.db.fqdn
+      }
+      env {
+        name  = "DB_PORT"
+        value = "5432"
+      }
+      env {
+        name  = "DB_NAME"
+        value = "cvmaker"
+      }
+      env {
+        name  = "DB_USER"
+        value = var.postgres_admin_login
+      }
+      env {
+        name        = "DB_PASSWORD"
+        secret_name = "postgres-password"
+      }
+      env {
+        name  = "DB_SSL"
+        value = "true"
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/api"
+        initial_delay          = 10
+        interval_seconds       = 30
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/api"
+        interval_seconds       = 10
+        failure_count_threshold = 3
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 3000
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
+# ── admin-ui ───────────────────────────────────────────────────────────────────
+
+resource "azurerm_container_app" "admin_ui" {
+  name                         = "admin-ui"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  registry {
+    server               = local.acr_server
+    username             = local.acr_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = local.acr_password
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "admin-ui"
+      image  = "${local.acr_server}/admin-ui:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "ADMIN_API_URL"
+        value = "http://admin-api"
+      }
+      env {
+        name  = "GRAFANA_URL"
+        value = "https://${azurerm_container_app.grafana.ingress[0].fqdn}"
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/"
+        initial_delay          = 10
+        interval_seconds       = 30
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport = "HTTP"
+        port      = 3000
+        path      = "/"
+        interval_seconds       = 10
+        failure_count_threshold = 3
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 3000
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  depends_on = [azurerm_container_app.admin_api, azurerm_container_app.grafana]
+}
