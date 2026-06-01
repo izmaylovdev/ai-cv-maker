@@ -61,10 +61,44 @@ az containerapp update --name ui-angular  --resource-group rg-ai-cv-maker --imag
 az containerapp update --name llm-service --resource-group rg-ai-cv-maker --image aicvmakeracr.azurecr.io/llm-service:latest
 ```
 
-## Verify
+## Smoke tests
+
+Run after every deployment (regardless of which service changed). All checks must pass before reporting success.
 
 ```bash
-terraform -chdir=infra output app_url
+BASE="https://ui-angular.wonderfulisland-ff2d44e9.swedencentral.azurecontainerapps.io"
+
+check() {
+  local desc=$1 url=$2 expected=$3
+  local actual
+  actual=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$url")
+  if [ "$actual" = "$expected" ]; then
+    echo "✓ $desc ($actual)"
+  else
+    echo "✗ $desc — expected $expected, got $actual"
+    FAILED=1
+  fi
+}
+
+FAILED=0
+check "app shell loads"            "$BASE/"                              200
+check "chat widget served"         "$BASE/chat-widget/chat-widget.js"   200
+check "API proxy alive (401=ok)"   "$BASE/api/job-profiles"             401
+
+if [ "$FAILED" = "1" ]; then
+  echo ""
+  echo "Smoke tests FAILED — investigate before marking deploy complete."
+  exit 1
+else
+  echo ""
+  echo "All smoke tests passed."
+fi
+```
+
+If any check fails, inspect nginx logs and container status before declaring the deploy done:
+```bash
+az containerapp logs show --name ui-angular --resource-group rg-ai-cv-maker --tail 30
+az containerapp show --name ui-angular --resource-group rg-ai-cv-maker --query "properties.runningStatus"
 ```
 
 App URL: `https://ui-angular.wonderfulisland-ff2d44e9.swedencentral.azurecontainerapps.io`

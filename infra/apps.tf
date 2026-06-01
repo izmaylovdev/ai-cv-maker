@@ -240,6 +240,47 @@ resource "azurerm_container_app" "cv_api" {
   depends_on = [azurerm_container_app.llm_service]
 }
 
+# ── chat-ui ────────────────────────────────────────────────────────────────────
+
+resource "azurerm_container_app" "chat_ui" {
+  name                         = "chat-ui"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  registry {
+    server               = local.acr_server
+    username             = local.acr_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = local.acr_password
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "chat-ui"
+      image  = "${local.acr_server}/chat-ui:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 80
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
 # ── ui-angular ─────────────────────────────────────────────────────────────────
 
 resource "azurerm_container_app" "ui_angular" {
@@ -269,14 +310,18 @@ resource "azurerm_container_app" "ui_angular" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      # nginx template substitution: only replace CV_API_UPSTREAM, leave $uri etc. intact
+      # nginx template substitution: only replace these vars, leave $uri etc. intact
       env {
         name  = "CV_API_UPSTREAM"
         value = "https://${azurerm_container_app.cv_api.ingress[0].fqdn}"
       }
       env {
+        name  = "CHAT_UI_UPSTREAM"
+        value = "https://${azurerm_container_app.chat_ui.ingress[0].fqdn}"
+      }
+      env {
         name  = "NGINX_ENVSUBST_TEMPLATE_VARS"
-        value = "CV_API_UPSTREAM"
+        value = "CV_API_UPSTREAM CHAT_UI_UPSTREAM"
       }
 
       liveness_probe {
@@ -307,5 +352,5 @@ resource "azurerm_container_app" "ui_angular" {
     }
   }
 
-  depends_on = [azurerm_container_app.cv_api]
+  depends_on = [azurerm_container_app.cv_api, azurerm_container_app.chat_ui]
 }

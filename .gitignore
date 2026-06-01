@@ -71,3 +71,7 @@ vite.config.*.timestamp*
 apps/llm-service/evals/results/*.json
 
 vitest.config.*.timestamp*
+
+# Next.js
+.next
+out
