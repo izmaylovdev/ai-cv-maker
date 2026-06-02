@@ -1,10 +1,8 @@
-# AI CV Maker — Specs
+# Specs — web-client
 
-This folder contains functional and technical specifications derived from the user stories in [`../user-stories/`](../user-stories/).
+Functional and technical specifications for the end-user Angular SPA backed by `cv-api`.
 
-Each spec covers: functional requirements (what the feature must do), API contracts, data models, error handling, and out-of-scope items for MVP.
-
-## Spec Files
+See also: [user-stories](../user-stories/)
 
 | File | Feature Area | Source Stories |
 |------|-------------|----------------|
@@ -14,9 +12,3 @@ Each spec covers: functional requirements (what the feature must do), API contra
 | [ai-enhancement.md](ai-enhancement.md) | Field enhancement & full profile optimization | US-AI-1 – US-AI-3 |
 | [cv-generation.md](cv-generation.md) | AI CV generation & PDF export | US-CV-1 – US-CV-6 |
 | [chat.md](chat.md) | Conversational AI career assistant | US-AI-4 |
-
-## Conventions
-
-- **F-{AREA}-{N}** — functional requirement ID (e.g., `F-AUTH-1.1`)
-- "Out of Scope (MVP)" sections list explicitly deferred features so they are not inadvertently implemented
-- API response shapes are illustrative; the authoritative contract lives in the proto/OpenAPI definitions once generated

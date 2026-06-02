@@ -85,6 +85,67 @@ services:
       - "8080:8000"
       - "50051:50051"
 
+  admin-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ADMIN_DB_USER:-admin}
+      POSTGRES_PASSWORD: ${ADMIN_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${ADMIN_DB_NAME:-admin}
+    ports:
+      - "5434:5432"
+    volumes:
+      - admin_db_data:/var/lib/postgresql/data
+      - ./apps/admin-api/migrations/init-admin-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_DB_USER:-admin} -d ${ADMIN_DB_NAME:-admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  admin-api:
+    build:
+      context: .
+      dockerfile: apps/admin-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      ADMIN_DB_HOST: admin-db
+      ADMIN_DB_PORT: "5432"
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-admin}
+      ADMIN_DB_USER: ${ADMIN_DB_USER:-admin}
+      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:-changeme}
+      JWT_SECRET: ${ADMIN_JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:-}
+    ports:
+      - "3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      admin-db:
+        condition: service_healthy
+
+  admin-ui:
+    build:
+      context: .
+      dockerfile: apps/admin-ui/Dockerfile
+      args:
+        GRAFANA_URL: http://localhost:3000
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+    restart: unless-stopped
+    environment:
+      ADMIN_API_URL: http://admin-api:3000
+      GRAFANA_URL: http://localhost:3000
+    ports:
+      - "3002:3000"
+    depends_on:
+      - admin-api
+
   prometheus:
     image: prom/prometheus:v3.4.0
     restart: unless-stopped
@@ -125,5 +186,6 @@ services:
 
 volumes:
   postgres_data:
+  admin_db_data:
   prometheus_data:
   grafana_data:

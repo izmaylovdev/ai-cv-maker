@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # In Azure Container Apps, internal DNS resolves <app-name> to port 80 → target_port.
+  # cv-api ingress: target_port 8080, so http://cv-api/metrics reaches the app.
+  - job_name: cv-api
+    static_configs:
+      - targets: ["cv-api:80"]
+    metrics_path: /metrics

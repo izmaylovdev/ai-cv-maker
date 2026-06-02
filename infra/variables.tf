@@ -90,3 +90,13 @@ variable "anthropic_foundry_max_tokens" {
   type    = string
   default = "8192"
 }
+
+variable "grafana_admin_user" {
+  type    = string
+  default = "admin"
+}
+
+variable "grafana_admin_password" {
+  type      = string
+  sensitive = true
+}

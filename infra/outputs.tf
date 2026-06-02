@@ -22,3 +22,13 @@ output "postgres_fqdn" {
   description = "PostgreSQL server hostname."
   value       = azurerm_postgresql_flexible_server.db.fqdn
 }
+
+output "grafana_url" {
+  description = "Public URL of the Grafana dashboard."
+  value       = "https://${azurerm_container_app.grafana.ingress[0].fqdn}"
+}
+
+output "admin_url" {
+  description = "Public URL of the admin panel."
+  value       = "https://${azurerm_container_app.admin_ui.ingress[0].fqdn}"
+}

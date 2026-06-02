@@ -52,6 +52,42 @@ jobs:
           docker push $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
           docker push $ACR_LOGIN_SERVER/ui-angular:latest
 
+      - name: Build and push prometheus
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/prometheus:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/prometheus:latest \
+            monitoring/prometheus
+          docker push $ACR_LOGIN_SERVER/prometheus:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/prometheus:latest
+
+      - name: Build and push grafana
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/grafana:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/grafana:latest \
+            monitoring/grafana
+          docker push $ACR_LOGIN_SERVER/grafana:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/grafana:latest
+
+      - name: Build and push admin-api
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/admin-api:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/admin-api:latest \
+            -f apps/admin-api/Dockerfile .
+          docker push $ACR_LOGIN_SERVER/admin-api:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/admin-api:latest
+
+      - name: Build and push admin-ui
+        run: |
+          docker build \
+            -t $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }} \
+            -t $ACR_LOGIN_SERVER/admin-ui:latest \
+            -f apps/admin-ui/Dockerfile .
+          docker push $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/admin-ui:latest
+
       # ── Deploy to Container Apps ───────────────────────────────────────────
 
       - name: Deploy llm-service
@@ -74,3 +110,48 @@ jobs:
             --name ui-angular \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --image $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
+
+      - name: Deploy prometheus
+        run: |
+          az containerapp update \
+            --name prometheus \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/prometheus:${{ github.sha }}
+
+      - name: Deploy grafana
+        run: |
+          az containerapp update \
+            --name grafana \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/grafana:${{ github.sha }}
+
+      - name: Run admin-api migrations
+        run: |
+          az containerapp job start \
+            --name admin-migrate \
+            --resource-group ${{ secrets.RESOURCE_GROUP }}
+          # Wait for the job to complete (poll every 5s, timeout 120s)
+          for i in $(seq 1 24); do
+            STATUS=$(az containerapp job execution list \
+              --name admin-migrate \
+              --resource-group ${{ secrets.RESOURCE_GROUP }} \
+              --query "[0].properties.status" -o tsv)
+            echo "Migration job status: $STATUS"
+            if [ "$STATUS" = "Succeeded" ]; then break; fi
+            if [ "$STATUS" = "Failed" ]; then echo "Migration failed"; exit 1; fi
+            sleep 5
+          done
+
+      - name: Deploy admin-api
+        run: |
+          az containerapp update \
+            --name admin-api \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/admin-api:${{ github.sha }}
+
+      - name: Deploy admin-ui
+        run: |
+          az containerapp update \
+            --name admin-ui \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }}
