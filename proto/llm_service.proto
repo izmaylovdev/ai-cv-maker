@@ -12,6 +12,7 @@ service LlmService {
   rpc Chat (ChatRequest) returns (ChatResponse);
   rpc UserChat (UserChatRequest) returns (UserChatResponse);
   rpc Health (HealthRequest) returns (HealthResponse);
+  rpc GenerateCoverLetter (CoverLetterRequest) returns (CoverLetterResponse);
 }
 
 message WorkExperienceInput {
@@ -187,4 +188,17 @@ message HealthRequest {}
 
 message HealthResponse {
   string status = 1;
+}
+
+message CoverLetterRequest {
+  repeated ProfileInput profiles = 1;
+  repeated string profile_ids   = 2;
+  string job_title              = 3;
+  string job_description        = 4;
+  string field_context          = 5;
+}
+
+message CoverLetterResponse {
+  string text                = 1;
+  string selected_profile_id = 2;
 }

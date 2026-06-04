@@ -216,6 +216,80 @@ public class LlmService(CvApi.Grpc.LlmService.LlmServiceClient grpcClient, Trace
         }
     }
 
+    public async Task<LlmCoverLetterResponse> GenerateCoverLetterAsync(LlmCoverLetterRequest request)
+    {
+        var sw = Stopwatch.StartNew();
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            var grpcRequest = new CvApi.Grpc.CoverLetterRequest
+            {
+                JobTitle = request.JobTitle,
+                JobDescription = request.JobDescription,
+                FieldContext = request.FieldContext,
+            };
+            foreach (var p in request.Profiles)
+            {
+                grpcRequest.ProfileIds.Add(p.Id);
+                grpcRequest.Profiles.Add(MapProfileFromCoverLetter(p));
+            }
+
+            var reply = await grpcClient.GenerateCoverLetterAsync(grpcRequest);
+
+            AddSpan("LlmService/GenerateCoverLetter", false, sw.ElapsedMilliseconds, startedAt);
+
+            return new LlmCoverLetterResponse(
+                reply.Text,
+                Guid.TryParse(reply.SelectedProfileId, out var id) ? id : Guid.Empty
+            );
+        }
+        catch
+        {
+            AddSpan("LlmService/GenerateCoverLetter", true, sw.ElapsedMilliseconds, startedAt);
+            throw;
+        }
+    }
+
+    private static ProfileInput MapProfileFromCoverLetter(LlmCoverLetterProfile p) => new()
+    {
+        FullName = p.FullName,
+        Title = p.Title,
+        Overview = p.Overview,
+        Location = p.Location ?? string.Empty,
+        WorkExperiences =
+        {
+            p.WorkExperiences.Select(w => new WorkExperienceInput
+            {
+                Id = w.Id?.ToString() ?? string.Empty,
+                Company = w.Company,
+                Role = w.Role,
+                StartDate = w.StartDate.ToString(),
+                EndDate = w.EndDate?.ToString() ?? string.Empty,
+                Description = w.Description,
+            })
+        },
+        Educations =
+        {
+            p.Educations.Select(e => new EducationInput
+            {
+                Id = e.Id?.ToString() ?? string.Empty,
+                Institution = e.Institution,
+                Degree = e.Degree,
+                Field = e.Field,
+                StartYear = e.StartYear,
+                EndYear = e.EndYear ?? 0,
+            })
+        },
+        Skills =
+        {
+            p.Skills.Select(s => new SkillInput
+            {
+                Id = s.Id?.ToString() ?? string.Empty,
+                Name = s.Name,
+            })
+        },
+    };
+
     private static ProfileInput MapProfile(LlmProfileRequest p) => new()
     {
         FullName = p.FullName,

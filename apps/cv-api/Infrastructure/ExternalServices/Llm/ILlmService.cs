@@ -8,4 +8,5 @@ public interface ILlmService
     Task<LlmEnhanceFieldResponse> EnhanceFieldAsync(LlmEnhanceFieldRequest request);
     Task<LlmChatResponse> ChatAsync(LlmChatRequest request);
     Task<LlmUserChatResponse> UserChatAsync(LlmUserChatRequest request);
+    Task<LlmCoverLetterResponse> GenerateCoverLetterAsync(LlmCoverLetterRequest request);
 }

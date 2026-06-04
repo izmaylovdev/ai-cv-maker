@@ -2,6 +2,7 @@ import grpc
 from pydantic import ValidationError
 
 from app.chains.chat_chain import ChatMessage, chat_reply
+from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
 from app.chains.user_chat_chain import (
     ChatMessage as UserChatMessage,
     ProfileSummary,
@@ -195,6 +196,25 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
             history = [UserChatMessage(role=m.role, content=m.content) for m in request.history]
             result = await user_chat_reply(profiles, request.message, history)
             return llm_service_pb2.UserChatResponse(reply=result.reply)
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def GenerateCoverLetter(self, request, context):
+        try:
+            profiles = [_proto_to_profile(p) for p in request.profiles]
+            result = await generate_cover_letter(CoverLetterRequest(
+                profiles=profiles,
+                profile_ids=list(request.profile_ids),
+                job_title=request.job_title,
+                job_description=request.job_description,
+                field_context=request.field_context,
+            ))
+            return llm_service_pb2.CoverLetterResponse(
+                text=result.text,
+                selected_profile_id=result.selected_profile_id,
+            )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:

@@ -1,5 +1,6 @@
 using System.Text;
 using CvApi.Features.Auth;
+using CvApi.Features.CoverLetter;
 using CvApi.Features.Cvs;
 using CvApi.Features.JobProfiles;
 using CvApi.Infrastructure.ExternalServices.Llm;
@@ -18,6 +19,7 @@ using QuestPDF.Infrastructure;
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 builder.Services.AddControllers()
     .AddJsonOptions(opt =>
@@ -93,6 +95,7 @@ builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
 builder.Services.AddScoped<ILlmService, LlmService>();
 builder.Services.AddScoped<IJobProfileService, JobProfileService>();
 builder.Services.AddScoped<ICvService, CvService>();
+builder.Services.AddScoped<CoverLetterService>();
 
 var app = builder.Build();
 

@@ -1,10 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CvApi</RootNamespace>
+    <UserSecretsId>7b9babc8-09f0-446f-a612-b436bc091f15</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

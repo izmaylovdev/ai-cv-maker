@@ -68,3 +68,23 @@ public record LlmChatResponse(string Reply, LlmChatProposal? Proposal);
 public record LlmProfileSummary(string Name, string Title, string Overview, List<string> Skills);
 public record LlmUserChatRequest(List<LlmProfileSummary> Profiles, string Message, List<LlmChatMessage> History);
 public record LlmUserChatResponse(string Reply);
+
+public record LlmCoverLetterProfile(
+    string Id,
+    string FullName,
+    string Title,
+    string Overview,
+    string? Location,
+    List<LlmWorkInput> WorkExperiences,
+    List<LlmEducationInput> Educations,
+    List<LlmSkillInput> Skills
+);
+
+public record LlmCoverLetterRequest(
+    List<LlmCoverLetterProfile> Profiles,
+    string JobTitle,
+    string JobDescription,
+    string FieldContext
+);
+
+public record LlmCoverLetterResponse(string Text, Guid SelectedProfileId);
