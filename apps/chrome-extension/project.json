@@ -1,0 +1,41 @@
+{
+  "name": "chrome-extension",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/chrome-extension/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/apps/chrome-extension"],
+      "options": {
+        "command": "vite build",
+        "cwd": "apps/chrome-extension"
+      },
+      "configurations": {
+        "production": {
+          "command": "vite build --mode production"
+        },
+        "development": {
+          "command": "vite build --mode development --watch"
+        }
+      },
+      "defaultConfiguration": "production"
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --reporter=verbose",
+        "cwd": "apps/chrome-extension"
+      }
+    },
+    "zip": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "cd dist/apps/chrome-extension && zip -r ../../../chrome-extension.zip .",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

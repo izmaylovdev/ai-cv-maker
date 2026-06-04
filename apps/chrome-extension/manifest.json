@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "AI CV Maker — Job Fill",
+  "version": "0.1.0",
+  "description": "Automatically fill cover letter and application fields using your AI CV Maker profile.",
+  "permissions": ["storage", "notifications", "activeTab", "scripting", "identity", "webNavigation"],
+  "host_permissions": ["<all_urls>"],
+  "commands": {
+    "fill-fields": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Fill application fields on this page"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "AI CV Maker — Job Fill"
+  },
+  "oauth2": {
+    "client_id": "1015982503484-ov9vcrqabi22piqme2mbl54qfv8f26m0.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile", "openid"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
