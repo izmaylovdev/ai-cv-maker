@@ -6,14 +6,13 @@ AI CV Maker is a three-tier web application that lets users manage job profiles 
 
 ```
 Browser
-  ├─ ui-angular (Angular SPA)  ─┐
-  │    └─ <ai-chat-widget>       ├─ share @ai-cv-maker/auth
-  └─ ui-react  (React SPA)     ─┘
-       │
-       └─ REST/HTTP ──→ cv-api (ASP.NET Core)
-                             ├─ PostgreSQL (EF Core)
-                             └─ gRPC ──→ llm-service (Python / FastAPI)
-                                              └─ LLM provider (Google, OpenAI-compat, Azure Foundry)
+  └─ ui-angular (Angular SPA)
+       └─ <ai-chat-widget>  ← loaded from chat-ui via Nginx proxy
+            │
+            └─ REST/HTTP ──→ cv-api (ASP.NET Core)
+                                 ├─ PostgreSQL (EF Core)
+                                 └─ gRPC ──→ llm-service (Python / FastAPI)
+                                                  └─ LLM provider (Google, OpenAI-compat, Azure Foundry)
 
 Nginx (ui-angular container)
   ├─ /api/*          → cv-api
@@ -26,7 +25,7 @@ Nginx (ui-angular container)
 
 ### `libs/auth` — `@ai-cv-maker/auth`
 
-Framework-agnostic TypeScript library shared by `ui-angular` and `ui-react`.
+Framework-agnostic TypeScript library used by `ui-angular` and `chat-ui`.
 
 | Module | Purpose |
 |---|---|
@@ -58,11 +57,8 @@ User submits credentials
   saveSession(token, email)   ← @ai-cv-maker/auth
   writes to localStorage['cv_token'] + ['cv_email']
         │
-        ├─ ui-angular: AuthService.isLoggedIn signal → authGuard allows routing
-        │               apiInterceptor reads getToken() → adds Authorization header
-        │
-        └─ ui-react:   Redux authSlice.token → ProtectedRoute allows routing
-                        each API call reads token from store
+        └─ ui-angular: AuthService.isLoggedIn signal → authGuard allows routing
+                        apiInterceptor reads getToken() → adds Authorization header
 
 On logout:
   clearSession() → broadcast.notifyLogout() → all same-origin tabs dispatch logout

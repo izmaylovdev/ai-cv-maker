@@ -6,7 +6,6 @@
  * These are plain async functions — no Angular DI, no Redux, no RxJS.
  * Each app wraps them in its own state layer:
  *  - `ui-angular`: `AuthService` wraps them in `from()` to get Observables.
- *  - `ui-react`: Redux async thunks (`createAsyncThunk`) call them directly.
  *
  * Errors thrown by these functions always include a `.status` property with
  * the HTTP status code so callers can branch on 401 vs 409 vs 5xx.

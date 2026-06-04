@@ -1,10 +1,7 @@
 /**
  * localStorage key for the JWT access token.
  *
- * Single source of truth across `ui-angular` and `ui-react`.
- * Both apps share the same origin in production (proxied by Nginx),
- * so they share the same localStorage namespace — using the same key
- * means a token written by Angular is readable by React and vice-versa.
+ * Single source of truth for all apps in the monorepo (`ui-angular`, `chat-ui`).
  */
 export const TOKEN_KEY = 'cv_token';
 

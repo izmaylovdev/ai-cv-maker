@@ -5,9 +5,8 @@
  *
  * ## Why this is needed
  *
- * `ui-angular` and `ui-react` run on the same origin. When the user logs out
- * in one app (or one tab), the other app's in-memory auth state still reads
- * "logged in" until a page reload — unless explicitly notified.
+ * When the user logs out in one tab, other open tabs still read "logged in"
+ * in memory until a page reload — unless explicitly notified.
  *
  * `BroadcastChannel` sends a message to every same-origin tab/window
  * simultaneously, allowing all apps to clear their state and redirect to

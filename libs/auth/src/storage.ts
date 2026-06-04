@@ -55,8 +55,7 @@ export function getToken(): string | null {
  * Persist a successful auth response to localStorage.
  *
  * Call this after a successful login, registration, or token refresh.
- * Both `ui-angular` and `ui-react` write to the same keys, so a login in
- * one app is immediately visible to the other on the next read.
+ * All apps in the monorepo write to the same keys via this function.
  *
  * @param token - The JWT returned by `cv-api`.
  * @param email - The user's email address (stored for display without JWT decode).

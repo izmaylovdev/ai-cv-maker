@@ -54,44 +54,6 @@ export class AuthService implements OnDestroy {
 }
 ```
 
-### In `ui-react` (Redux slice)
-
-```ts
-import {
-  loginApi, saveSession, clearSession, getSession,
-  AuthRequest, AuthResponse,
-} from '@ai-cv-maker/auth';
-
-// Initial state hydrated from localStorage
-const initialState: AuthState = getSession();
-
-export const login = createAsyncThunk('auth/login',
-  async (body: AuthRequest) => loginApi(body, environment.apiUrl)
-);
-
-const authSlice = createSlice({
-  name: 'auth',
-  initialState,
-  reducers: {
-    logout(state) { state.token = null; clearSession(); },
-  },
-  extraReducers: builder =>
-    builder.addCase(login.fulfilled, (state, { payload }) => {
-      state.token = payload.token;
-      saveSession(payload.token, payload.email);
-    }),
-});
-```
-
-```ts
-// main.tsx — wire up cross-tab logout sync once at startup
-import { createAuthBroadcast } from '@ai-cv-maker/auth';
-import { logout } from './features/auth/authSlice';
-
-const authBroadcast = createAuthBroadcast();
-authBroadcast.onLogout(() => store.dispatch(logout()));
-```
-
 ### Token expiry check
 
 ```ts
@@ -132,8 +94,7 @@ and carries typed messages. It degrades gracefully to a no-op when unavailable
 Angular's `HttpClient` is DI-bound and wraps `fetch` in Observables. Using
 plain `fetch` here means the same `loginApi()` function can be called from:
 - An Angular `Injectable` (wrapped in `from()`)
-- A Redux `createAsyncThunk` (called directly as a `Promise`)
-- A Web Component (no framework at all)
+- A Web Component / standalone script (no framework DI)
 
 ---
 
