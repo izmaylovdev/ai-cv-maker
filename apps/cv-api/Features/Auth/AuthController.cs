@@ -42,4 +42,30 @@ public class AuthController(IAuthService authService) : ControllerBase
 
         return Ok(result);
     }
+
+    [HttpPost("google/token")]
+    public async Task<ActionResult<AuthResponse>> GoogleAccessTokenLogin(GoogleAccessTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.AccessToken))
+            return BadRequest("Access token is required.");
+
+        var result = await authService.GoogleAccessTokenLoginAsync(request);
+        if (result is null)
+            return Unauthorized("Invalid Google access token.");
+
+        return Ok(result);
+    }
+
+    [HttpPost("google/code")]
+    public async Task<ActionResult<AuthResponse>> GoogleCodeLogin(GoogleCodeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest("Authorization code is required.");
+
+        var result = await authService.GoogleCodeLoginAsync(request);
+        if (result is null)
+            return Unauthorized("Invalid Google authorization code.");
+
+        return Ok(result);
+    }
 }

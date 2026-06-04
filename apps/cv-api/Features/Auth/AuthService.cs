@@ -40,8 +40,8 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
 
     public async Task<AuthResponse?> GoogleLoginAsync(GoogleLoginRequest request)
     {
-        var clientId = config["Google:ClientId"]
-            ?? throw new InvalidOperationException("Google:ClientId is not configured");
+        var clientId = config["Google:WebClientId"]
+            ?? throw new InvalidOperationException("Google:WebClientId is not configured");
 
         GoogleJsonWebSignature.Payload payload;
         try
@@ -76,6 +76,99 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
         await db.SaveChangesAsync();
         return new AuthResponse(GenerateToken(user), user.Email);
     }
+
+    public async Task<AuthResponse?> GoogleAccessTokenLoginAsync(GoogleAccessTokenRequest request)
+    {
+        using var http = new HttpClient();
+        var infoRes = await http.GetAsync(
+            $"https://www.googleapis.com/oauth2/v3/userinfo?access_token={Uri.EscapeDataString(request.AccessToken)}");
+
+        if (!infoRes.IsSuccessStatusCode) return null;
+
+        var info = await infoRes.Content.ReadFromJsonAsync<GoogleUserInfo>();
+        if (info?.Email is null || info.Sub is null) return null;
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == info.Sub)
+                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == info.Email);
+
+        if (user is null)
+        {
+            user = new User { Email = info.Email, GoogleId = info.Sub };
+            db.Users.Add(user);
+        }
+        else if (user.GoogleId is null)
+        {
+            user.GoogleId = info.Sub;
+        }
+
+        await db.SaveChangesAsync();
+        return new AuthResponse(GenerateToken(user), user.Email);
+    }
+
+    private sealed record GoogleUserInfo(
+        [property: System.Text.Json.Serialization.JsonPropertyName("sub")] string? Sub,
+        [property: System.Text.Json.Serialization.JsonPropertyName("email")] string? Email);
+
+    public async Task<AuthResponse?> GoogleCodeLoginAsync(GoogleCodeRequest request)
+    {
+        var clientId = config["Google:WebClientId"]
+            ?? throw new InvalidOperationException("Google:WebClientId is not configured");
+        var clientSecret = config["Google:ClientSecret"]
+            ?? throw new InvalidOperationException("Google:ClientSecret is not configured");
+
+        // Exchange the authorization code for tokens
+        using var http = new HttpClient();
+        var tokenParams = new Dictionary<string, string>
+        {
+            ["code"] = request.Code,
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+            ["redirect_uri"] = request.RedirectUri,
+            ["grant_type"] = "authorization_code",
+            ["code_verifier"] = request.CodeVerifier,
+        };
+
+        var tokenRes = await http.PostAsync(
+            "https://oauth2.googleapis.com/token",
+            new FormUrlEncodedContent(tokenParams));
+
+        if (!tokenRes.IsSuccessStatusCode) return null;
+
+        var tokenJson = await tokenRes.Content.ReadFromJsonAsync<GoogleTokenResponse>();
+        if (tokenJson?.IdToken is null) return null;
+
+        // Validate the returned ID token
+        GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            payload = await GoogleJsonWebSignature.ValidateAsync(
+                tokenJson.IdToken,
+                new GoogleJsonWebSignature.ValidationSettings { Audience = [clientId] });
+        }
+        catch
+        {
+            return null;
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == payload.Subject)
+                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+
+        if (user is null)
+        {
+            user = new User { Email = payload.Email, GoogleId = payload.Subject };
+            db.Users.Add(user);
+        }
+        else if (user.GoogleId is null)
+        {
+            user.GoogleId = payload.Subject;
+        }
+
+        await db.SaveChangesAsync();
+        return new AuthResponse(GenerateToken(user), user.Email);
+    }
+
+    private sealed record GoogleTokenResponse(
+        [property: System.Text.Json.Serialization.JsonPropertyName("id_token")] string? IdToken);
 
     private string GenerateToken(User user)
     {

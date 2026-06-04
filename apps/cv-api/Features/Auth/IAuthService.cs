@@ -7,4 +7,6 @@ public interface IAuthService
     Task<AuthResponse?> RegisterAsync(RegisterRequest request);
     Task<AuthResponse?> LoginAsync(LoginRequest request);
     Task<AuthResponse?> GoogleLoginAsync(GoogleLoginRequest request);
+    Task<AuthResponse?> GoogleCodeLoginAsync(GoogleCodeRequest request);
+    Task<AuthResponse?> GoogleAccessTokenLoginAsync(GoogleAccessTokenRequest request);
 }
