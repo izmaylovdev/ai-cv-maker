@@ -7,4 +7,5 @@ module.exports = {
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   coverageDirectory: '../../coverage/apps/admin-api',
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/'],
 };

@@ -65,6 +65,15 @@
       "options": {
         "passWithNoTests": true
       }
+    },
+    "e2e": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/admin-api-e2e"],
+      "options": {
+        "jestConfig": "apps/admin-api/jest.e2e.config.cts",
+        "passWithNoTests": true
+      },
+      "dependsOn": ["serve"]
     }
   }
 }
