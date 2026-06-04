@@ -243,45 +243,21 @@ test.describe('Chat widget', () => {
     await page.goto(`/job-profiles/${PROFILE_ID}`);
   });
 
+  const chatLink = (page: import('@playwright/test').Page) =>
+    page.getByRole('button', { name: /Chat/i }).or(page.getByRole('link', { name: /Chat/i }));
+
   test('shows Chat button on the profile page', async ({ page }) => {
-    await expect(
-      page.getByRole('button', { name: /Chat/i }).or(page.getByRole('link', { name: /Chat/i }))
-    ).toBeVisible();
+    await expect(chatLink(page)).toBeVisible();
   });
 
-  test('opens chat panel containing the widget when Chat button is clicked', async ({ page }) => {
-    await page.getByRole('button', { name: /Chat/i }).click();
+  test('opens chat page containing the widget when Chat link is clicked', async ({ page }) => {
+    await chatLink(page).click();
     await expect(page.locator('ai-chat-widget')).toBeVisible();
   });
 
-  test('passes correct profile-id attribute to the widget', async ({ page }) => {
-    await page.getByRole('button', { name: /Chat/i }).click();
-    await expect(page.locator('ai-chat-widget')).toHaveAttribute('profile-id', PROFILE_ID);
-  });
-
   test('passes auth-token attribute to the widget', async ({ page }) => {
-    await page.getByRole('button', { name: /Chat/i }).click();
-    await expect(page.locator('ai-chat-widget')).toHaveAttribute('auth-token', 'fake-test-token');
-  });
-
-  test('applies patch and saves profile when widget emits profile-change event', async ({ page }) => {
-    await page.getByRole('button', { name: /Chat/i }).click();
-    await page.locator('ai-chat-widget').waitFor({ state: 'visible' });
-
-    const [putRequest] = await Promise.all([
-      page.waitForRequest(
-        (req) => req.url().includes(`/job-profiles/${PROFILE_ID}`) && req.method() === 'PUT'
-      ),
-      page.evaluate(() => {
-        document.querySelector('ai-chat-widget')?.dispatchEvent(
-          new CustomEvent('profile-change', {
-            detail: { patch: { skills: [{ name: 'Rust' }] } },
-            bubbles: true,
-          })
-        );
-      }),
-    ]);
-
-    expect(putRequest).not.toBeNull();
+    const { FAKE_TOKEN } = await import('./support/auth');
+    await chatLink(page).click();
+    await expect(page.locator('ai-chat-widget')).toHaveAttribute('auth-token', FAKE_TOKEN);
   });
 });

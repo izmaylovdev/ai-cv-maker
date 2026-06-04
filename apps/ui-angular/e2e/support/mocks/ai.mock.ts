@@ -2,14 +2,14 @@ import { Page } from '@playwright/test';
 import { API_URL } from '../constants';
 import { mockProfile } from '../fixtures/profile.fixture';
 
-export async function mockEnhanceFieldApi(page: Page, profileId: string, enhanced: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/enhance-field`, (route) => {
+export async function mockEnhanceFieldApi(page: Page, _profileId: string, enhanced: string) {
+  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
     route.fulfill({ json: { enhanced } });
   });
 }
 
-export async function mockEnhanceFieldFailApi(page: Page, profileId: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/enhance-field`, (route) => {
+export async function mockEnhanceFieldFailApi(page: Page, _profileId: string) {
+  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
     route.fulfill({ status: 502, body: 'Enhancement failed' });
   });
 }

@@ -79,8 +79,8 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   private setupScrollSync() {
-    const win = this.doc.defaultView;
-    if (!win) return;
+    const mainEl = this.doc.querySelector('main') as HTMLElement | null;
+    if (!mainEl) return;
 
     const onScroll = () => {
       const sections = [
@@ -90,7 +90,7 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
         { el: this.leftSkills?.nativeElement, key: 'skills' },
       ].filter((s): s is { el: HTMLElement; key: string } => s.el != null);
 
-      const scrollTop = win.scrollY;
+      const scrollTop = mainEl.scrollTop;
 
       let activeKey = sections[0]?.key ?? this.lastActiveSection;
       for (const { el, key } of sections) {
@@ -112,8 +112,8 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       }
     };
 
-    win.addEventListener('scroll', onScroll, { passive: true });
-    this.scrollUnsubscribe = () => win.removeEventListener('scroll', onScroll);
+    mainEl.addEventListener('scroll', onScroll, { passive: true });
+    this.scrollUnsubscribe = () => mainEl.removeEventListener('scroll', onScroll);
   }
 
   get workExperiences() {
@@ -184,24 +184,14 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   openPdfDialog() {
-    const raw = this.form.value;
-    const fullName = (raw.fullName as string) ?? '';
-    const jobTitle = (raw.title as string) ?? '';
-    const draft = {
-      ...raw,
-      location: (raw.location as string)?.trim() || null,
-      sectionOrder: this.sectionOrder(),
-      workExperiences: (raw.workExperiences as WorkExperience[] ?? []).map((w) => ({
-        ...w,
-        endDate: w.endDate || null,
-      })),
-      educations: (raw.educations as Education[] ?? []).map((e) => ({
-        ...e,
-        endYear: e.endYear || null,
-      })),
-    };
-    this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
-      state: { draft, title: `${fullName} — ${jobTitle}` },
+    this.dialogs.openDownloadCv().subscribe(notes => {
+      if (notes === undefined) return;
+      const raw = this.form.value;
+      const fullName = (raw.fullName as string) ?? '';
+      const jobTitle = (raw.title as string) ?? '';
+      this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
+        state: { notes: notes || '', title: `${fullName} — ${jobTitle}` },
+      });
     });
   }
 

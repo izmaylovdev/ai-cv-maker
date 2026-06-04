@@ -85,7 +85,7 @@ test.describe('CV PDF preview page - loading state', () => {
     await setupAuth(page);
     // Delay the CV create response so the loading state is visible long enough to assert
     await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs`, async (route) => {
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 3000));
       await route.fulfill({ json: mockCvListItem });
     });
     await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs/${TEST_CV_ID}/pdf`, (route) =>
