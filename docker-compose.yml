@@ -65,8 +65,8 @@ services:
   # LLM_PROVIDER=foundry + FOUNDRY_API_KEY + FOUNDRY_BASE_URL (or FOUNDRY_DEPLOYMENT_NAME) + LLM_MODEL (see .env.example).
   llm-service:
     build:
-      context: apps/llm-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/llm-service/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
