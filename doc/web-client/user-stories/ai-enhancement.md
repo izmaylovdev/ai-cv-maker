@@ -86,3 +86,16 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 - The AI uses the extracted job description (title, responsibilities, required skills) as the optimization target.
 - If the fetch fails or the page contains no recognizable job content, the AI proceeds using the raw input text as the role description.
 - The rest of the optimization review flow (suggestions, accept/discard) is unchanged.
+
+### US-AI-6 — Track LLM spending per user
+
+**As a** platform administrator,
+**I want to** see how many LLM tokens each user has consumed and the associated estimated cost,
+**so that** I can monitor spending, identify heavy users, and make informed decisions about pricing or quotas.
+
+**Acceptance criteria:**
+- Every LLM call (CV generate, optimize, enhance field, extract, chat, cover letter, user chat) records the prompt tokens, completion tokens, and model name against the requesting user.
+- Token counts are persisted in the database per user per request.
+- Cost is derived on-the-fly from a configurable price-per-token table (stored in `appsettings.json`, keyed by model name, separate rates for prompt vs. completion tokens).
+- The admin panel exposes an endpoint listing all users with their aggregate token usage and estimated cost in USD.
+- A user-facing `/settings/usage` page shows the current user's own total prompt tokens, completion tokens, and estimated cost to date.

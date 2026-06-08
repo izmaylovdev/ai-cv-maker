@@ -199,6 +199,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `GET /api/job-profiles/:id/cvs/:cvId/pdf` | `CvController` | Download generated CV as PDF |
 | `GET /api/job-profiles/:id/cvs/default/pdf` | `CvController` | Download raw (non-LLM) profile as PDF |
 | `DELETE /api/job-profiles/:id/cvs/:cvId` | `CvController` | Delete generated CV |
+| `GET /api/usage` | `UsageController` | Current user's token usage & estimated cost |
 
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token verification
@@ -258,6 +259,14 @@ GeneratedCv  (FK → Profile, cascade delete)
  ├── fullName, title, location, contactEmail, contactPhone  — snapshot at generation time
  ├── optimizationNotes  — free-text hint passed to LLM
  └── cvDataJson  — serialized LlmGenerateResponse (summary, work, education, skills, highlights)
+
+LlmUsage  (no FK constraint; UserId nullable for system calls)
+ ├── id (UUID PK)
+ ├── userId (Guid, nullable, indexed)
+ ├── operation  — "Generate" | "Optimize" | "Extract" | "EnhanceField" | "Chat" | "UserChat" | "CoverLetter"
+ ├── promptTokens, completionTokens (int)
+ ├── modelName  — e.g. "claude-sonnet-4-6"
+ └── createdAt (UTC, indexed)
 ```
 
 Migrations are EF Core code-first, stored in `apps/cv-api/Migrations/`.

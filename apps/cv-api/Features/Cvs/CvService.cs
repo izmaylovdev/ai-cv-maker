@@ -2,6 +2,7 @@ using System.Text.Json;
 using CvApi.Domain.Entities;
 using CvApi.Features.Cvs.Dtos;
 using CvApi.Features.JobProfiles.Dtos;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
 using CvApi.Infrastructure.Persistence;
@@ -9,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.Cvs;
 
-public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfService) : ICvService
+public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfService, UsageService usageService) : ICvService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions _jsonCamelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -36,6 +37,8 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
 
         if (profile is null) return null;
 
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+
         var llmRequest = new LlmGenerateRequest(
             new LlmProfileRequest(
                 profile.FullName,
@@ -54,10 +57,12 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
                     .ToList(),
                 profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
             ),
-            string.IsNullOrWhiteSpace(request.OptimizationNotes) ? null : request.OptimizationNotes
+            string.IsNullOrWhiteSpace(request.OptimizationNotes) ? null : request.OptimizationNotes,
+            string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
         var llmResponse = await llmService.GenerateAsync(llmRequest);
+        await usageService.RecordAsync(userId, "Generate", llmResponse.Usage);
 
         var generatedCv = new GeneratedCv
         {
@@ -119,7 +124,8 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
                     e.EndYear.HasValue ? $"{e.StartYear} – {e.EndYear}" : $"{e.StartYear} – Present"))
                 .ToList(),
             Skills: profile.Skills.OrderBy(s => s.Order).Select(s => s.Name).ToList(),
-            Highlights: []
+            Highlights: [],
+            Usage: LlmTokenUsage.Empty
         );
 
         var sectionOrder = profile.SectionOrder.Split(',').ToList();
@@ -140,7 +146,8 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
                     e.EndYear.HasValue ? $"{e.StartYear} – {e.EndYear}" : $"{e.StartYear} – Present"))
                 .ToList(),
             Skills: data.Skills.Select(s => s.Name).ToList(),
-            Highlights: []
+            Highlights: [],
+            Usage: LlmTokenUsage.Empty
         );
 
         var sectionOrder = data.SectionOrder is { Count: > 0 }

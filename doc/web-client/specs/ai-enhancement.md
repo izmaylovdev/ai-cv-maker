@@ -502,3 +502,91 @@ beautifulsoup4 = ">=4.12"
 - Handling multiple URLs in a single message (only the first URL is processed)
 - Link preview display in the optimize dialog (preview metadata is produced but only used by future chat feature)
 - Sanitising or validating URLs before fetching (internal/private URLs not blocked)
+
+---
+
+## 8. LLM Token Usage Tracking (US-AI-6)
+
+### 8.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-8.1 | Every gRPC response from llm-service includes prompt_tokens, completion_tokens, and model_name fields. |
+| F-AI-8.2 | cv-api persists one `LlmUsage` row per LLM call, containing UserId, Operation, PromptTokens, CompletionTokens, ModelName, and CreatedAt. |
+| F-AI-8.3 | Cost is calculated on-the-fly using a price table in `appsettings.json` keyed by model name (`PromptCostPer1M` and `CompletionCostPer1M` in USD). Unknown models fall back to a configurable default entry. |
+| F-AI-8.4 | Admin API exposes `GET /api/admin/usage` returning per-user aggregates (total prompt tokens, completion tokens, estimated cost USD). |
+| F-AI-8.5 | cv-api exposes `GET /api/usage` (authenticated) returning the calling user's aggregate token counts and estimated cost. |
+| F-AI-8.6 | Angular `/settings/usage` page displays the current user's usage summary. |
+
+### 8.2 Technical Specification
+
+#### gRPC proto change
+
+Add a `UsageMetadata` message to `proto/llm_service.proto` and embed it in every response:
+
+```proto
+message UsageMetadata {
+  int32 prompt_tokens     = 1;
+  int32 completion_tokens = 2;
+  string model_name       = 3;
+}
+```
+
+All response messages (`GenerateResponse`, `OptimizeResponse`, `ExtractProfileResponse`, `EnhanceFieldResponse`, `ChatResponse`, `UserChatResponse`, `CoverLetterResponse`) gain a field:
+
+```proto
+UsageMetadata usage = <next_field_number>;
+```
+
+Regenerate stubs after proto changes:
+```bash
+npm run grpc:generate
+```
+
+#### Data model
+
+New table `LlmUsages`:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| Id | Guid PK | |
+| UserId | Guid FK → Users | nullable (system calls) |
+| Operation | string | e.g. "Generate", "Chat" |
+| PromptTokens | int | |
+| CompletionTokens | int | |
+| ModelName | string | |
+| CreatedAt | DateTime | UTC |
+
+#### Price table (`appsettings.json`)
+
+```json
+"LlmPricing": {
+  "Models": {
+    "claude-sonnet-4-6": { "PromptCostPer1M": 3.0, "CompletionCostPer1M": 15.0 },
+    "default":           { "PromptCostPer1M": 3.0, "CompletionCostPer1M": 15.0 }
+  }
+}
+```
+
+#### API
+
+`GET /api/usage` — authenticated, returns:
+```json
+{ "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081 }
+```
+
+`GET /api/admin/usage` — admin-authenticated, returns:
+```json
+[{ "userId": "…", "email": "…", "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081 }]
+```
+
+#### Angular
+
+New standalone component `UsageComponent` at `features/settings/usage/`. Route: `/settings/usage`. Linked from the settings page.
+
+### 8.3 Out of Scope (MVP)
+
+- Per-operation breakdown in the user-facing view
+- Usage quotas / hard limits
+- Real-time streaming token counts
+- Usage for non-LLM operations

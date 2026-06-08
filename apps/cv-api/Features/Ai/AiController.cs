@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using CvApi.Features.JobProfiles.Dtos;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,8 +10,10 @@ namespace CvApi.Features.Ai;
 [ApiController]
 [Route("api/ai")]
 [Authorize]
-public class AiController(ILlmService llmService) : ControllerBase
+public class AiController(ILlmService llmService, UsageService usageService) : ControllerBase
 {
+    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
     [HttpPost("enhance-field")]
     public async Task<ActionResult<EnhanceFieldResponse>> EnhanceField(EnhanceFieldRequest request)
     {
@@ -22,6 +26,7 @@ public class AiController(ILlmService llmService) : ControllerBase
         try
         {
             var llmResponse = await llmService.EnhanceFieldAsync(new LlmEnhanceFieldRequest(request.Content, request.FieldPurpose));
+            await usageService.RecordAsync(UserId, "EnhanceField", llmResponse.Usage);
             return Ok(new EnhanceFieldResponse(llmResponse.Enhanced));
         }
         catch (LlmRateLimitException)

@@ -42,5 +42,17 @@ export const appRoutes: Route[] = [
     loadComponent: () =>
       import('./features/chat/chat-page.component').then((m) => m.ChatPageComponent),
   },
+  {
+    path: 'settings',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+  },
+  {
+    path: 'settings/usage',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/settings/usage.component').then((m) => m.UsageComponent),
+  },
   { path: '**', redirectTo: '/job-profiles' },
 ];

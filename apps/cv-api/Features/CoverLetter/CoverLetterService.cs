@@ -1,11 +1,12 @@
 using CvApi.Domain.Entities;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.CoverLetter;
 
-public class CoverLetterService(AppDbContext db, ILlmService llmService)
+public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageService usageService)
 {
     public async Task<GenerateCoverLetterResponse> GenerateAsync(Guid userId, GenerateCoverLetterRequest request)
     {
@@ -37,6 +38,8 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService)
                 throw new InvalidOperationException("No profiles found. Create a profile before generating a cover letter.");
         }
 
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+
         var llmRequest = new LlmCoverLetterRequest(
             Profiles: profiles.Select(p => new LlmCoverLetterProfile(
                 Id: p.Id.ToString(),
@@ -54,10 +57,12 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService)
             )).ToList(),
             JobTitle: request.JobTitle,
             JobDescription: request.JobDescription,
-            FieldContext: request.FieldContext
+            FieldContext: request.FieldContext,
+            GlobalPreferences: string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
         var result = await llmService.GenerateCoverLetterAsync(llmRequest);
+        await usageService.RecordAsync(userId, "CoverLetter", result.Usage ?? LlmTokenUsage.Empty);
 
         var selectedProfile = profiles.FirstOrDefault(p => p.Id == result.SelectedProfileId)
             ?? profiles[0];

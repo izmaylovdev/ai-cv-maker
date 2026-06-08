@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CvApi.Features.JobProfiles.Dtos;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +12,7 @@ namespace CvApi.Features.Chat;
 [ApiController]
 [Route("api/chat")]
 [Authorize]
-public class ChatController(AppDbContext db, ILlmService llmService) : ControllerBase
+public class ChatController(AppDbContext db, ILlmService llmService, UsageService usageService) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
@@ -20,6 +21,8 @@ public class ChatController(AppDbContext db, ILlmService llmService) : Controlle
     {
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest("Message is required.");
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
 
         var profiles = await db.Profiles
             .Include(p => p.Skills)
@@ -43,11 +46,25 @@ public class ChatController(AppDbContext db, ILlmService llmService) : Controlle
         LlmUserChatResponse result;
         try
         {
-            result = await llmService.UserChatAsync(new LlmUserChatRequest(summaries, request.Message, history));
+            result = await llmService.UserChatAsync(new LlmUserChatRequest(
+                summaries,
+                request.Message,
+                history,
+                string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
+            ));
         }
         catch (Exception ex)
         {
             return StatusCode(502, $"Chat failed: {ex.Message}");
+        }
+
+        await usageService.RecordAsync(UserId, "UserChat", result.Usage ?? LlmTokenUsage.Empty);
+
+        // Persist preferences update if the agent signalled one
+        if (!string.IsNullOrWhiteSpace(result.PreferencesUpdate) && user is not null)
+        {
+            user.GlobalPreferences = result.PreferencesUpdate;
+            await db.SaveChangesAsync();
         }
 
         return Ok(new UserChatResponse(result.Reply));

@@ -52,6 +52,7 @@ message ProfileInput {
 message GenerateRequest {
   ProfileInput profile = 1;
   string message = 2;
+  string global_preferences = 3;
 }
 
 message WorkExperienceOutput {
@@ -68,17 +69,25 @@ message EducationOutput {
   string period = 4;
 }
 
+message UsageMetadata {
+  int32  prompt_tokens     = 1;
+  int32  completion_tokens = 2;
+  string model_name        = 3;
+}
+
 message GenerateResponse {
   string summary = 1;
   repeated WorkExperienceOutput work_experiences = 2;
   repeated EducationOutput educations = 3;
   repeated string skills = 4;
   repeated string highlights = 5;
+  UsageMetadata usage = 6;
 }
 
 message OptimizeRequest {
   ProfileInput profile = 1;
   string message = 2;
+  string global_preferences = 3;
 }
 
 message OptimizeWorkExperienceOutput {
@@ -98,6 +107,7 @@ message OptimizeResponse {
   string overview = 2;
   repeated OptimizeWorkExperienceOutput work_experiences = 3;
   repeated OptimizeSkillOutput skills = 4;
+  UsageMetadata usage = 5;
 }
 
 message ExtractProfileRequest {
@@ -134,6 +144,7 @@ message ExtractProfileResponse {
   repeated ExtractWorkExperience work_experiences = 7;
   repeated ExtractEducation educations = 8;
   repeated ExtractSkill skills = 9;
+  UsageMetadata usage = 10;
 }
 
 message EnhanceFieldRequest {
@@ -143,6 +154,7 @@ message EnhanceFieldRequest {
 
 message EnhanceFieldResponse {
   string enhanced = 1;
+  UsageMetadata usage = 2;
 }
 
 message ChatMessage {
@@ -163,8 +175,9 @@ message ChatProposal {
 }
 
 message ChatResponse {
-  string      reply    = 1;
+  string       reply    = 1;
   ChatProposal proposal = 2;
+  UsageMetadata usage   = 3;
 }
 
 message ProfileSummary {
@@ -178,10 +191,13 @@ message UserChatRequest {
   repeated ProfileSummary profiles = 1;
   string               message = 2;
   repeated ChatMessage history = 3;
+  string global_preferences    = 4;
 }
 
 message UserChatResponse {
-  string reply = 1;
+  string        reply              = 1;
+  string        preferences_update = 2;
+  UsageMetadata usage              = 3;
 }
 
 message HealthRequest {}
@@ -196,9 +212,11 @@ message CoverLetterRequest {
   string job_title              = 3;
   string job_description        = 4;
   string field_context          = 5;
+  string global_preferences     = 6;
 }
 
 message CoverLetterResponse {
-  string text                = 1;
-  string selected_profile_id = 2;
+  string        text               = 1;
+  string        selected_profile_id = 2;
+  UsageMetadata usage              = 3;
 }

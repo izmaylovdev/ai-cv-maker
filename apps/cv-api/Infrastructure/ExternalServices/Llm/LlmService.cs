@@ -22,6 +22,7 @@ public class LlmService(
     private static CallOptions DefaultCallOptions =>
         new(deadline: DateTime.UtcNow.Add(CallDeadline));
 
+
     private static LlmTokenUsage MapUsage(CvApi.Grpc.UsageMetadata? usage) =>
         usage is null
             ? LlmTokenUsage.Empty

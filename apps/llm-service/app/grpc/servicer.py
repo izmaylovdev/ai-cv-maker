@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.chains.chat_chain import ChatMessage, chat_reply
 from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
+from app.chains.usage import TokenUsage
 from app.chains.user_chat_chain import (
     ChatMessage as UserChatMessage,
     ProfileSummary,
@@ -57,11 +58,19 @@ def _proto_to_profile(proto) -> ProfileInput:
     )
 
 
+def _usage_proto(usage: TokenUsage):
+    return llm_service_pb2.UsageMetadata(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        model_name=usage.model_name,
+    )
+
+
 class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
     async def Generate(self, request, context):
         try:
             profile = _proto_to_profile(request.profile)
-            result = await generate_cv(profile, request.message or None)
+            result, usage = await generate_cv(profile, request.message or None, getattr(request, "global_preferences", "") or "")
             return llm_service_pb2.GenerateResponse(
                 summary=result.summary,
                 work_experiences=[
@@ -84,6 +93,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 ],
                 skills=result.skills,
                 highlights=result.highlights,
+                usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
@@ -93,7 +103,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
     async def Optimize(self, request, context):
         try:
             profile = _proto_to_profile(request.profile)
-            result = await optimize_profile(profile, request.message)
+            result, usage = await optimize_profile(profile, request.message, getattr(request, "global_preferences", "") or "")
             return llm_service_pb2.OptimizeResponse(
                 title=result.title,
                 overview=result.overview,
@@ -111,6 +121,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                     llm_service_pb2.OptimizeSkillOutput(name=s.name)
                     for s in result.skills
                 ],
+                usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
@@ -119,7 +130,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def ExtractProfile(self, request, context):
         try:
-            result = await extract_profile(request.cv_text)
+            result, usage = await extract_profile(request.cv_text)
             return llm_service_pb2.ExtractProfileResponse(
                 full_name=result.fullName,
                 title=result.title,
@@ -151,6 +162,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                     llm_service_pb2.ExtractSkill(name=s.name)
                     for s in result.skills
                 ],
+                usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
@@ -159,8 +171,8 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def EnhanceField(self, request, context):
         try:
-            enhanced = await enhance_field(request.content, request.field_purpose)
-            return llm_service_pb2.EnhanceFieldResponse(enhanced=enhanced)
+            enhanced, usage = await enhance_field(request.content, request.field_purpose)
+            return llm_service_pb2.EnhanceFieldResponse(enhanced=enhanced, usage=_usage_proto(usage))
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
@@ -170,13 +182,13 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
         try:
             profile = _proto_to_profile(request.profile)
             history = [ChatMessage(role=m.role, content=m.content) for m in request.history]
-            result = await chat_reply(profile, request.message, history)
+            result, usage = await chat_reply(profile, request.message, history)
             proposal = llm_service_pb2.ChatProposal(
                 type=result.proposal.type,
                 description=result.proposal.description,
                 patch_json=result.proposal.patch_json,
             ) if result.proposal else llm_service_pb2.ChatProposal()
-            return llm_service_pb2.ChatResponse(reply=result.reply, proposal=proposal)
+            return llm_service_pb2.ChatResponse(reply=result.reply, proposal=proposal, usage=_usage_proto(usage))
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
@@ -194,8 +206,17 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 for p in request.profiles
             ]
             history = [UserChatMessage(role=m.role, content=m.content) for m in request.history]
-            result = await user_chat_reply(profiles, request.message, history)
-            return llm_service_pb2.UserChatResponse(reply=result.reply)
+            result, usage = await user_chat_reply(
+                profiles,
+                request.message,
+                history,
+                global_preferences=getattr(request, "global_preferences", "") or "",
+            )
+            return llm_service_pb2.UserChatResponse(
+                reply=result.reply,
+                preferences_update=result.preferences_update or "",
+                usage=_usage_proto(usage),
+            )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
@@ -204,16 +225,18 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
     async def GenerateCoverLetter(self, request, context):
         try:
             profiles = [_proto_to_profile(p) for p in request.profiles]
-            result = await generate_cover_letter(CoverLetterRequest(
+            result, usage = await generate_cover_letter(CoverLetterRequest(
                 profiles=profiles,
                 profile_ids=list(request.profile_ids),
                 job_title=request.job_title,
                 job_description=request.job_description,
                 field_context=request.field_context,
+                global_preferences=getattr(request, "global_preferences", "") or "",
             ))
             return llm_service_pb2.CoverLetterResponse(
                 text=result.text,
                 selected_profile_id=result.selected_profile_id,
+                usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))

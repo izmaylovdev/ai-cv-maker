@@ -135,6 +135,9 @@ builder.Services.AddScoped<ILlmService, LlmService>();
 builder.Services.AddScoped<IJobProfileService, JobProfileService>();
 builder.Services.AddScoped<ICvService, CvService>();
 builder.Services.AddScoped<CoverLetterService>();
+builder.Services.Configure<CvApi.Features.Usage.LlmPricingOptions>(
+    builder.Configuration.GetSection(CvApi.Features.Usage.LlmPricingOptions.SectionName));
+builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
 var app = builder.Build();
 

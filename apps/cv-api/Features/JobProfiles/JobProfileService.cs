@@ -1,6 +1,7 @@
 using System.Text;
 using CvApi.Domain.Entities;
 using CvApi.Features.JobProfiles.Dtos;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
@@ -9,7 +10,7 @@ using UglyToad.PdfPig;
 
 namespace CvApi.Features.JobProfiles;
 
-public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobProfileService
+public class JobProfileService(AppDbContext db, ILlmService llmService, UsageService usageService) : IJobProfileService
 {
     public async Task<List<JobProfileListItemDto>> ListAsync(Guid userId)
     {
@@ -126,6 +127,8 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
 
         if (profile is null) return null;
 
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+
         var llmRequest = new LlmOptimizeRequest(
             new LlmProfileRequest(
                 profile.FullName,
@@ -144,10 +147,12 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
                     .ToList(),
                 profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
             ),
-            request.Message
+            request.Message,
+            string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
         var llmResponse = await llmService.OptimizeAsync(llmRequest);
+        await usageService.RecordAsync(userId, "Optimize", llmResponse.Usage);
 
         return new OptimizeProfileResponse(
             llmResponse.Title,
@@ -190,6 +195,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
             throw new InvalidOperationException("Could not extract text from the uploaded file.");
 
         var llmResponse = await llmService.ExtractAsync(new LlmExtractRequest(cvText));
+        await usageService.RecordAsync(userId, "Extract", llmResponse.Usage);
 
         var profile = await db.Profiles.FirstAsync(p => p.Id == id);
 
@@ -244,6 +250,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService) : IJobPr
         );
 
         var llmResponse = await llmService.ChatAsync(llmRequest);
+        await usageService.RecordAsync(userId, "Chat", llmResponse.Usage);
 
         ChatProposalDto? proposal = null;
         if (llmResponse.Proposal is not null)
