@@ -64,20 +64,31 @@ export function ChatApp({ authToken, apiBase }: Props) {
     }
   }
 
+  const isEmpty = messages.length === 0;
+
   return (
-    <div className="chat-app">
-      <div className="chat-messages">
-        <MessageList messages={messages} />
-        {loading && (
-          <div className="chat-typing">
-            <span />
-            <span />
-            <span />
+    <div className={`chat-app${isEmpty ? ' chat-app--empty' : ''}`}>
+      {isEmpty ? (
+        <div className="chat-landing">
+          <div className="chat-landing__heading">How can I help you?</div>
+          <MessageInput onSend={send} disabled={loading} landing />
+        </div>
+      ) : (
+        <>
+          <div className="chat-messages">
+            <MessageList messages={messages} />
+            {loading && (
+              <div className="chat-typing">
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
+            <div ref={bottomRef} />
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-      <MessageInput onSend={send} disabled={loading} />
+          <MessageInput onSend={send} disabled={loading} />
+        </>
+      )}
     </div>
   );
 }

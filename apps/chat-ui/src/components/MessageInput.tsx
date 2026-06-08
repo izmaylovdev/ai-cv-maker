@@ -3,9 +3,10 @@ import { useState, type KeyboardEvent } from 'react';
 interface Props {
   onSend: (text: string) => void;
   disabled: boolean;
+  landing?: boolean;
 }
 
-export function MessageInput({ onSend, disabled }: Props) {
+export function MessageInput({ onSend, disabled, landing }: Props) {
   const [value, setValue] = useState('');
 
   function submit() {
@@ -23,7 +24,7 @@ export function MessageInput({ onSend, disabled }: Props) {
   }
 
   return (
-    <div className="chat-input">
+    <div className={`chat-input${landing ? ' chat-input--landing' : ''}`}>
       <textarea
         className="chat-input__textarea"
         placeholder="Ask a question or give an instruction…"
@@ -31,16 +32,20 @@ export function MessageInput({ onSend, disabled }: Props) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
         disabled={disabled}
-        rows={2}
+        rows={1}
       />
-      <button
-        className="chat-input__send"
-        onClick={submit}
-        disabled={disabled || !value.trim()}
-        aria-label="Send"
-      >
-        Send
-      </button>
+      {!landing && (
+        <button
+          className="chat-input__send"
+          onClick={submit}
+          disabled={disabled || !value.trim()}
+          aria-label="Send"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 13V3M8 3L3 8M8 3L13 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
