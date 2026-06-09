@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
 from app import settings as app_settings
+from app.chains.usage import TokenUsage
 from app.guards import guard_cv_text, guard_free_text
 from app.schemas import (
     ExtractResponse,
@@ -148,7 +149,7 @@ def _build_foundry_client() -> AsyncAnthropicFoundry:
     )
 
 
-async def _generate_cv_foundry_raw(inputs: dict[str, str]):
+async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: str = ""):
     model = app_settings.foundry_model()
     if not model:
         raise ValueError(
@@ -157,19 +158,23 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str]):
         )
     client = _build_foundry_client()
     user_content = _HUMAN_PROMPT.format(**inputs)
+    system_prompt = _SYSTEM_PROMPT
+    if global_preferences and global_preferences.strip():
+        system_prompt = f"{_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
     message = await client.messages.create(
         model=model,
         max_tokens=app_settings.foundry_max_tokens(),
         temperature=app_settings.llm_temperature(),
-        system=_SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
     )
     return _parse_generate_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _generate_cv_foundry(inputs: dict[str, str]) -> GenerateResponse:
-    result, _ = await _generate_cv_foundry_raw(inputs)
-    return result
+async def _generate_cv_foundry(inputs: dict[str, str], global_preferences: str = "") -> tuple[GenerateResponse, TokenUsage]:
+    result, raw_usage = await _generate_cv_foundry_raw(inputs, global_preferences)
+    model = app_settings.foundry_model() or ""
+    return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
 def _build_llm() -> BaseChatModel:
@@ -211,27 +216,55 @@ def _build_llm() -> BaseChatModel:
     )
 
 
-def build_cv_chain():
+def _llm_model_name() -> str:
+    """Return the configured model name for the current provider."""
+    provider = app_settings.llm_provider()
+    if provider == "google":
+        return app_settings.google_model() or ""
+    if provider in ("openai", "openai_compatible", "lm_studio", "lm-studio"):
+        return app_settings.openai_model() or ""
+    if provider == "azure_openai":
+        return app_settings.foundry_model() or ""
+    return ""
+
+
+async def _invoke_llm_for_generate(
+    system_prompt: str,
+    inputs: dict[str, str],
+) -> tuple[GenerateResponse, TokenUsage]:
+    """Call the LLM directly (no structured output) and parse the JSON response.
+
+    This lets us capture usage_metadata from the AIMessage.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
     llm = _build_llm()
-    structured_llm = llm.with_structured_output(GenerateResponse)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=_HUMAN_PROMPT.format(**inputs)),
+    ]
+    response = await llm.ainvoke(messages)
+    result = _parse_generate_response_json(str(response.content))
+    usage = TokenUsage.from_langchain_response(response, _llm_model_name())
+    return result, usage
 
-    prompt = ChatPromptTemplate.from_messages(
-        [("system", _SYSTEM_PROMPT), ("human", _HUMAN_PROMPT)]
-    )
 
-    return prompt | structured_llm
-
-
-async def generate_cv(profile: ProfileInput, message: str | None = None) -> GenerateResponse:
+async def generate_cv(
+    profile: ProfileInput,
+    message: str | None = None,
+    global_preferences: str = "",
+) -> tuple[GenerateResponse, TokenUsage]:
     inputs = _profile_to_prompt_vars(profile, message)
     provider = app_settings.llm_provider()
 
     if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _generate_cv_foundry(inputs)
+        return await _generate_cv_foundry(inputs, global_preferences)
 
-    chain = build_cv_chain()
-    result = await chain.ainvoke(inputs)
-    return result
+    system_prompt = _SYSTEM_PROMPT
+    if global_preferences and global_preferences.strip():
+        system_prompt = f"{_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
+
+    return await _invoke_llm_for_generate(system_prompt, inputs)
 
 
 _OPTIMIZE_SYSTEM_PROMPT = """\
@@ -292,7 +325,7 @@ def _parse_optimize_response_json(text: str) -> OptimizeResponse:
         raise ValueError(f"Model did not return valid optimize JSON: {exc}\n---\n{snippet}") from exc
 
 
-async def _optimize_profile_foundry_raw(inputs: dict[str, str]):
+async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferences: str = ""):
     model = app_settings.foundry_model()
     if not model:
         raise ValueError(
@@ -300,42 +333,61 @@ async def _optimize_profile_foundry_raw(inputs: dict[str, str]):
         )
     client = _build_foundry_client()
     user_content = _OPTIMIZE_HUMAN_PROMPT.format(**inputs)
+    system_prompt = _OPTIMIZE_SYSTEM_PROMPT
+    if global_preferences and global_preferences.strip():
+        system_prompt = f"{_OPTIMIZE_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
     message = await client.messages.create(
         model=model,
         max_tokens=app_settings.foundry_max_tokens(),
         temperature=app_settings.llm_temperature(),
-        system=_OPTIMIZE_SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
     )
     return _parse_optimize_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _optimize_profile_foundry(inputs: dict[str, str]) -> OptimizeResponse:
-    result, _ = await _optimize_profile_foundry_raw(inputs)
-    return result
+async def _optimize_profile_foundry(inputs: dict[str, str], global_preferences: str = "") -> tuple[OptimizeResponse, TokenUsage]:
+    result, raw_usage = await _optimize_profile_foundry_raw(inputs, global_preferences)
+    model = app_settings.foundry_model() or ""
+    return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
-def build_optimize_chain():
+async def _invoke_llm_for_optimize(
+    system_prompt: str,
+    inputs: dict[str, str],
+) -> tuple[OptimizeResponse, TokenUsage]:
+    """Call the LLM directly (no structured output) and parse the JSON response."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
     llm = _build_llm()
-    structured_llm = llm.with_structured_output(OptimizeResponse)
-    prompt = ChatPromptTemplate.from_messages(
-        [("system", _OPTIMIZE_SYSTEM_PROMPT), ("human", _OPTIMIZE_HUMAN_PROMPT)]
-    )
-    return prompt | structured_llm
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=_OPTIMIZE_HUMAN_PROMPT.format(**inputs)),
+    ]
+    response = await llm.ainvoke(messages)
+    result = _parse_optimize_response_json(str(response.content))
+    usage = TokenUsage.from_langchain_response(response, _llm_model_name())
+    return result, usage
 
 
-async def optimize_profile(profile: ProfileInput, message: str) -> OptimizeResponse:
+async def optimize_profile(
+    profile: ProfileInput,
+    message: str,
+    global_preferences: str = "",
+) -> tuple[OptimizeResponse, TokenUsage]:
     from app.preprocessing.link_enricher import enrich
     enriched = await enrich(message)
     inputs = _build_optimize_inputs(profile, enriched.text)
     provider = app_settings.llm_provider()
 
     if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _optimize_profile_foundry(inputs)
+        return await _optimize_profile_foundry(inputs, global_preferences)
 
-    chain = build_optimize_chain()
-    result = await chain.ainvoke(inputs)
-    return result
+    system_prompt = _OPTIMIZE_SYSTEM_PROMPT
+    if global_preferences and global_preferences.strip():
+        system_prompt = f"{_OPTIMIZE_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
+
+    return await _invoke_llm_for_optimize(system_prompt, inputs)
 
 
 _ENHANCE_SYSTEM_PROMPT = """\
@@ -380,12 +432,13 @@ async def _enhance_field_foundry_raw(content: str, field_purpose: str):
     return _anthropic_text_content(message).strip(), message.usage
 
 
-async def _enhance_field_foundry(content: str, field_purpose: str) -> str:
-    result, _ = await _enhance_field_foundry_raw(content, field_purpose)
-    return result
+async def _enhance_field_foundry(content: str, field_purpose: str) -> tuple[str, TokenUsage]:
+    result, raw_usage = await _enhance_field_foundry_raw(content, field_purpose)
+    model = app_settings.foundry_model() or ""
+    return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
-async def enhance_field(content: str, field_purpose: str) -> str:
+async def enhance_field(content: str, field_purpose: str) -> tuple[str, TokenUsage]:
     provider = app_settings.llm_provider()
 
     if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
@@ -398,7 +451,8 @@ async def enhance_field(content: str, field_purpose: str) -> str:
         HumanMessage(content=_ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)),
     ]
     response = await llm.ainvoke(messages)
-    return str(response.content).strip()
+    usage = TokenUsage.from_langchain_response(response, _llm_model_name())
+    return str(response.content).strip(), usage
 
 
 _EXTRACT_SYSTEM_PROMPT = """\
@@ -458,26 +512,26 @@ async def _extract_profile_foundry_raw(cv_text: str):
     return _parse_extract_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _extract_profile_foundry(cv_text: str) -> ExtractResponse:
-    result, _ = await _extract_profile_foundry_raw(cv_text)
-    return result
+async def _extract_profile_foundry(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
+    result, raw_usage = await _extract_profile_foundry_raw(cv_text)
+    model = app_settings.foundry_model() or ""
+    return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
-def build_extract_chain():
-    llm = _build_llm()
-    structured_llm = llm.with_structured_output(ExtractResponse)
-    prompt = ChatPromptTemplate.from_messages(
-        [("system", _EXTRACT_SYSTEM_PROMPT), ("human", _EXTRACT_HUMAN_PROMPT)]
-    )
-    return prompt | structured_llm
-
-
-async def extract_profile(cv_text: str) -> ExtractResponse:
+async def extract_profile(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
     provider = app_settings.llm_provider()
 
     if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
         return await _extract_profile_foundry(cv_text)
 
-    chain = build_extract_chain()
-    result = await chain.ainvoke({"cv_text": cv_text})
-    return result
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = _build_llm()
+    messages = [
+        SystemMessage(content=_EXTRACT_SYSTEM_PROMPT),
+        HumanMessage(content=_EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)),
+    ]
+    response = await llm.ainvoke(messages)
+    result = _parse_extract_response_json(str(response.content))
+    usage = TokenUsage.from_langchain_response(response, _llm_model_name())
+    return result, usage

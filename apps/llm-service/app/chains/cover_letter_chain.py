@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app import settings as app_settings
+from app.chains.usage import TokenUsage
 from app.chains.cv_chain import (
     _anthropic_text_content,
     _build_foundry_client,
     _build_llm,
+    _llm_model_name,
     _format_educations,
     _format_skills,
     _format_work_experiences,
@@ -21,6 +23,7 @@ class CoverLetterRequest:
     job_title: str
     job_description: str
     field_context: str
+    global_preferences: str = ""
 
 
 @dataclass
@@ -34,7 +37,7 @@ You are an expert career coach and professional cover letter writer. \
 Your task has two steps:
 
 1. Select the single most relevant candidate profile for the given job.
-2. Write a concise, compelling cover letter (3–4 paragraphs) for that profile.
+2. Write a concise, compelling cover letter for that profile.
 
 Rules:
 - Choose the profile whose skills, title, and experience best match the job description.
@@ -94,7 +97,7 @@ def _parse_response(raw: str, profile_ids: list[str]) -> tuple[str, str]:
     return cover_letter, profile_ids[idx]
 
 
-async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str]:
+async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, TokenUsage]:
     profiles_text = "\n\n".join(
         _format_profile(p, i) for i, p in enumerate(request.profiles)
     )
@@ -104,6 +107,15 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str]:
         field_context=request.field_context,
         profiles_text=profiles_text,
     )
+
+    if request.global_preferences and request.global_preferences.strip():
+        system_prompt = (
+            f"User preferences — these OVERRIDE all other instructions below:\n"
+            f"{request.global_preferences}\n\n"
+            f"{_SYSTEM_PROMPT}"
+        )
+    else:
+        system_prompt = _SYSTEM_PROMPT
 
     provider = app_settings.llm_provider()
 
@@ -116,26 +128,29 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str]:
             model=model,
             max_tokens=1024,
             temperature=app_settings.llm_temperature(),
-            system=_SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
         )
         raw = _anthropic_text_content(message).strip()
+        usage = TokenUsage.from_anthropic(message.usage, model)
     else:
         from langchain_core.messages import HumanMessage, SystemMessage
         llm = _build_llm()
         messages = [
-            SystemMessage(content=_SYSTEM_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=user_content),
         ]
         response = await llm.ainvoke(messages)
         raw = str(response.content).strip()
+        usage = TokenUsage.from_langchain_response(response, _llm_model_name())
 
-    return _parse_response(raw, request.profile_ids)
+    text, selected_id = _parse_response(raw, request.profile_ids)
+    return text, selected_id, usage
 
 
-async def generate_cover_letter(request: CoverLetterRequest) -> CoverLetterResult:
+async def generate_cover_letter(request: CoverLetterRequest) -> tuple[CoverLetterResult, TokenUsage]:
     if not request.profiles:
         raise ValueError("at least one profile is required to generate a cover letter")
 
-    text, selected_id = await _generate_with_llm(request)
-    return CoverLetterResult(text=text, selected_profile_id=selected_id)
+    text, selected_id, usage = await _generate_with_llm(request)
+    return CoverLetterResult(text=text, selected_profile_id=selected_id), usage
