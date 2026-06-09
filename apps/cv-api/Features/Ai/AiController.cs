@@ -24,6 +24,10 @@ public class AiController(ILlmService llmService) : ControllerBase
             var llmResponse = await llmService.EnhanceFieldAsync(new LlmEnhanceFieldRequest(request.Content, request.FieldPurpose));
             return Ok(new EnhanceFieldResponse(llmResponse.Enhanced));
         }
+        catch (LlmRateLimitException)
+        {
+            return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");
+        }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
             return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");

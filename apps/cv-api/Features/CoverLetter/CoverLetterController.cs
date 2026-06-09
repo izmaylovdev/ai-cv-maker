@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using CvApi.Infrastructure.ExternalServices.Llm;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,10 @@ public class CoverLetterController(CoverLetterService coverLetterService) : Cont
         catch (InvalidOperationException ex)
         {
             return UnprocessableEntity(new { error = ex.Message });
+        }
+        catch (LlmRateLimitException)
+        {
+            return StatusCode(503, "Cover letter generation is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
         }
         catch (RpcException ex) when (ex.StatusCode == global::Grpc.Core.StatusCode.InvalidArgument)
         {

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CvApi.Features.Cvs.Dtos;
 using CvApi.Features.JobProfiles.Dtos;
+using CvApi.Infrastructure.ExternalServices.Llm;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,6 +28,10 @@ public class CvController(ICvService cvService) : ControllerBase
         try
         {
             result = await cvService.CreateAsync(profileId, UserId, request);
+        }
+        catch (LlmRateLimitException)
+        {
+            return StatusCode(503, "CV generation is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {

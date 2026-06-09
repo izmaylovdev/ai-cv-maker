@@ -9,10 +9,13 @@ using CvApi.Infrastructure.Json;
 using CvApi.Infrastructure.Middleware;
 using CvApi.Infrastructure.Persistence;
 using CvApi.Infrastructure.Services;
+using Grpc.Core;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Polly;
+using Polly.CircuitBreaker;
 using Prometheus;
 using QuestPDF.Infrastructure;
 
@@ -92,6 +95,36 @@ builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
 {
     o.Address = new Uri(builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051");
 });
+
+// Polly resilience pipeline for LLM gRPC calls:
+//   - Retry up to 2 times with exponential backoff on Unavailable / DeadlineExceeded
+//   - Circuit breaker: open after 5 consecutive failures, break for 30 seconds
+builder.Services.AddResiliencePipeline(LlmService.ResiliencePipelineKey, pipelineBuilder =>
+{
+    pipelineBuilder
+        .AddRetry(new Polly.Retry.RetryStrategyOptions
+        {
+            MaxRetryAttempts = 2,
+            BackoffType = DelayBackoffType.Exponential,
+            Delay = TimeSpan.FromSeconds(1),
+            ShouldHandle = new PredicateBuilder()
+                .Handle<RpcException>(ex =>
+                    ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded),
+        })
+        .AddCircuitBreaker(new Polly.CircuitBreaker.CircuitBreakerStrategyOptions
+        {
+            FailureRatio = 1.0,          // open after consecutive failures (see MinimumThroughput)
+            MinimumThroughput = 5,
+            SamplingDuration = TimeSpan.FromSeconds(30),
+            BreakDuration = TimeSpan.FromSeconds(30),
+            ShouldHandle = new PredicateBuilder()
+                .Handle<RpcException>(ex =>
+                    ex.StatusCode is StatusCode.Unavailable
+                        or StatusCode.DeadlineExceeded
+                        or StatusCode.Internal),
+        });
+});
+
 builder.Services.AddScoped<ILlmService, LlmService>();
 builder.Services.AddScoped<IJobProfileService, JobProfileService>();
 builder.Services.AddScoped<ICvService, CvService>();
