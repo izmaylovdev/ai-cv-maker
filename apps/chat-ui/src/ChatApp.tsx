@@ -3,6 +3,8 @@ import { MessageList } from './components/MessageList';
 import { MessageInput } from './components/MessageInput';
 import './ChatApp.css';
 
+const MAX_HISTORY_TURNS = 20;
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'error';
@@ -30,6 +32,7 @@ export function ChatApp({ authToken, apiBase }: Props) {
 
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-MAX_HISTORY_TURNS)
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
