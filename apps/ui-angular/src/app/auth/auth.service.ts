@@ -12,6 +12,8 @@ import {
   googleLoginApi,
   isTokenExpired,
   loginApi,
+  logoutApi,
+  refreshApi,
   registerApi,
   saveSession,
 } from '@ai-cv-maker/auth';
@@ -64,9 +66,19 @@ export class AuthService implements OnDestroy {
     );
   }
 
+  /**
+   * Exchange the HttpOnly refresh_token cookie for a new access JWT.
+   * Saves the new session on success.
+   */
+  refresh() {
+    return from(refreshApi(API)).pipe(
+      tap((res) => this._storeSession(res.token, res.email))
+    );
+  }
+
   logout() {
     this.broadcast.notifyLogout(); // tell other tabs first
-    this._applyLogout(true);
+    logoutApi(API).finally(() => this._applyLogout(true));
   }
 
   getToken(): string | null {
@@ -77,6 +89,17 @@ export class AuthService implements OnDestroy {
     saveSession(token, email);
     this.isLoggedIn.set(true);
     this.currentEmail.set(email);
+  }
+
+  /**
+   * Clear session and navigate to login without calling the server logout endpoint.
+   * Used by the HTTP interceptor when a token refresh fails.
+   */
+  forceLogout() {
+    clearSession();
+    this.isLoggedIn.set(false);
+    this.currentEmail.set('');
+    this.router.navigate(['/auth/login']);
   }
 
   private _applyLogout(navigate: boolean) {

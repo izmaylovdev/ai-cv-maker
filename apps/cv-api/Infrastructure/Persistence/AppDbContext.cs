@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<GeneratedCv> GeneratedCvs => Set<GeneratedCv>();
     public DbSet<RequestSpan> RequestSpans => Set<RequestSpan>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -95,6 +96,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(s => s.Operation).HasMaxLength(300).IsRequired();
             e.HasIndex(s => s.TraceId);
             e.HasIndex(s => s.StartedAt);
+        });
+
+        modelBuilder.Entity<RefreshToken>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.Token).IsUnique();
+            e.Property(r => r.Token).IsRequired().HasMaxLength(128);
+            e.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
