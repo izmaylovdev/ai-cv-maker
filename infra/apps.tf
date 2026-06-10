@@ -153,6 +153,10 @@ resource "google_cloud_run_v2_service" "cv_api" {
         name  = "Google__ClientSecret"
         value = var.google_client_secret
       }
+      env {
+        name  = "Cors__AllowedOrigins"
+        value = "https://app.applysy.works"
+      }
 
       liveness_probe {
         http_get {
@@ -306,6 +310,23 @@ resource "google_cloud_run_v2_service_iam_member" "ui_angular_invoker" {
   name     = google_cloud_run_v2_service.ui_angular.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ── Custom domain: app.applysy.works → ui-angular ──────────────────────────────
+
+resource "google_cloud_run_domain_mapping" "ui_angular_domain" {
+  name     = "app.applysy.works"
+  location = var.region
+
+  metadata {
+    namespace = var.gcp_project_id
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.ui_angular.name
+  }
+
+  depends_on = [google_cloud_run_v2_service.ui_angular]
 }
 
 # ── prometheus ─────────────────────────────────────────────────────────────────

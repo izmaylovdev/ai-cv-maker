@@ -1,6 +1,11 @@
 output "app_url" {
-  description = "Public URL of the Angular frontend."
-  value       = google_cloud_run_v2_service.ui_angular.uri
+  description = "Public URL of the Angular frontend (custom domain)."
+  value       = "https://app.applysy.works"
+}
+
+output "dns_cname_record" {
+  description = "Add this CNAME record in your DNS provider: app.applysy.works → <value>"
+  value       = google_cloud_run_domain_mapping.ui_angular_domain.status[0].resource_records[0].rrdata
 }
 
 output "ar_repository" {
