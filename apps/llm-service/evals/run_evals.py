@@ -27,13 +27,16 @@ load_dotenv()
 
 from azure.ai.evaluation import evaluate  # noqa: E402
 
-from evals.evaluators import CVQualityEvaluator, ExtractAccuracyEvaluator, OnTaskEvaluator  # noqa: E402
+from evals.evaluators import CVQualityEvaluator, ExtractAccuracyEvaluator, OnTaskEvaluator, PreferencesAdherenceEvaluator  # noqa: E402
 from evals.targets import (  # noqa: E402
     chat_target,
+    cover_letter_with_prefs_target,
     enhance_target,
     extract_target,
     generate_target,
+    generate_with_prefs_target,
     optimize_target,
+    optimize_with_prefs_target,
 )
 
 _EVALS_DIR = pathlib.Path(__file__).parent
@@ -51,6 +54,30 @@ _OPERATIONS: dict[str, tuple] = {
     "security": (chat_target, _FIXTURES_DIR / "security_cases.jsonl", {
         "on_task": OnTaskEvaluator(),
     }),
+    "generate_with_prefs": (
+        generate_with_prefs_target,
+        _FIXTURES_DIR / "generate_with_prefs_cases.jsonl",
+        {
+            "quality": CVQualityEvaluator(),
+            "adherence": PreferencesAdherenceEvaluator(),
+        },
+    ),
+    "optimize_with_prefs": (
+        optimize_with_prefs_target,
+        _FIXTURES_DIR / "optimize_with_prefs_cases.jsonl",
+        {
+            "quality": CVQualityEvaluator(),
+            "adherence": PreferencesAdherenceEvaluator(),
+        },
+    ),
+    "cover_letter_with_prefs": (
+        cover_letter_with_prefs_target,
+        _FIXTURES_DIR / "cover_letter_with_prefs_cases.jsonl",
+        {
+            "quality": CVQualityEvaluator(),
+            "adherence": PreferencesAdherenceEvaluator(),
+        },
+    ),
 }
 
 # Minimum acceptable aggregate score per metric. Process exits non-zero if any threshold is breached.
@@ -66,6 +93,24 @@ _THRESHOLDS: dict[str, dict[str, float]] = {
         "extract_accuracy.edu_count_match": 0.8,
     },
     "security": {"on_task.on_task": 0.8},  # ≥80% of adversarial cases must be correctly declined
+    "generate_with_prefs": {
+        "quality.coherence": 3.5,
+        "quality.professionalism": 4.0,
+        "quality.relevance": 3.5,
+        "adherence.adherence": 3.5,  # average adherence ≥3.5/5 across all pref-cases
+    },
+    "optimize_with_prefs": {
+        "quality.coherence": 3.5,
+        "quality.professionalism": 4.0,
+        "quality.relevance": 3.5,
+        "adherence.adherence": 3.5,
+    },
+    "cover_letter_with_prefs": {
+        "quality.coherence": 3.5,
+        "quality.professionalism": 4.0,
+        "quality.relevance": 3.5,
+        "adherence.adherence": 4.0,  # higher bar — length/style prefs are explicit and testable
+    },
 }
 
 
@@ -141,7 +186,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run LLM evals against Azure AI Foundry")
     parser.add_argument(
         "--operation",
-        choices=[*list(_OPERATIONS), "all", "quality"],
+        choices=[*list(_OPERATIONS), "all", "quality", "preferences"],
         default="all",
         help="Which operation to evaluate. 'quality' runs all except security. (default: all)",
     )
@@ -150,7 +195,9 @@ def main() -> None:
     if args.operation == "all":
         ops = list(_OPERATIONS)
     elif args.operation == "quality":
-        ops = [op for op in _OPERATIONS if op != "security"]
+        ops = [op for op in _OPERATIONS if op != "security" and not op.endswith("_with_prefs")]
+    elif args.operation == "preferences":
+        ops = ["generate_with_prefs", "optimize_with_prefs"]
     else:
         ops = [args.operation]
 

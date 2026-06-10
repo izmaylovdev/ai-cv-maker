@@ -1,70 +1,35 @@
 locals {
-  acr_server   = azurerm_container_registry.acr.login_server
-  acr_username = azurerm_container_registry.acr.admin_username
-  acr_password = azurerm_container_registry.acr.admin_password
-
-  db_connection_string = "Host=${azurerm_postgresql_flexible_server.db.fqdn};Port=5432;Database=cvmaker;Username=${var.postgres_admin_login};Password=${var.postgres_admin_password};SslMode=Require"
-}
-
-resource "azurerm_container_app_environment" "env" {
-  name                       = "${var.project_name}-env"
-  resource_group_name        = azurerm_resource_group.rg.name
-  location                   = azurerm_resource_group.rg.location
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
+  db_host              = google_sql_database_instance.db.public_ip_address
+  db_connection_string = "Host=${local.db_host};Port=5432;Database=cvmaker;Username=${var.postgres_admin_login};Password=${var.postgres_admin_password};SslMode=Require"
 }
 
 # ── llm-service ────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "llm_service" {
-  name                         = "llm-service"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
-
-  dynamic "secret" {
-    for_each = var.google_api_key != "" ? [var.google_api_key] : []
-    content {
-      name  = "google-api-key"
-      value = secret.value
-    }
-  }
-
-  dynamic "secret" {
-    for_each = var.openai_api_key != "" ? [var.openai_api_key] : []
-    content {
-      name  = "openai-api-key"
-      value = secret.value
-    }
-  }
-
-  dynamic "secret" {
-    for_each = var.foundry_api_key != "" ? [var.foundry_api_key] : []
-    content {
-      name  = "foundry-api-key"
-      value = secret.value
-    }
-  }
+resource "google_cloud_run_v2_service" "llm_service" {
+  name     = "llm-service"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    min_replicas = 0
-    max_replicas = 2
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "llm-service"
-      image  = "${local.acr_server}/llm-service:latest"
-      cpu    = 0.5
-      memory = "1Gi"
+    containers {
+      image = "${local.ar_repository}/llm-service:latest"
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "1Gi"
+        }
+      }
+
+      ports {
+        container_port = 50051
+      }
 
       env {
         name  = "LLM_PROVIDER"
@@ -78,37 +43,25 @@ resource "azurerm_container_app" "llm_service" {
         name  = "LLM_TEMPERATURE"
         value = var.llm_temperature
       }
-
-      dynamic "env" {
-        for_each = var.google_api_key != "" ? [1] : []
-        content {
-          name        = "GOOGLE_API_KEY"
-          secret_name = "google-api-key"
-        }
+      env {
+        name  = "GOOGLE_API_KEY"
+        value = var.google_api_key
       }
-
       env {
         name  = "OPENAI_BASE_URL"
         value = var.openai_base_url
       }
-      dynamic "env" {
-        for_each = var.openai_api_key != "" ? [1] : []
-        content {
-          name        = "OPENAI_API_KEY"
-          secret_name = "openai-api-key"
-        }
+      env {
+        name  = "OPENAI_API_KEY"
+        value = var.openai_api_key
       }
       env {
         name  = "OPENAI_MODEL"
         value = var.openai_model
       }
-
-      dynamic "env" {
-        for_each = var.foundry_api_key != "" ? [1] : []
-        content {
-          name        = "FOUNDRY_API_KEY"
-          secret_name = "foundry-api-key"
-        }
+      env {
+        name  = "FOUNDRY_API_KEY"
+        value = var.foundry_api_key
       }
       env {
         name  = "FOUNDRY_BASE_URL"
@@ -123,201 +76,197 @@ resource "azurerm_container_app" "llm_service" {
         value = var.anthropic_foundry_max_tokens
       }
 
-      liveness_probe {
-        transport = "HTTP"
-        port      = 8000
-        path      = "/health"
-        initial_delay          = 10
-        interval_seconds       = 30
-        failure_count_threshold = 3
-      }
-
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8000
-        path      = "/health"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        tcp_socket {
+          port = 50051
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 10
+        failure_threshold     = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = false
-    target_port      = 50051
-    transport        = "http2"
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [
+    google_project_service.run,
+    google_artifact_registry_repository.repo,
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "llm_service_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.llm_service.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── cv-api ─────────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "cv_api" {
-  name                         = "cv-api"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
-
-  secret {
-    name  = "connection-string"
-    value = local.db_connection_string
-  }
-
-  secret {
-    name  = "jwt-secret"
-    value = var.jwt_secret
-  }
+resource "google_cloud_run_v2_service" "cv_api" {
+  name     = "cv-api"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    min_replicas = 1
-    max_replicas = 2
+    scaling {
+      min_instance_count = 1
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "cv-api"
-      image  = "${local.acr_server}/cv-api:latest"
-      cpu    = 0.5
-      memory = "1Gi"
+    containers {
+      image = "${local.ar_repository}/cv-api:latest"
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "1Gi"
+        }
+      }
+
+      ports {
+        container_port = 8080
+      }
 
       env {
-        name        = "ConnectionStrings__DefaultConnection"
-        secret_name = "connection-string"
+        name  = "ConnectionStrings__DefaultConnection"
+        value = local.db_connection_string
       }
       env {
-        name        = "JwtSettings__Secret"
-        secret_name = "jwt-secret"
+        name  = "JwtSettings__Secret"
+        value = var.jwt_secret
       }
       env {
         name  = "LlmService__GrpcUrl"
-        value = "http://llm-service"
+        value = google_cloud_run_v2_service.llm_service.uri
       }
       env {
-        name  = "Google__ClientId"
-        value = var.google_client_id
+        name  = "Google__WebClientId"
+        value = var.google_web_client_id
+      }
+      env {
+        name  = "Google__ExtensionClientId"
+        value = var.google_extension_client_id
+      }
+      env {
+        name  = "Google__ClientSecret"
+        value = var.google_client_secret
       }
 
       liveness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health"
-        initial_delay          = 15
-        interval_seconds       = 30
-        failure_count_threshold = 3
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        initial_delay_seconds = 15
+        period_seconds        = 30
+        failure_threshold     = 3
       }
 
-      readiness_probe {
-        transport = "HTTP"
-        port      = 8080
-        path      = "/health"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        period_seconds    = 10
+        failure_threshold = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = true
-    target_port      = 8080
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [
+    google_cloud_run_v2_service.llm_service,
+    google_sql_database_instance.db,
+  ]
+}
 
-  depends_on = [azurerm_container_app.llm_service]
+resource "google_cloud_run_v2_service_iam_member" "cv_api_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.cv_api.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── chat-ui ────────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "chat_ui" {
-  name                         = "chat-ui"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
+resource "google_cloud_run_v2_service" "chat_ui" {
+  name     = "chat-ui"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    min_replicas = 0
-    max_replicas = 2
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "chat-ui"
-      image  = "${local.acr_server}/chat-ui:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/chat-ui:latest"
+
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 80
+      }
     }
   }
 
-  ingress {
-    external_enabled = false
-    target_port      = 80
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [google_project_service.run]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "chat_ui_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.chat_ui.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── ui-angular ─────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "ui_angular" {
-  name                         = "ui-angular"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
+resource "google_cloud_run_v2_service" "ui_angular" {
+  name     = "ui-angular"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    min_replicas = 0
-    max_replicas = 2
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "ui-angular"
-      image  = "${local.acr_server}/ui-angular:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/ui-angular:latest"
 
-      # nginx template substitution: only replace these vars, leave $uri etc. intact
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 80
+      }
+
       env {
         name  = "CV_API_UPSTREAM"
-        value = "https://${azurerm_container_app.cv_api.ingress[0].fqdn}"
+        value = google_cloud_run_v2_service.cv_api.uri
       }
       env {
         name  = "CHAT_UI_UPSTREAM"
-        value = "https://${azurerm_container_app.chat_ui.ingress[0].fqdn}"
+        value = google_cloud_run_v2_service.chat_ui.uri
       }
       env {
         name  = "NGINX_ENVSUBST_TEMPLATE_VARS"
@@ -325,125 +274,119 @@ resource "azurerm_container_app" "ui_angular" {
       }
 
       liveness_probe {
-        transport = "HTTP"
-        port      = 80
-        path      = "/"
-        initial_delay          = 5
-        interval_seconds       = 30
-        failure_count_threshold = 3
+        http_get {
+          path = "/"
+          port = 80
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 30
+        failure_threshold     = 3
       }
 
-      readiness_probe {
-        transport = "HTTP"
-        port      = 80
-        path      = "/"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        http_get {
+          path = "/"
+          port = 80
+        }
+        period_seconds    = 10
+        failure_threshold = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = true
-    target_port      = 80
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [
+    google_cloud_run_v2_service.cv_api,
+    google_cloud_run_v2_service.chat_ui,
+  ]
+}
 
-  depends_on = [azurerm_container_app.cv_api, azurerm_container_app.chat_ui]
+resource "google_cloud_run_v2_service_iam_member" "ui_angular_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.ui_angular.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── prometheus ─────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "prometheus" {
-  name                         = "prometheus"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
+resource "google_cloud_run_v2_service" "prometheus" {
+  name     = "prometheus"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    min_replicas = 1
-    max_replicas = 1
+    scaling {
+      min_instance_count = 1
+      max_instance_count = 1
+    }
 
-    container {
-      name   = "prometheus"
-      image  = "${local.acr_server}/prometheus:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/prometheus:latest"
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 9090
+      }
     }
   }
 
-  ingress {
-    external_enabled = false
-    target_port      = 9090
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [
+    google_cloud_run_v2_service.cv_api,
+    google_project_service.run,
+  ]
+}
 
-  depends_on = [azurerm_container_app.cv_api]
+resource "google_cloud_run_v2_service_iam_member" "prometheus_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.prometheus.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── grafana ────────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "grafana" {
-  name                         = "grafana"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
-
-  secret {
-    name  = "grafana-admin-password"
-    value = var.grafana_admin_password
-  }
-
-  secret {
-    name  = "postgres-password"
-    value = var.postgres_admin_password
-  }
+resource "google_cloud_run_v2_service" "grafana" {
+  name     = "grafana"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    min_replicas = 1
-    max_replicas = 1
+    scaling {
+      min_instance_count = 1
+      max_instance_count = 1
+    }
 
-    container {
-      name   = "grafana"
-      image  = "${local.acr_server}/grafana:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/grafana:latest"
 
-      env {
-        name        = "GF_SECURITY_ADMIN_PASSWORD"
-        secret_name = "grafana-admin-password"
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
       }
+
+      ports {
+        container_port = 3000
+      }
+
       env {
         name  = "GF_SECURITY_ADMIN_USER"
         value = var.grafana_admin_user
+      }
+      env {
+        name  = "GF_SECURITY_ADMIN_PASSWORD"
+        value = var.grafana_admin_password
       }
       env {
         name  = "GF_AUTH_ANONYMOUS_ENABLED"
@@ -451,11 +394,11 @@ resource "azurerm_container_app" "grafana" {
       }
       env {
         name  = "PROMETHEUS_URL"
-        value = "http://prometheus"
+        value = google_cloud_run_v2_service.prometheus.uri
       }
       env {
         name  = "POSTGRES_HOST"
-        value = azurerm_postgresql_flexible_server.db.fqdn
+        value = local.db_host
       }
       env {
         name  = "POSTGRES_PORT"
@@ -470,8 +413,8 @@ resource "azurerm_container_app" "grafana" {
         value = var.postgres_admin_login
       }
       env {
-        name        = "POSTGRES_PASSWORD"
-        secret_name = "postgres-password"
+        name  = "POSTGRES_PASSWORD"
+        value = var.postgres_admin_password
       }
       env {
         name  = "POSTGRES_SSL_MODE"
@@ -479,73 +422,69 @@ resource "azurerm_container_app" "grafana" {
       }
 
       liveness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api/health"
-        initial_delay          = 10
-        interval_seconds       = 30
-        failure_count_threshold = 3
+        http_get {
+          path = "/api/health"
+          port = 3000
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 30
+        failure_threshold     = 3
       }
 
-      readiness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api/health"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        http_get {
+          path = "/api/health"
+          port = 3000
+        }
+        period_seconds    = 10
+        failure_threshold = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = true
-    target_port      = 3000
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [google_cloud_run_v2_service.prometheus]
+}
 
-  depends_on = [azurerm_container_app.prometheus]
+resource "google_cloud_run_v2_service_iam_member" "grafana_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.grafana.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── admin-api ──────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "admin_api" {
-  name                         = "admin-api"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
-
-  secret {
-    name  = "postgres-password"
-    value = var.postgres_admin_password
-  }
+resource "google_cloud_run_v2_service" "admin_api" {
+  name     = "admin-api"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    min_replicas = 0
-    max_replicas = 2
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "admin-api"
-      image  = "${local.acr_server}/admin-api:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/admin-api:latest"
+
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 3000
+      }
 
       env {
         name  = "DB_HOST"
-        value = azurerm_postgresql_flexible_server.db.fqdn
+        value = local.db_host
       }
       env {
         name  = "DB_PORT"
@@ -560,108 +499,147 @@ resource "azurerm_container_app" "admin_api" {
         value = var.postgres_admin_login
       }
       env {
-        name        = "DB_PASSWORD"
-        secret_name = "postgres-password"
+        name  = "DB_PASSWORD"
+        value = var.postgres_admin_password
       }
       env {
         name  = "DB_SSL"
         value = "true"
       }
+      env {
+        name  = "ADMIN_DB_HOST"
+        value = local.db_host
+      }
+      env {
+        name  = "ADMIN_DB_PORT"
+        value = "5432"
+      }
+      env {
+        name  = "ADMIN_DB_NAME"
+        value = "admin"
+      }
+      env {
+        name  = "ADMIN_DB_USER"
+        value = var.postgres_admin_login
+      }
+      env {
+        name  = "ADMIN_DB_PASSWORD"
+        value = var.postgres_admin_password
+      }
+      env {
+        name  = "JWT_SECRET"
+        value = var.admin_jwt_secret
+      }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_web_client_id
+      }
+      env {
+        name  = "ADMIN_SEED_EMAIL"
+        value = var.admin_seed_email
+      }
 
       liveness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api"
-        initial_delay          = 10
-        interval_seconds       = 30
-        failure_count_threshold = 3
+        http_get {
+          path = "/api"
+          port = 3000
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 30
+        failure_threshold     = 3
       }
 
-      readiness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/api"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        http_get {
+          path = "/api"
+          port = 3000
+        }
+        period_seconds    = 10
+        failure_threshold = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = false
-    target_port      = 3000
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [google_sql_database_instance.db]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "admin_api_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.admin_api.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 # ── admin-ui ───────────────────────────────────────────────────────────────────
 
-resource "azurerm_container_app" "admin_ui" {
-  name                         = "admin-ui"
-  container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.rg.name
-  revision_mode                = "Single"
-
-  registry {
-    server               = local.acr_server
-    username             = local.acr_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = local.acr_password
-  }
+resource "google_cloud_run_v2_service" "admin_ui" {
+  name     = "admin-ui"
+  location = var.region
+  deletion_protection = false
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    min_replicas = 0
-    max_replicas = 2
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
 
-    container {
-      name   = "admin-ui"
-      image  = "${local.acr_server}/admin-ui:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+    containers {
+      image = "${local.ar_repository}/admin-ui:latest"
+
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 3000
+      }
 
       env {
         name  = "ADMIN_API_URL"
-        value = "http://admin-api"
+        value = google_cloud_run_v2_service.admin_api.uri
       }
       env {
         name  = "GRAFANA_URL"
-        value = "https://${azurerm_container_app.grafana.ingress[0].fqdn}"
+        value = google_cloud_run_v2_service.grafana.uri
       }
 
       liveness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/"
-        initial_delay          = 10
-        interval_seconds       = 30
-        failure_count_threshold = 3
+        http_get {
+          path = "/"
+          port = 3000
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 30
+        failure_threshold     = 3
       }
 
-      readiness_probe {
-        transport = "HTTP"
-        port      = 3000
-        path      = "/"
-        interval_seconds       = 10
-        failure_count_threshold = 3
+      startup_probe {
+        http_get {
+          path = "/"
+          port = 3000
+        }
+        period_seconds    = 10
+        failure_threshold = 3
       }
     }
   }
 
-  ingress {
-    external_enabled = true
-    target_port      = 3000
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  depends_on = [
+    google_cloud_run_v2_service.admin_api,
+    google_cloud_run_v2_service.grafana,
+  ]
+}
 
-  depends_on = [azurerm_container_app.admin_api, azurerm_container_app.grafana]
+resource "google_cloud_run_v2_service_iam_member" "admin_ui_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.admin_ui.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }

@@ -183,3 +183,74 @@ class OnTaskEvaluator:
         except Exception as exc:
             logger.warning("OnTaskEvaluator failed: %s", exc)
             return {"on_task": 0}
+
+
+_ADHERENCE_SYSTEM = """\
+You are evaluating whether AI-generated CV content honours a user's stated writing preferences.
+
+The user's global preferences are a set of explicit rules they want applied to every output \
+(e.g. "write in British English", "use first-person active voice", "keep each entry under 25 words").
+
+Given the preferences and the generated CV content, judge how well the output adheres to those rules.
+
+Return ONLY a JSON object with a single integer field:
+{"adherence": <1-5>}
+
+Scale:
+1 — The preferences are almost entirely ignored.
+2 — Some preferences are partially respected but most are violated.
+3 — Preferences are moderately respected; clear violations still present.
+4 — Most preferences are well respected; only minor deviations.
+5 — The preferences are fully and consistently honoured throughout.
+"""
+
+_ADHERENCE_HUMAN = """\
+User preferences:
+{global_preferences}
+
+Generated CV content (JSON):
+{response}
+"""
+
+
+class PreferencesAdherenceEvaluator:
+    """LLM-as-judge evaluator: does the generated output honour the user's global preferences?
+
+    Returns a single score `adherence` on a 1–5 scale.
+    Compatible with azure-ai-evaluation's evaluate() function.
+    """
+
+    id = "preferences_adherence"
+
+    def __init__(self) -> None:
+        self._client = None
+        self._model: str | None = None
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = _build_foundry_client()
+            self._model = app_settings.foundry_model()
+        return self._client
+
+    async def _score(self, global_preferences: str, response: str) -> dict:
+        client = self._get_client()
+        user_content = _ADHERENCE_HUMAN.format(
+            global_preferences=global_preferences, response=response
+        )
+        msg = await client.messages.create(
+            model=self._model,
+            max_tokens=32,
+            temperature=0,
+            system=_ADHERENCE_SYSTEM,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        raw = _strip_optional_json_fence(msg.content[0].text)
+        scores = json.loads(raw)
+        return {"adherence": int(scores.get("adherence", 0))}
+
+    def __call__(self, *, global_preferences: str, response: str, **kwargs) -> dict:
+        try:
+            return asyncio.run(self._score(global_preferences, response))
+        except Exception as exc:
+            logger.warning("PreferencesAdherenceEvaluator failed: %s", exc)
+            return {"adherence": 0}

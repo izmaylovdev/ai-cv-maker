@@ -1,36 +1,45 @@
-resource "azurerm_postgresql_flexible_server" "db" {
-  name                   = "${var.project_name}-postgres"
-  resource_group_name    = azurerm_resource_group.rg.name
-  location               = azurerm_resource_group.rg.location
-  version                = "16"
-  administrator_login    = var.postgres_admin_login
-  administrator_password = var.postgres_admin_password
-  sku_name               = "B_Standard_B1ms"
-  storage_mb             = 32768
-  backup_retention_days  = 7
-  geo_redundant_backup_enabled = false
+resource "google_sql_database_instance" "db" {
+  name             = "${var.project_name}-postgres"
+  database_version = "POSTGRES_16"
+  region           = var.region
 
-  authentication {
-    active_directory_auth_enabled = false
-    password_auth_enabled         = true
+  settings {
+    tier    = "db-g1-small"
+    edition = "ENTERPRISE"
+
+    backup_configuration {
+      enabled                        = true
+      start_time                     = "03:00"
+      transaction_log_retention_days = 7
+    }
+
+    ip_configuration {
+      ipv4_enabled = true
+      # Cloud Run services connect via public IP with SSL
+      authorized_networks {
+        name  = "all"
+        value = "0.0.0.0/0"
+      }
+    }
   }
 
-  lifecycle {
-    ignore_changes = [zone, high_availability]
-  }
+  deletion_protection = false
+
+  depends_on = [google_project_service.sqladmin]
 }
 
-resource "azurerm_postgresql_flexible_server_database" "cvmaker" {
-  name      = "cvmaker"
-  server_id = azurerm_postgresql_flexible_server.db.id
-  charset   = "UTF8"
-  collation = "en_US.utf8"
+resource "google_sql_database" "cvmaker" {
+  name     = "cvmaker"
+  instance = google_sql_database_instance.db.name
 }
 
-# Allow outbound connections from Azure services (Container Apps use Azure IPs)
-resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
-  name             = "AllowAzureServices"
-  server_id        = azurerm_postgresql_flexible_server.db.id
-  start_ip_address = "0.0.0.0"
-  end_ip_address   = "0.0.0.0"
+resource "google_sql_user" "cvmaker" {
+  name     = var.postgres_admin_login
+  instance = google_sql_database_instance.db.name
+  password = var.postgres_admin_password
+}
+
+resource "google_sql_database" "admin" {
+  name     = "admin"
+  instance = google_sql_database_instance.db.name
 }

@@ -1,34 +1,29 @@
 output "app_url" {
   description = "Public URL of the Angular frontend."
-  value       = "https://${azurerm_container_app.ui_angular.ingress[0].fqdn}"
+  value       = google_cloud_run_v2_service.ui_angular.uri
 }
 
-output "acr_login_server" {
-  description = "ACR login server — set as ACR_LOGIN_SERVER in GitHub secrets."
-  value       = azurerm_container_registry.acr.login_server
+output "ar_repository" {
+  description = "Artifact Registry repository — use as image prefix when pushing."
+  value       = local.ar_repository
 }
 
-output "acr_name" {
-  description = "ACR resource name — set as ACR_NAME in GitHub secrets."
-  value       = azurerm_container_registry.acr.name
-}
-
-output "resource_group" {
-  description = "Resource group name — set as RESOURCE_GROUP in GitHub secrets."
-  value       = azurerm_resource_group.rg.name
-}
-
-output "postgres_fqdn" {
-  description = "PostgreSQL server hostname."
-  value       = azurerm_postgresql_flexible_server.db.fqdn
+output "postgres_host" {
+  description = "Cloud SQL public IP address."
+  value       = google_sql_database_instance.db.public_ip_address
 }
 
 output "grafana_url" {
   description = "Public URL of the Grafana dashboard."
-  value       = "https://${azurerm_container_app.grafana.ingress[0].fqdn}"
+  value       = google_cloud_run_v2_service.grafana.uri
 }
 
 output "admin_url" {
   description = "Public URL of the admin panel."
-  value       = "https://${azurerm_container_app.admin_ui.ingress[0].fqdn}"
+  value       = google_cloud_run_v2_service.admin_ui.uri
+}
+
+output "cv_api_url" {
+  description = "Public URL of the CV API."
+  value       = google_cloud_run_v2_service.cv_api.uri
 }

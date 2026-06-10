@@ -1,13 +1,18 @@
+variable "gcp_project_id" {
+  description = "Google Cloud project ID."
+  type        = string
+}
+
 variable "project_name" {
-  description = "Base name used in all resource names."
+  description = "Base name used in resource names."
   type        = string
   default     = "ai-cv-maker"
 }
 
-variable "location" {
-  description = "Azure region for all resources."
+variable "region" {
+  description = "GCP region for all resources."
   type        = string
-  default     = "swedencentral"
+  default     = "us-central1"
 }
 
 variable "postgres_admin_login" {
@@ -25,8 +30,19 @@ variable "jwt_secret" {
   sensitive = true
 }
 
-variable "google_client_id" {
+variable "google_web_client_id" {
   type = string
+}
+
+variable "google_extension_client_id" {
+  type    = string
+  default = ""
+}
+
+variable "google_client_secret" {
+  type      = string
+  sensitive = true
+  default   = ""
 }
 
 variable "google_api_key" {
@@ -68,7 +84,7 @@ variable "openai_model" {
   default = ""
 }
 
-# --- Azure AI Foundry (Claude) ---
+# --- Azure AI Foundry (Claude via Foundry) ---
 
 variable "foundry_api_key" {
   type      = string
@@ -99,4 +115,14 @@ variable "grafana_admin_user" {
 variable "grafana_admin_password" {
   type      = string
   sensitive = true
+}
+
+variable "admin_jwt_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "admin_seed_email" {
+  type    = string
+  default = ""
 }

@@ -6,152 +6,148 @@ on:
   workflow_dispatch:
 
 env:
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  AR_REGISTRY: ${{ secrets.AR_REGISTRY }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for Workload Identity Federation
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to Azure
-        uses: azure/login@v2
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Login to ACR
-        run: az acr login --name ${{ secrets.ACR_NAME }}
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
       # ── Build & push images ────────────────────────────────────────────────
 
       - name: Build and push cv-api
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/cv-api:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/cv-api:latest \
+            -t $AR_REGISTRY/cv-api:${{ github.sha }} \
+            -t $AR_REGISTRY/cv-api:latest \
             -f apps/cv-api/Dockerfile .
-          docker push $ACR_LOGIN_SERVER/cv-api:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/cv-api:latest
+          docker push $AR_REGISTRY/cv-api:${{ github.sha }}
+          docker push $AR_REGISTRY/cv-api:latest
 
       - name: Build and push llm-service
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/llm-service:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/llm-service:latest \
+            -t $AR_REGISTRY/llm-service:${{ github.sha }} \
+            -t $AR_REGISTRY/llm-service:latest \
             apps/llm-service
-          docker push $ACR_LOGIN_SERVER/llm-service:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/llm-service:latest
+          docker push $AR_REGISTRY/llm-service:${{ github.sha }}
+          docker push $AR_REGISTRY/llm-service:latest
+
+      - name: Build and push chat-ui
+        run: |
+          docker build \
+            -t $AR_REGISTRY/chat-ui:${{ github.sha }} \
+            -t $AR_REGISTRY/chat-ui:latest \
+            -f apps/chat-ui/Dockerfile .
+          docker push $AR_REGISTRY/chat-ui:${{ github.sha }}
+          docker push $AR_REGISTRY/chat-ui:latest
 
       - name: Build and push ui-angular
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/ui-angular:latest \
+            -t $AR_REGISTRY/ui-angular:${{ github.sha }} \
+            -t $AR_REGISTRY/ui-angular:latest \
             -f apps/ui-angular/Dockerfile .
-          docker push $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/ui-angular:latest
+          docker push $AR_REGISTRY/ui-angular:${{ github.sha }}
+          docker push $AR_REGISTRY/ui-angular:latest
 
       - name: Build and push prometheus
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/prometheus:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/prometheus:latest \
+            -t $AR_REGISTRY/prometheus:${{ github.sha }} \
+            -t $AR_REGISTRY/prometheus:latest \
             monitoring/prometheus
-          docker push $ACR_LOGIN_SERVER/prometheus:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/prometheus:latest
+          docker push $AR_REGISTRY/prometheus:${{ github.sha }}
+          docker push $AR_REGISTRY/prometheus:latest
 
       - name: Build and push grafana
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/grafana:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/grafana:latest \
+            -t $AR_REGISTRY/grafana:${{ github.sha }} \
+            -t $AR_REGISTRY/grafana:latest \
             monitoring/grafana
-          docker push $ACR_LOGIN_SERVER/grafana:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/grafana:latest
+          docker push $AR_REGISTRY/grafana:${{ github.sha }}
+          docker push $AR_REGISTRY/grafana:latest
 
       - name: Build and push admin-api
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/admin-api:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/admin-api:latest \
+            -t $AR_REGISTRY/admin-api:${{ github.sha }} \
+            -t $AR_REGISTRY/admin-api:latest \
             -f apps/admin-api/Dockerfile .
-          docker push $ACR_LOGIN_SERVER/admin-api:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/admin-api:latest
+          docker push $AR_REGISTRY/admin-api:${{ github.sha }}
+          docker push $AR_REGISTRY/admin-api:latest
 
       - name: Build and push admin-ui
         run: |
           docker build \
-            -t $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }} \
-            -t $ACR_LOGIN_SERVER/admin-ui:latest \
+            -t $AR_REGISTRY/admin-ui:${{ github.sha }} \
+            -t $AR_REGISTRY/admin-ui:latest \
             -f apps/admin-ui/Dockerfile .
-          docker push $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }}
-          docker push $ACR_LOGIN_SERVER/admin-ui:latest
+          docker push $AR_REGISTRY/admin-ui:${{ github.sha }}
+          docker push $AR_REGISTRY/admin-ui:latest
 
-      # ── Deploy to Container Apps ───────────────────────────────────────────
+      # ── Deploy to Cloud Run ────────────────────────────────────────────────
 
       - name: Deploy llm-service
         run: |
-          az containerapp update \
-            --name llm-service \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/llm-service:${{ github.sha }}
+          gcloud run services update llm-service \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/llm-service:${{ github.sha }}
 
       - name: Deploy cv-api
         run: |
-          az containerapp update \
-            --name cv-api \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/cv-api:${{ github.sha }}
+          gcloud run services update cv-api \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/cv-api:${{ github.sha }}
+
+      - name: Deploy chat-ui
+        run: |
+          gcloud run services update chat-ui \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/chat-ui:${{ github.sha }}
 
       - name: Deploy ui-angular
         run: |
-          az containerapp update \
-            --name ui-angular \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/ui-angular:${{ github.sha }}
+          gcloud run services update ui-angular \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/ui-angular:${{ github.sha }}
 
       - name: Deploy prometheus
         run: |
-          az containerapp update \
-            --name prometheus \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/prometheus:${{ github.sha }}
+          gcloud run services update prometheus \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/prometheus:${{ github.sha }}
 
       - name: Deploy grafana
         run: |
-          az containerapp update \
-            --name grafana \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/grafana:${{ github.sha }}
-
-      - name: Run admin-api migrations
-        run: |
-          az containerapp job start \
-            --name admin-migrate \
-            --resource-group ${{ secrets.RESOURCE_GROUP }}
-          # Wait for the job to complete (poll every 5s, timeout 120s)
-          for i in $(seq 1 24); do
-            STATUS=$(az containerapp job execution list \
-              --name admin-migrate \
-              --resource-group ${{ secrets.RESOURCE_GROUP }} \
-              --query "[0].properties.status" -o tsv)
-            echo "Migration job status: $STATUS"
-            if [ "$STATUS" = "Succeeded" ]; then break; fi
-            if [ "$STATUS" = "Failed" ]; then echo "Migration failed"; exit 1; fi
-            sleep 5
-          done
+          gcloud run services update grafana \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/grafana:${{ github.sha }}
 
       - name: Deploy admin-api
         run: |
-          az containerapp update \
-            --name admin-api \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/admin-api:${{ github.sha }}
+          gcloud run services update admin-api \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/admin-api:${{ github.sha }}
 
       - name: Deploy admin-ui
         run: |
-          az containerapp update \
-            --name admin-ui \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --image $ACR_LOGIN_SERVER/admin-ui:${{ github.sha }}
+          gcloud run services update admin-ui \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/admin-ui:${{ github.sha }}

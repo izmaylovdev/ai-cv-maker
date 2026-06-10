@@ -2,7 +2,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.chains.usage import TokenUsage
 from app.schemas import ProfileInput, SkillInput, WorkExperienceInput
+
+_EMPTY_USAGE = TokenUsage.empty()
 
 
 @pytest.fixture()
@@ -57,9 +60,9 @@ async def test_generate_cover_letter_returns_text(senior_backend_profile):
 
     with patch(
         "app.chains.cover_letter_chain._generate_with_llm",
-        new=AsyncMock(return_value=("Dear Hiring Manager...", "profile-1")),
+        new=AsyncMock(return_value=("Dear Hiring Manager...", "profile-1", _EMPTY_USAGE)),
     ):
-        result = await generate_cover_letter(request)
+        result, _ = await generate_cover_letter(request)
 
     assert result.text.startswith("Dear")
     assert result.selected_profile_id == "profile-1"
@@ -85,9 +88,9 @@ async def test_generate_cover_letter_selects_best_profile(
 
     with patch(
         "app.chains.cover_letter_chain._generate_with_llm",
-        new=AsyncMock(return_value=("I am a strong fit...", "backend-id")),
+        new=AsyncMock(return_value=("I am a strong fit...", "backend-id", _EMPTY_USAGE)),
     ):
-        result = await generate_cover_letter(request)
+        result, _ = await generate_cover_letter(request)
 
     assert result.selected_profile_id == "backend-id"
 

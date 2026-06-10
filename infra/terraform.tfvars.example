@@ -1,13 +1,16 @@
 # Copy to terraform.tfvars (git-ignored) and fill in real values.
 
-project_name = "ai-cv-maker"
-location = "swedencentral"
+gcp_project_id = "your-gcp-project-id"
+project_name   = "ai-cv-maker"
+region         = "europe-central2"
 
 postgres_admin_login    = "cvmaker"
 postgres_admin_password = "change-me-strong-password"
 
-jwt_secret       = "change-me-at-least-32-chars-long-secret"
-google_client_id = "your-client-id.apps.googleusercontent.com"
+jwt_secret             = "change-me-at-least-32-chars-long-secret"
+google_web_client_id   = "your-client-id.apps.googleusercontent.com"
+# google_extension_client_id = "your-extension-client-id.apps.googleusercontent.com"
+# google_client_secret       = "your-client-secret"
 
 # --- LLM settings — google (Gemini) is the default ---
 llm_provider = "google"
@@ -28,3 +31,11 @@ google_api_key = "AIzaSy..."
 # foundry_deployment_name     = "your-resource"
 # anthropic_foundry_max_tokens = "8192"
 # llm_model                   = "claude-haiku-4-5"
+
+# --- Grafana ---
+grafana_admin_user     = "admin"
+grafana_admin_password = "change-me-grafana-password"
+
+# --- Admin panel ---
+admin_jwt_secret  = "change-me-admin-jwt-secret"
+# admin_seed_email = "admin@example.com"
