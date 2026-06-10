@@ -71,16 +71,21 @@ if (expiry) console.log('session valid until', expiry.toLocaleString());
 
 ## Design decisions
 
-### Why not HttpOnly cookies?
+### Access token in localStorage, refresh token in HttpOnly cookie
 
-`cv-api` currently issues tokens in the response body (not via `Set-Cookie`).
-Moving to HttpOnly cookies requires server-side changes to:
-1. Set `Set-Cookie: token=…; HttpOnly; Secure; SameSite=Strict` on login/register responses
-2. Accept `Cookie` instead of (or in addition to) `Authorization: Bearer`
+The access token (1-hour JWT) lives in localStorage for easy use by the Angular
+interceptor and the `<ai-chat-widget>` Web Component, which has no cookie access.
 
-Until then, localStorage is the pragmatic choice. Mitigate XSS risk with a
-strict Content-Security-Policy and standard Angular/React output sanitisation.
-See the auth audit notes in `ARCHITECTURE.md` for the full upgrade path.
+The refresh token (30-day) is stored in an HttpOnly cookie set by `cv-api` on
+login/register. It is never readable by JavaScript — a meaningful XSS mitigation.
+The browser sends it automatically when the interceptor calls `POST /api/auth/refresh`
+with `credentials: 'include'`.
+
+Refresh tokens are stored hashed (SHA-256) in the `RefreshTokens` table and
+rotated on every use. A stolen refresh token cannot be reused after one rotation.
+
+Mitigate remaining XSS risk on the access token with a strict Content-Security-Policy
+and standard Angular output sanitisation.
 
 ### Why BroadcastChannel instead of storage events?
 

@@ -51,7 +51,8 @@ User submits credentials
   loginApi() / registerApi() / googleLoginApi()   ← @ai-cv-maker/auth
         │  POST /api/auth/{login|register|google}
         ▼
-    cv-api validates → issues HS256 JWT (7-day expiry)
+    cv-api validates → issues HS256 JWT (1-hour expiry)
+                     → sets HttpOnly refresh token cookie (30-day, SHA-256 hashed in DB)
         │
         ▼
   saveSession(token, email)   ← @ai-cv-maker/auth
@@ -60,23 +61,21 @@ User submits credentials
         └─ ui-angular: AuthService.isLoggedIn signal → authGuard allows routing
                         apiInterceptor reads getToken() → adds Authorization header
 
+On 401 (access token expired):
+  apiInterceptor → POST /api/auth/refresh (sends HttpOnly cookie automatically)
+                 → cv-api rotates refresh token → returns new JWT
+                 → interceptor retries original request with new token
+                 → if refresh fails → forceLogout()
+
 On logout:
+  POST /api/auth/logout → cv-api revokes refresh token in DB
   clearSession() → broadcast.notifyLogout() → all same-origin tabs dispatch logout
 ```
 
-**Token storage:** localStorage (same key in both apps, same origin in production).  
-**Transport:** `Authorization: Bearer <token>` header on every API request.  
-**Expiry:** 7-day flat JWT, no refresh mechanism. The `isTokenExpired()` utility
-checks the `exp` claim with a 30-second buffer to detect stale sessions before
-making API calls.
-
-**Known limitations / upgrade path:**
-- Tokens cannot be revoked before expiry (no blocklist). Mitigation: shorten
-  expiry + implement refresh tokens with HttpOnly cookie.
-- `localStorage` is readable by JS — XSS can steal the token. Mitigation:
-  Content-Security-Policy, framework sanitisation. Long-term: migrate to
-  HttpOnly cookies set by `cv-api`.
-- CORS is currently `AllowAnyOrigin`. Should be locked to known front-end origins.
+**Token storage:** Access token in localStorage; refresh token in HttpOnly cookie (set by `cv-api`).  
+**Transport:** `Authorization: Bearer <token>` header on every API request. Refresh uses the cookie automatically (credentials: include).  
+**Expiry:** 1-hour JWT access token + 30-day rotating HttpOnly refresh token. Refresh tokens are stored hashed (SHA-256) in the `RefreshTokens` table and rotated on every use.  
+**CORS:** Locked to specific front-end origins with `AllowCredentials` to support the HttpOnly cookie flow.
 
 ---
 
@@ -185,8 +184,10 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | Route prefix | Controller | Purpose |
 |---|---|---|
 | `POST /api/auth/register` | `AuthController` | Email/password registration |
-| `POST /api/auth/login` | `AuthController` | Email/password login → JWT |
-| `POST /api/auth/google` | `AuthController` | Google One-Tap login → JWT |
+| `POST /api/auth/login` | `AuthController` | Email/password login → JWT + HttpOnly refresh cookie |
+| `POST /api/auth/google` | `AuthController` | Google One-Tap login → JWT + HttpOnly refresh cookie |
+| `POST /api/auth/refresh` | `AuthController` | Rotate refresh token → new JWT |
+| `POST /api/auth/logout` | `AuthController` | Revoke refresh token in DB + clear cookie |
 | `GET /api/job-profiles` | `JobProfileController` | List profiles for current user |
 | `POST /api/job-profiles` | `JobProfileController` | Create profile |
 | `GET /api/job-profiles/:id` | `JobProfileController` | Get full profile |
@@ -199,11 +200,12 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `GET /api/job-profiles/:id/cvs/:cvId/pdf` | `CvController` | Download generated CV as PDF |
 | `GET /api/job-profiles/:id/cvs/default/pdf` | `CvController` | Download raw (non-LLM) profile as PDF |
 | `DELETE /api/job-profiles/:id/cvs/:cvId` | `CvController` | Delete generated CV |
+| `POST /api/cvs/generate-auto` | `CvController` | LLM selects best profile then generates CV |
 | `GET /api/usage` | `UsageController` | Current user's token usage & estimated cost |
 
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token verification
-- `LlmService` — gRPC client to `llm-service`; calls `Generate`, `Optimize`, `ExtractProfile`
+- `LlmService` — gRPC client to `llm-service`; calls `Generate`, `Optimize`, `ExtractProfile`, `SelectBestProfile`
 - `PdfService` — renders CV to PDF using QuestPDF (A4, respects user-defined `SectionOrder`)
 
 **PDF generation**  
@@ -263,7 +265,7 @@ GeneratedCv  (FK → Profile, cascade delete)
 LlmUsage  (no FK constraint; UserId nullable for system calls)
  ├── id (UUID PK)
  ├── userId (Guid, nullable, indexed)
- ├── operation  — "Generate" | "Optimize" | "Extract" | "EnhanceField" | "Chat" | "UserChat" | "CoverLetter"
+ ├── operation  — "Generate" | "Optimize" | "Extract" | "EnhanceField" | "Chat" | "UserChat" | "CoverLetter" | "GenerateAuto"
  ├── promptTokens, completionTokens (int)
  ├── modelName  — e.g. "claude-sonnet-4-6"
  └── createdAt (UTC, indexed)

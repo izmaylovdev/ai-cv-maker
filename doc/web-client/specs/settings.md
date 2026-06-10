@@ -135,3 +135,27 @@ No changes required.
 #### Angular
 
 No changes required.
+
+## 4. Usage Page in Navigation (US-SETTINGS-4)
+
+### 4.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-SETTINGS-4.1 | A "Usage" nav link is added to the sidebar for authenticated users, routing to `/usage`. |
+| F-SETTINGS-4.2 | The `/usage` route is protected by `authGuard` and loads `UsageComponent`. |
+| F-SETTINGS-4.3 | The existing `UsageComponent` and `UsageService` are moved from `features/settings/` to `features/usage/`. |
+| F-SETTINGS-4.4 | The `/settings/usage` route is removed; `/usage` replaces it. |
+
+### 4.2 Technical Specification
+
+#### Angular
+
+- Move `usage.component.ts` and `usage.service.ts` from `features/settings/` to `features/usage/`
+- Add route `/usage` in `app.routes.ts` (replace `/settings/usage`)
+- Add `<a routerLink="/usage">` nav link to `app.html` sidebar
+
+#### Out of scope (MVP)
+
+- Usage breakdown by model or operation
+- Usage quotas or limits UI

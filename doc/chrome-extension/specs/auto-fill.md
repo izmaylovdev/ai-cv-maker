@@ -222,3 +222,176 @@ The extension's OAuth redirect URI (`https://<extension-id>.chromiumapp.org/`) m
 
 - `chrome.identity.getAuthToken` flow (returns an access token, not an ID token; incompatible with the backend validator).
 - Showing the signed-in Google account picture/name in the popup header.
+
+---
+
+## 3. Download Job-Optimised CV (US-EXT-3)
+
+### 3.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EXT-3.1 | The extension popup must show a profile selector dropdown listing all profiles owned by the authenticated user, with an **"Auto"** option as the first item and the default selection. The selected value is persisted in `chrome.storage.local` under `SELECTED_PROFILE_KEY`. |
+| F-EXT-3.2 | The popup must show a "Download Optimised CV" button. The button is disabled when no meaningful job description can be extracted from the current page (see F-EXT-3.4). |
+| F-EXT-3.3 | Pressing `Alt+Shift+D` (configurable via Chrome keyboard shortcut settings) on any tab must trigger the download flow using the currently stored `SELECTED_PROFILE_KEY` value, without requiring the popup to be open. |
+| F-EXT-3.4 | A content script must extract the job context from the active page: first from any user text selection (`window.getSelection()`); if no selection, from the page heuristically: `<h1>` text, the largest block of text within an element whose `id`, `class`, or `aria-label` contains `description`, `details`, `about`, or `role`, and `document.title` — concatenated and truncated to 3 000 characters. If the result is < 100 characters the job description is considered absent. |
+| F-EXT-3.5 | When the job description is absent the popup must show: "Could not detect a job description. Select the job text on the page and try again." and the button must remain disabled. |
+| F-EXT-3.6 | When the button is clicked (or the hotkey fires) and a specific profile is selected, the extension must call `POST /api/profiles/:id/generate` with the job description in `optimizationNotes`. When "Auto" is selected, the extension must call the new `POST /api/cvs/generate-auto` endpoint (see Technical Specification) which accepts the job description and returns the generated CV for the best-matched profile. |
+| F-EXT-3.7 | The response from either endpoint must include the selected/used profile's `fullName` and the generated CV `id`, used to construct the download filename and fetch the PDF. |
+| F-EXT-3.8 | While generation is in progress the popup must display a spinner and the label "Generating CV…". The hotkey flow must show a browser notification: "Generating your optimised CV…". |
+| F-EXT-3.9 | Once generation completes the extension must call `GET /api/profiles/:id/generated-cvs/:cvId/pdf` and trigger a file download named `[FullName]_[JobTitle]_CV.pdf`, where `JobTitle` is the first line of the extracted job context (trimmed, max 50 chars, filesystem-safe). |
+| F-EXT-3.10 | On success the popup must show "Download complete ✓" for 3 seconds, then return to the default state. The hotkey flow must show a browser notification: "CV downloaded." |
+| F-EXT-3.11 | On any API error (non-2xx) the popup must show the error message returned by the API, or a generic "Something went wrong. Please try again." if none is available. |
+| F-EXT-3.12 | The profiles dropdown must be populated on popup open via `GET /api/profiles`. If the call fails, the dropdown shows a single disabled option "Could not load profiles" and the download button is disabled. |
+
+### 3.2 Technical Specification
+
+#### Extension — `manifest.json`
+
+Add `"downloads"` to the `permissions` array (needed for `chrome.downloads.download`):
+```json
+"permissions": ["storage", "notifications", "activeTab", "scripting", "identity", "downloads"]
+```
+
+Add the new command:
+```json
+"commands": {
+  "fill-fields": { "suggested_key": { "default": "Alt+Shift+F" }, "description": "Fill application fields on this page" },
+  "download-optimised-cv": { "suggested_key": { "default": "Alt+Shift+D" }, "description": "Download optimised CV for this job posting" }
+}
+```
+
+#### Extension — new storage key
+
+`SELECTED_PROFILE_KEY = "cv_selected_profile"` — value is a profile UUID or the string `"auto"`.
+
+#### Extension — `apps/chrome-extension/src/content.ts`
+
+New export `extractJobContext(): string`:
+1. If `window.getSelection().toString().trim().length >= 100`, return the selection (truncated to 3 000 chars).
+2. Otherwise scan the DOM: collect `document.title`, text of the first `<h1>`, and the `textContent` of all elements whose `id`, `class`, or `aria-label` contains `description|details|about|role` (case-insensitive), ordered by text length descending.
+3. Concatenate, deduplicate whitespace, truncate to 3 000 chars.
+4. Return the result; caller checks for length >= 100.
+
+#### Extension — `apps/chrome-extension/src/background.ts`
+
+Handle `"download-optimised-cv"` command:
+1. Send `{ type: "GET_JOB_CONTEXT" }` message to the active tab's content script.
+2. Retrieve `SELECTED_PROFILE_KEY` from `chrome.storage.local`.
+3. Show notification "Generating your optimised CV…".
+4. Call `downloadOptimisedCv(jobContext, profileId)` (shared helper, see below).
+5. On success show notification "CV downloaded." On failure show "CV generation failed: \<message\>".
+
+#### Extension — `apps/chrome-extension/src/popup/api.ts`
+
+New exports:
+
+`getProfiles(): Promise<Profile[]>` — `GET /api/profiles`.
+
+`generateAndDownloadCv(jobContext: string, profileId: string | "auto"): Promise<void>`:
+1. If `profileId === "auto"`: POST to `/api/cvs/generate-auto` with `{ jobDescription: jobContext }`.  
+   Otherwise: POST to `/api/profiles/:id/generate` with `{ optimizationNotes: jobContext }`.
+2. Receive `{ cvId, profileId, fullName }` in both cases.
+3. GET `/api/profiles/:profileId/generated-cvs/:cvId/pdf` — receive blob.
+4. Use `chrome.downloads.download({ url: blobUrl, filename })` to save.
+
+#### Extension — `apps/chrome-extension/src/popup/Popup.tsx`
+
+New UI elements (rendered in the authenticated view, above the existing "Fill this page" button):
+
+```
+[ Auto ▾ ]   ← ProfilePicker dropdown
+[ Download Optimised CV ]   ← disabled when no job context
+  "Could not detect a job description…"   ← shown when disabled
+  ⟳ Generating CV…   ← shown during generation
+  ✓ Download complete   ← shown for 3 s after success
+```
+
+`ProfilePicker` component (`apps/chrome-extension/src/popup/ProfilePicker.tsx`):
+- On mount: calls `getProfiles()`, builds options `[{ id: "auto", name: "Auto" }, ...profiles]`.
+- Reads current selection from `chrome.storage.local`; defaults to `"auto"`.
+- On change: persists new value to `chrome.storage.local`.
+
+On popup open the content script is queried for job context to set button enabled state.
+
+#### API — new endpoint in `cv-api`
+
+`POST /api/cvs/generate-auto`
+
+Request body:
+```json
+{
+  "jobDescription": "string (max 3000 chars)"
+}
+```
+
+Response 200:
+```json
+{
+  "cvId": "uuid",
+  "profileId": "uuid",
+  "fullName": "string"
+}
+```
+
+Error responses:
+- `400`: `jobDescription` missing or empty.
+- `401`: invalid or missing JWT.
+- `422`: authenticated user has no profiles.
+
+The handler:
+1. Fetches all profiles owned by the requesting user.
+2. Calls the new `SelectBestProfile` gRPC method on the LLM service, passing all profiles and the job description.
+3. Receives the selected `profileId` back.
+4. Calls the existing `GenerateCV` gRPC method with the selected profile and the job description as optimization notes.
+5. Persists a `GeneratedCV` record (same as the existing generate flow) and returns `cvId`, `profileId`, `fullName`.
+
+Lives in a new `AutoGenerateController` (or added to the existing `GeneratedCvsController`).
+
+The existing `POST /api/profiles/:id/generate` and `GET /api/profiles/:id/generated-cvs/:cvId/pdf` are reused unchanged for the specific-profile path and PDF download.
+
+#### gRPC — new method in `llm_service.proto`
+
+```protobuf
+rpc SelectBestProfile (SelectBestProfileRequest) returns (SelectBestProfileResponse);
+
+message SelectBestProfileRequest {
+  repeated Profile profiles = 1;
+  string job_description = 2;
+}
+
+message SelectBestProfileResponse {
+  string profile_id = 1;
+}
+```
+
+Regenerate stubs after editing the proto:
+```bash
+npm run grpc:generate
+```
+
+#### LLM service — new chain
+
+`apps/llm-service/app/chains/profile_selector_chain.py`
+
+- Receives all user profiles and a job description.
+- Constructs a prompt asking the LLM to score each profile against the job description (required skills, seniority, domain) and return the ID of the best match.
+- Returns `profile_id`.
+
+New handler in `apps/llm-service/app/grpc/servicer.py`:
+```python
+async def SelectBestProfile(self, request, context):
+    profile_id = await select_best_profile(request.profiles, request.job_description)
+    return SelectBestProfileResponse(profile_id=profile_id)
+```
+
+#### Data model
+
+No schema changes.
+
+### 3.3 Out of scope (MVP)
+
+- Server-side profile scoring / automatic best-profile selection (deferred; "Auto" uses most-recently-updated profile).
+- Streaming PDF generation progress.
+- Storing or reviewing extension-initiated CV generations separately from web-app generations.
+- Support for non-Chrome browsers.

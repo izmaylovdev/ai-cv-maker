@@ -35,3 +35,15 @@
 - The AI assistant can update the user's global preferences when the user describes a change.
 - After updating, the new preferences are immediately persisted and reflected on the Settings page.
 - The assistant confirms what it changed before or after applying the update.
+
+### US-SETTINGS-4 — Usage page in navigation
+
+**As a** signed-in user,
+**I want to** see my AI usage summary on a dedicated page accessible from the navigation,
+**so that** I can monitor token consumption and estimated costs without navigating through Settings.
+
+**Acceptance criteria:**
+- A "Usage" item appears in the main navigation sidebar for authenticated users
+- Clicking it navigates to `/usage`
+- The page displays prompt tokens, completion tokens, and estimated cost from `GET /api/usage`
+- The page is protected by the auth guard

@@ -29,3 +29,18 @@
 - On success, the extension receives a Google ID token and exchanges it with the backend (`POST /api/auth/google`), storing the resulting JWT just like email/password login does.
 - On failure (user cancels, network error, invalid token), a clear error message is shown in the popup.
 - Existing email/password login continues to work unchanged.
+
+### US-EXT-3 — Download a job-optimised CV from any job posting page
+
+**As a** job seeker using the AI CV Maker Chrome extension,
+**I want to** click a button (or press a hotkey) while viewing a job posting and receive a PDF of my CV rewritten to match that job,
+**so that** I can submit a tailored, ATS-optimised CV for each application without manually editing my profile each time.
+
+**Acceptance criteria:**
+- The extension popup shows a profile selector dropdown listing all the user's profiles, plus an **"Auto"** option at the top (default). When "Auto" is selected the backend picks the best-matching profile; when a specific profile is selected it is used directly.
+- The popup shows a "Download Optimised CV" button when the user is authenticated.
+- Pressing `Alt+Shift+D` (configurable via Chrome keyboard shortcut settings) triggers the download flow using the currently selected profile option.
+- The extension extracts the job title and description from the current page using generic heuristics (page title, headings, body text). If the user has text selected on the page, that selection is used as the job description instead of auto-extraction.
+- The popup shows a progress indicator while the CV is being generated.
+- When the PDF is ready it downloads automatically, named `[FullName]_[JobTitle]_CV.pdf`.
+- If no meaningful job description can be extracted (< 100 characters and no text selected), the button is disabled and a hint is shown: "Could not detect a job description. Select the job text on the page and try again."
