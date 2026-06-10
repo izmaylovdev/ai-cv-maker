@@ -3,9 +3,9 @@ output "app_url" {
   value       = "https://app.applysy.works"
 }
 
-output "dns_cname_record" {
-  description = "Add this CNAME record in your DNS provider: app.applysy.works → <value>"
-  value       = google_cloud_run_domain_mapping.ui_angular_domain.status[0].resource_records[0].rrdata
+output "dns_a_record" {
+  description = "Create an A record in your DNS provider: app.applysy.works → <value>"
+  value       = google_compute_global_address.app.address
 }
 
 output "ar_repository" {
@@ -24,8 +24,8 @@ output "grafana_url" {
 }
 
 output "admin_url" {
-  description = "Public URL of the admin panel."
-  value       = google_cloud_run_v2_service.admin_ui.uri
+  description = "Public URL of the admin panel (custom domain)."
+  value       = "https://admin.applysy.works"
 }
 
 output "cv_api_url" {
