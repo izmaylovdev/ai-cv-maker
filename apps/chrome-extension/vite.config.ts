@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
-import { copyFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 
 const outDir = resolve(__dirname, "../../dist/apps/chrome-extension");
 
@@ -9,7 +9,12 @@ const copyManifest = {
   name: "copy-manifest",
   closeBundle() {
     mkdirSync(resolve(outDir, "popup"), { recursive: true });
-    copyFileSync(resolve(__dirname, "manifest.json"), resolve(outDir, "manifest.json"));
+    const raw = readFileSync(resolve(__dirname, "manifest.json"), "utf-8");
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const output = clientId
+      ? raw.replace(/"client_id"\s*:\s*"[^"]*"/, `"client_id": "${clientId}"`)
+      : raw;
+    writeFileSync(resolve(outDir, "manifest.json"), output);
   },
 };
 
