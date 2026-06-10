@@ -76,3 +76,9 @@ vitest.config.*.timestamp*
 .next
 out
 appsettings.Local.json
+
+# Terraform state and plan files (may contain secrets)
+infra/*.backup
+infra/tfplan
+infra/terraform.tfstate
+infra/terraform.tfstate.*
