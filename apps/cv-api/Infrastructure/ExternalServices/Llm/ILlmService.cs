@@ -9,4 +9,5 @@ public interface ILlmService
     Task<LlmChatResponse> ChatAsync(LlmChatRequest request);
     Task<LlmUserChatResponse> UserChatAsync(LlmUserChatRequest request);
     Task<LlmCoverLetterResponse> GenerateCoverLetterAsync(LlmCoverLetterRequest request);
+    Task<LlmSelectBestProfileResponse> SelectBestProfileAsync(LlmSelectBestProfileRequest request);
 }

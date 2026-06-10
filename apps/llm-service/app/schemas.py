@@ -34,6 +34,7 @@ class SkillInput(BaseModel):
 
 
 class ProfileInput(BaseModel):
+    id: Optional[str] = None
     fullName: Annotated[str, Field(max_length=_SHORT)]
     title: Annotated[str, Field(max_length=_SHORT)]
     overview: Annotated[str, Field(max_length=_LONG)]

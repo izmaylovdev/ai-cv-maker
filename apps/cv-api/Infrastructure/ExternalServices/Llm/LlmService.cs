@@ -4,6 +4,7 @@ using CvApi.Grpc;
 using CvApi.Infrastructure.Services;
 using Grpc.Core;
 using Polly;
+using Polly.Registry;
 
 namespace CvApi.Infrastructure.ExternalServices.Llm;
 
@@ -347,6 +348,38 @@ public class LlmService(
             })
         },
     };
+
+    public async Task<LlmSelectBestProfileResponse> SelectBestProfileAsync(LlmSelectBestProfileRequest request)
+    {
+        var sw = Stopwatch.StartNew();
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            var grpcRequest = new CvApi.Grpc.SelectBestProfileRequest
+            {
+                JobDescription = request.JobDescription,
+            };
+            foreach (var p in request.Profiles)
+            {
+                grpcRequest.ProfileIds.Add(p.Id);
+                grpcRequest.Profiles.Add(MapProfileFromCoverLetter(p));
+            }
+
+            var reply = await ExecuteAsync(async _ =>
+                await grpcClient.SelectBestProfileAsync(grpcRequest, DefaultCallOptions));
+
+            AddSpan("LlmService/SelectBestProfile", false, sw.ElapsedMilliseconds, startedAt);
+
+            return new LlmSelectBestProfileResponse(
+                Guid.TryParse(reply.ProfileId, out var id) ? id : Guid.Empty
+            );
+        }
+        catch
+        {
+            AddSpan("LlmService/SelectBestProfile", true, sw.ElapsedMilliseconds, startedAt);
+            throw;
+        }
+    }
 
     private static ProfileInput MapProfile(LlmProfileRequest p) => new()
     {

@@ -171,6 +171,97 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         return true;
     }
 
+    public async Task<GenerateAutoResponse?> GenerateAutoAsync(Guid userId, GenerateAutoRequest request)
+    {
+        var profiles = await db.Profiles
+            .Include(p => p.WorkExperiences)
+            .Include(p => p.Educations)
+            .Include(p => p.Skills)
+            .Where(p => p.UserId == userId)
+            .ToListAsync();
+
+        if (profiles.Count == 0) return null;
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+
+        Guid selectedProfileId;
+        if (profiles.Count == 1)
+        {
+            selectedProfileId = profiles[0].Id;
+        }
+        else
+        {
+            var selectRequest = new LlmSelectBestProfileRequest(
+                profiles.Select(p => new LlmCoverLetterProfile(
+                    p.Id.ToString(),
+                    p.FullName,
+                    p.Title,
+                    p.Overview,
+                    p.Location,
+                    p.WorkExperiences
+                        .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
+                        .ThenByDescending(w => w.StartDate)
+                        .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
+                        .ToList(),
+                    p.Educations
+                        .OrderByDescending(e => e.EndYear ?? int.MaxValue)
+                        .ThenByDescending(e => e.StartYear)
+                        .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
+                        .ToList(),
+                    p.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
+                )).ToList(),
+                request.JobDescription
+            );
+
+            var selectResult = await llmService.SelectBestProfileAsync(selectRequest);
+            selectedProfileId = selectResult.SelectedProfileId;
+        }
+
+        var profile = profiles.First(p => p.Id == selectedProfileId);
+
+        var llmRequest = new LlmGenerateRequest(
+            new LlmProfileRequest(
+                profile.FullName,
+                profile.Title,
+                profile.Overview,
+                profile.Location,
+                profile.WorkExperiences
+                    .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
+                    .ThenByDescending(w => w.StartDate)
+                    .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
+                    .ToList(),
+                profile.Educations
+                    .OrderByDescending(e => e.EndYear ?? int.MaxValue)
+                    .ThenByDescending(e => e.StartYear)
+                    .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
+                    .ToList(),
+                profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
+            ),
+            string.IsNullOrWhiteSpace(request.JobDescription) ? null : request.JobDescription,
+            string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
+        );
+
+        var llmResponse = await llmService.GenerateAsync(llmRequest);
+        await usageService.RecordAsync(userId, "GenerateAuto", llmResponse.Usage);
+
+        var generatedCv = new GeneratedCv
+        {
+            ProfileId = profile.Id,
+            OptimizationNotes = request.JobDescription.Trim(),
+            FullName = profile.FullName,
+            Title = profile.Title,
+            Location = profile.Location,
+            ContactEmail = profile.ContactEmail,
+            ContactPhone = profile.ContactPhone,
+            CvDataJson = JsonSerializer.Serialize(llmResponse, _jsonCamelCase)
+        };
+
+        db.GeneratedCvs.Add(generatedCv);
+        await db.SaveChangesAsync();
+
+        return new GenerateAutoResponse(generatedCv.Id, profile.Id, profile.FullName);
+    }
+
     private static string FormatPeriod(DateOnly start, DateOnly? end)
     {
         var s = start.ToString("MMM yyyy");

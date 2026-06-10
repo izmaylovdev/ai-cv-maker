@@ -13,6 +13,7 @@ service LlmService {
   rpc UserChat (UserChatRequest) returns (UserChatResponse);
   rpc Health (HealthRequest) returns (HealthResponse);
   rpc GenerateCoverLetter (CoverLetterRequest) returns (CoverLetterResponse);
+  rpc SelectBestProfile (SelectBestProfileRequest) returns (SelectBestProfileResponse);
 }
 
 message WorkExperienceInput {
@@ -219,4 +220,14 @@ message CoverLetterResponse {
   string        text               = 1;
   string        selected_profile_id = 2;
   UsageMetadata usage              = 3;
+}
+
+message SelectBestProfileRequest {
+  repeated ProfileInput profiles    = 1;
+  repeated string       profile_ids = 2;
+  string                job_description = 3;
+}
+
+message SelectBestProfileResponse {
+  string profile_id = 1;
 }

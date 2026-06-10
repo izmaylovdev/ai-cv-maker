@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.chains.chat_chain import ChatMessage, chat_reply
 from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
+from app.chains.profile_selector_chain import select_best_profile
 from app.chains.usage import TokenUsage
 from app.chains.user_chat_chain import (
     ChatMessage as UserChatMessage,
@@ -239,6 +240,21 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def SelectBestProfile(self, request, context):
+        try:
+            profiles = [_proto_to_profile(p) for p in request.profiles]
+            for profile, profile_id in zip(profiles, request.profile_ids):
+                profile.id = profile_id
+            result = await select_best_profile(
+                profiles=profiles,
+                job_description=request.job_description,
+            )
+            return llm_service_pb2.SelectBestProfileResponse(profile_id=result.selected_profile_id)
+        except ValueError as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))

@@ -97,3 +97,6 @@ public record LlmCoverLetterRequest(
 );
 
 public record LlmCoverLetterResponse(string Text, Guid SelectedProfileId, LlmTokenUsage? Usage = null);
+
+public record LlmSelectBestProfileRequest(List<LlmCoverLetterProfile> Profiles, string JobDescription);
+public record LlmSelectBestProfileResponse(Guid SelectedProfileId);

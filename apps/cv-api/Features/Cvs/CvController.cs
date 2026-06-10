@@ -61,6 +61,28 @@ public class CvController(ICvService cvService) : ControllerBase
         return File(result.Value.Bytes, "application/pdf", result.Value.Filename);
     }
 
+    [HttpPost("/api/cvs/generate-auto")]
+    public async Task<ActionResult<GenerateAutoResponse>> GenerateAuto(GenerateAutoRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.JobDescription))
+            return BadRequest(new { error = "jobDescription is required" });
+
+        GenerateAutoResponse? result;
+        try
+        {
+            result = await cvService.GenerateAutoAsync(UserId, request);
+        }
+        catch (LlmRateLimitException)
+        {
+            return StatusCode(503, "CV generation is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
+        }
+
+        if (result is null)
+            return UnprocessableEntity(new { error = "User has no profiles" });
+
+        return Ok(result);
+    }
+
     [HttpPost("/api/cvs/draft-pdf")]
     public async Task<IActionResult> GetDraftPdf(UpdateProfileRequest request)
     {
