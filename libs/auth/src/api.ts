@@ -33,6 +33,7 @@ export async function loginApi(
   const res = await fetch(`${apiUrl}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -63,6 +64,7 @@ export async function registerApi(
   const res = await fetch(`${apiUrl}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(request),
   });
   if (!res.ok) {
@@ -101,6 +103,7 @@ export async function googleLoginApi(
   const res = await fetch(`${apiUrl}/auth/google`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ credential }),
   });
   if (!res.ok) {
@@ -109,4 +112,58 @@ export async function googleLoginApi(
     throw error;
   }
   return res.json() as Promise<AuthResponse>;
+}
+
+/**
+ * Exchange the HttpOnly refresh_token cookie for a new access JWT.
+ *
+ * The refresh token is sent automatically by the browser (HttpOnly cookie,
+ * SameSite=Strict). On success the server rotates the cookie and returns a
+ * fresh `{ token, email }`.
+ *
+ * @param apiUrl - Base API URL.
+ * @returns      Fresh `AuthResponse` with a new access JWT.
+ * @throws       Error with `.status = 401` when the refresh token is missing,
+ *               expired, or already revoked.
+ *
+ * @example
+ * try {
+ *   const { token, email } = await refreshApi(environment.apiUrl);
+ *   saveSession(token, email);
+ * } catch {
+ *   clearSession();
+ *   // redirect to login
+ * }
+ */
+export async function refreshApi(apiUrl: string): Promise<AuthResponse> {
+  const res = await fetch(`${apiUrl}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = new Error(`Token refresh failed: HTTP ${res.status}`);
+    (error as Error & { status: number }).status = res.status;
+    throw error;
+  }
+  return res.json() as Promise<AuthResponse>;
+}
+
+/**
+ * Revoke the current refresh token and clear the HttpOnly cookie server-side.
+ *
+ * Call this on user-initiated logout. The server marks the refresh token as
+ * revoked and issues a `Set-Cookie` that clears the `refresh_token` cookie.
+ *
+ * @param apiUrl - Base API URL.
+ *
+ * @example
+ * await logoutApi(environment.apiUrl);
+ * clearSession();
+ * router.navigate(['/auth/login']);
+ */
+export async function logoutApi(apiUrl: string): Promise<void> {
+  await fetch(`${apiUrl}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
 }

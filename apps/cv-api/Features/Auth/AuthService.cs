@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using CvApi.Domain.Entities;
 using CvApi.Features.Auth.Dtos;
@@ -12,6 +13,8 @@ namespace CvApi.Features.Auth;
 
 public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
 {
+    private const int RefreshTokenExpiryDays = 30;
+
     public async Task<AuthResponse?> RegisterAsync(RegisterRequest request)
     {
         if (await db.Users.AnyAsync(u => u.Email == request.Email))
@@ -170,6 +173,67 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
     private sealed record GoogleTokenResponse(
         [property: System.Text.Json.Serialization.JsonPropertyName("id_token")] string? IdToken);
 
+    public async Task<AuthResponse?> RefreshAsync(string refreshToken)
+    {
+        var tokenHash = HashToken(refreshToken);
+        var stored = await db.RefreshTokens
+            .Include(r => r.User)
+            .FirstOrDefaultAsync(r => r.Token == tokenHash);
+
+        if (stored is null || stored.IsRevoked || stored.ExpiresAt <= DateTime.UtcNow)
+            return null;
+
+        // Rotate: revoke old token, issue new one
+        stored.IsRevoked = true;
+        await db.SaveChangesAsync();
+
+        return new AuthResponse(GenerateToken(stored.User), stored.User.Email);
+    }
+
+    public async Task<Guid?> GetUserIdByEmailAsync(string email)
+    {
+        var user = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email == email);
+        return user?.Id;
+    }
+
+    public async Task RevokeRefreshTokenAsync(string refreshToken)
+    {
+        var tokenHash = HashToken(refreshToken);
+        var stored = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == tokenHash);
+        if (stored is not null && !stored.IsRevoked)
+        {
+            stored.IsRevoked = true;
+            await db.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Generates a cryptographically random 64-byte refresh token, persists it hashed
+    /// in the database, and returns the raw (unhashed) token to be sent as a cookie.
+    /// </summary>
+    public async Task<string> IssueRefreshTokenAsync(Guid userId)
+    {
+        var rawBytes = RandomNumberGenerator.GetBytes(64);
+        var rawToken = Convert.ToBase64String(rawBytes);
+
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = userId,
+            Token = HashToken(rawToken),
+            ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenExpiryDays),
+        });
+        await db.SaveChangesAsync();
+
+        return rawToken;
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToBase64String(bytes);
+    }
+
     private string GenerateToken(User user)
     {
         var secret = config["JwtSettings:Secret"]
@@ -186,7 +250,7 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
 
         var token = new JwtSecurityToken(
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(7),
+            expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: credentials
         );
 
