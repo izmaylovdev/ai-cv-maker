@@ -6,10 +6,12 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app import settings as app_settings
+from app.chains.usage import TokenUsage
 from app.guards import guard_chat_history, guard_chat_message
 from app.chains.cv_chain import (
     _build_foundry_client,
     _build_llm,
+    _llm_model_name,
     _format_educations,
     _format_skills,
     _format_work_experiences,
@@ -126,7 +128,7 @@ async def _chat_with_llm(
     profile: ProfileInput,
     message: str,
     history: list[ChatMessage],
-) -> ChatResponse:
+) -> tuple[ChatResponse, TokenUsage]:
     provider = app_settings.llm_provider()
     user_content = _build_prompt(profile, message)
 
@@ -148,7 +150,7 @@ async def _chat_with_llm(
         raw = "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
-        return _parse_response(raw)
+        return _parse_response(raw), TokenUsage.from_anthropic(response.usage, model or "")
 
     llm = _build_llm()
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -162,14 +164,15 @@ async def _chat_with_llm(
     lc_messages.append(HumanMessage(content=user_content))
 
     response = await llm.ainvoke(lc_messages)
-    return _parse_response(str(response.content))
+    usage = TokenUsage.from_langchain_response(response, _llm_model_name())
+    return _parse_response(str(response.content)), usage
 
 
 async def chat_reply(
     profile: ProfileInput,
     message: str,
     history: list[ChatMessage],
-) -> ChatResponse:
+) -> tuple[ChatResponse, TokenUsage]:
     guard_chat_message(message)
     history = guard_chat_history(history)
     return await _chat_with_llm(profile, message, history)
