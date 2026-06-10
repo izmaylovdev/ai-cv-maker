@@ -7,15 +7,10 @@ import { NotifyService } from '../../shared/services/notify.service';
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule],
   template: `
     <div class="max-w-2xl mx-auto py-8 px-4">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Settings</h1>
-
-      <div class="mb-6">
-        <a routerLink="/settings/usage" class="text-sm text-blue-600 hover:underline dark:text-blue-400">View usage & estimated cost →</a>
-      </div>
-
       <section>
         <h2 class="text-base font-semibold text-gray-800 dark:text-zinc-200 mb-1">Global Preferences</h2>
         <p class="text-sm text-gray-500 dark:text-zinc-400 mb-3">

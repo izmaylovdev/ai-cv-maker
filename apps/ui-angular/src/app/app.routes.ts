@@ -49,10 +49,10 @@ export const appRoutes: Route[] = [
       import('./features/settings/settings.component').then((m) => m.SettingsComponent),
   },
   {
-    path: 'settings/usage',
+    path: 'usage',
     canActivate: [authGuard],
     loadComponent: () =>
-      import('./features/settings/usage.component').then((m) => m.UsageComponent),
+      import('./features/usage/usage.component').then((m) => m.UsageComponent),
   },
   { path: '**', redirectTo: '/job-profiles' },
 ];
