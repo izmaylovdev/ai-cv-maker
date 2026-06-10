@@ -34,7 +34,9 @@ public class ChatController(AppDbContext db, ILlmService llmService) : Controlle
             p.Skills.Select(s => s.Name).ToList()
         )).ToList();
 
+        const int maxHistoryMessages = 30;
         var history = (request.History ?? [])
+            .TakeLast(maxHistoryMessages)
             .Select(h => new LlmChatMessage(h.Role, h.Content))
             .ToList();
 
