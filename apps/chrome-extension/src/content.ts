@@ -53,36 +53,75 @@ function findCandidateFields(): Element[] {
   });
 }
 
-function extractJobContext(): { jobTitle: string; jobDescription: string } {
+const _ATTR_KEYWORDS = /description|details|about|role|vacancy|posting|position|job-desc/i;
+const _TEXT_KEYWORDS = [
+  // English
+  "job description", "about the role", "about this role", "responsibilities", "requirements",
+  // Ukrainian
+  "обов'язки", "вимоги", "про вакансію", "опис вакансії", "що потрібно", "що ми пропонуємо",
+  // Russian
+  "обязанности", "требования", "описание вакансии", "о вакансии",
+];
+
+function _attrMatches(el: Element): boolean {
+  return (
+    _ATTR_KEYWORDS.test(el.id) ||
+    _ATTR_KEYWORDS.test(el.className) ||
+    _ATTR_KEYWORDS.test(el.getAttribute("aria-label") ?? "")
+  );
+}
+
+export function extractJobContext(): { jobTitle: string; jobDescription: string } {
+  // User text selection takes priority
+  const selection = window.getSelection()?.toString().trim() ?? "";
+  if (selection.length >= 100) {
+    const h1 = document.querySelector("h1");
+    const jobTitle = h1?.textContent?.trim() ?? document.title;
+    return {
+      jobTitle: jobTitle.slice(0, 200),
+      jobDescription: selection.slice(0, 3000),
+    };
+  }
+
   const h1 = document.querySelector("h1");
   const jobTitle = h1?.textContent?.trim() ?? document.title;
 
-  const candidates = Array.from(document.querySelectorAll("p, div, section, li"));
-  const descriptionKeywords = [
-    // English
-    "job description", "about the role", "about this role", "responsibilities", "requirements",
-    // Ukrainian
-    "обов'язки", "вимоги", "про вакансію", "опис вакансії", "що потрібно", "що ми пропонуємо",
-    // Russian
-    "обязанности", "требования", "описание вакансии", "о вакансии",
-  ];
-  let jobDescription = "";
+  // Prefer elements whose id/class/aria-label signals job content
+  const attrMatched = Array.from(document.querySelectorAll("div, section, article, main"))
+    .filter(_attrMatches)
+    .sort((a, b) => (b.textContent?.length ?? 0) - (a.textContent?.length ?? 0));
 
+  if (attrMatched.length > 0) {
+    const parts = [document.title, h1?.textContent ?? ""];
+    for (const el of attrMatched) {
+      parts.push(el.textContent ?? "");
+    }
+    const jobDescription = parts.join("\n").replace(/\s{3,}/g, "\n").slice(0, 3000);
+    // Only use attr-matched result if it contains meaningful content beyond just the title
+    const meaningful = jobDescription.replace(document.title, "").replace(h1?.textContent ?? "", "").trim();
+    if (meaningful.length >= 100) {
+      return { jobTitle: jobTitle.slice(0, 200), jobDescription };
+    }
+  }
+
+  // Fall back to text-content keyword matching
+  const candidates = Array.from(document.querySelectorAll("p, div, section, li"));
+  let jobDescription = "";
   for (const el of candidates) {
     const text = el.textContent ?? "";
-    if (descriptionKeywords.some((kw) => text.toLowerCase().includes(kw))) {
+    if (_TEXT_KEYWORDS.some((kw) => text.toLowerCase().includes(kw))) {
       jobDescription += text + "\n";
-      if (jobDescription.length >= 2000) break;
+      if (jobDescription.length >= 3000) break;
     }
   }
 
   if (!jobDescription) {
-    jobDescription = document.body.innerText.slice(0, 2000);
+    jobDescription = (document.body.innerText ?? document.body.textContent ?? "").slice(0, 3000);
   }
 
   return {
     jobTitle: jobTitle.slice(0, 200),
-    jobDescription: jobDescription.slice(0, 2000),
+    jobDescription: jobDescription.slice(0, 3000),
   };
 }
 
@@ -197,6 +236,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const fields = findCandidateFields();
     const field = fields[message.fieldIndex ?? 0];
     if (field) insertText(field, message.text);
+  }
+
+  if (message.type === "GET_JOB_CONTEXT") {
+    const { jobTitle, jobDescription } = extractJobContext();
+    sendResponse({ jobTitle, jobDescription });
+    return;
   }
 
   if (message.type === "GET_PAGE_CONTEXT") {

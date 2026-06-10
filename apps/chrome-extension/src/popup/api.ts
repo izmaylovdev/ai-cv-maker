@@ -44,9 +44,11 @@ export interface CoverLetterResponse {
   selectedProfileName: string;
 }
 
-async function getApiBase(): Promise<string> {
+const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE ?? "https://ai-cv-maker.example.com";
+
+export async function getApiBase(): Promise<string> {
   const result = await chrome.storage.local.get("api_base");
-  return result["api_base"] ?? "https://ai-cv-maker.example.com";
+  return result["api_base"] ?? DEFAULT_API_BASE;
 }
 
 async function doRequest<T>(
@@ -158,8 +160,94 @@ export async function login(email: string, password: string): Promise<string> {
   return data.token;
 }
 
+const SELECTED_PROFILE_KEY = "cv_selected_profile";
+
+export async function getSelectedProfile(): Promise<string> {
+  const result = await chrome.storage.local.get(SELECTED_PROFILE_KEY);
+  return result[SELECTED_PROFILE_KEY] ?? "auto";
+}
+
+export async function saveSelectedProfile(profileId: string): Promise<void> {
+  await chrome.storage.local.set({ [SELECTED_PROFILE_KEY]: profileId });
+}
+
 export async function fetchProfiles(token: string): Promise<Profile[]> {
   return request<Profile[]>("/api/job-profiles", { method: "GET" }, token);
+}
+
+export async function getProfiles(token: string): Promise<Profile[]> {
+  return request<Profile[]>("/api/job-profiles", { method: "GET" }, token);
+}
+
+interface GenerateResponse {
+  id?: string;
+  cvId?: string;
+  profileId: string;
+  fullName: string;
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, "_").slice(0, 50).trim();
+}
+
+export async function generateAndDownloadCv(
+  token: string,
+  jobContext: string,
+  profileId: string | "auto"
+): Promise<void> {
+  const base = await getApiBase();
+
+  let cvId: string;
+  let resolvedProfileId: string;
+  let fullName: string;
+
+  if (profileId === "auto") {
+    const res = await fetch(`${base}/api/cvs/generate-auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jobDescription: jobContext }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as GenerateResponse;
+    cvId = data.cvId ?? data.id ?? "";
+    resolvedProfileId = data.profileId;
+    fullName = data.fullName;
+  } else {
+    const res = await fetch(`${base}/api/job-profiles/${profileId}/cvs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ optimizationNotes: jobContext }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as GenerateResponse;
+    cvId = data.id ?? data.cvId ?? "";
+    resolvedProfileId = profileId;
+    fullName = data.fullName;
+  }
+
+  const pdfRes = await fetch(
+    `${base}/api/job-profiles/${resolvedProfileId}/cvs/${cvId}/pdf`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!pdfRes.ok) throw new Error(`Failed to fetch PDF: HTTP ${pdfRes.status}`);
+
+  const buffer = await pdfRes.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const dataUrl = `data:application/pdf;base64,${btoa(binary)}`;
+
+  const jobTitle = sanitizeFilename(jobContext.split("\n")[0].trim());
+  const safeName = fullName.replace(/[/\\:*?"<>|]/g, "_");
+  const filename = `${safeName}_${jobTitle}_CV.pdf`;
+
+  chrome.downloads.download({ url: dataUrl, filename });
 }
 
 export async function generateCoverLetter(

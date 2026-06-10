@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   clearAuthMethod,
   clearToken,
   fetchProfiles,
+  generateAndDownloadCv,
   generateCoverLetter,
+  getSelectedProfile,
   getToken,
   login,
   loginWithGoogle,
+  saveSelectedProfile,
   saveToken,
   type Profile,
 } from "./api";
@@ -17,21 +20,44 @@ type Status =
   | { kind: "done"; profileName: string }
   | { kind: "error"; message: string };
 
+type DownloadStatus =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
 export function Popup() {
   const [token, setToken] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [cvProfileId, setCvProfileId] = useState<string>("auto");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({ kind: "idle" });
+  const [jobContext, setJobContext] = useState<string | null>(null);
   const [fillShortcut, setFillShortcut] = useState<string>("Alt+Shift+F");
+  const [downloadShortcut, setDownloadShortcut] = useState<string>("Alt+Shift+D");
+  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getToken().then((t) => {
       setToken(t);
       if (t) loadProfiles(t);
     });
+    getSelectedProfile().then(setCvProfileId);
     chrome.commands.getAll((commands) => {
-      const cmd = commands.find((c) => c.name === "fill-fields");
-      if (cmd?.shortcut) setFillShortcut(cmd.shortcut);
+      const fill = commands.find((c) => c.name === "fill-fields");
+      if (fill?.shortcut) setFillShortcut(fill.shortcut);
+      const dl = commands.find((c) => c.name === "download-optimised-cv");
+      if (dl?.shortcut) setDownloadShortcut(dl.shortcut);
+    });
+    // Probe job context on popup open so button enabled state is immediate
+    chrome.tabs.query({ active: true, currentWindow: true }, async ([tab]) => {
+      if (!tab?.id) return;
+      try {
+        const ctx = await chrome.tabs.sendMessage(tab.id, { type: "GET_JOB_CONTEXT" });
+        if (ctx?.jobDescription?.length >= 100) setJobContext(ctx.jobDescription);
+      } catch { /* content script not ready — button stays disabled */ }
     });
   }, []);
 
@@ -39,8 +65,9 @@ export function Popup() {
     try {
       const list = await fetchProfiles(t);
       setProfiles(list);
-    } catch {
-      // profiles are optional for display; fill still works without selection
+      setProfilesError(null);
+    } catch (e: unknown) {
+      setProfilesError((e as Error).message ?? "Could not load profiles");
     }
   }
 
@@ -81,6 +108,26 @@ export function Popup() {
     setToken(null);
     setProfiles([]);
     setStatus({ kind: "idle" });
+  }
+
+  async function handleCvProfileChange(id: string) {
+    setCvProfileId(id);
+    await saveSelectedProfile(id);
+  }
+
+  async function handleDownload() {
+    if (!token || !jobContext) return;
+    setDownloadStatus({ kind: "loading" });
+    try {
+      await generateAndDownloadCv(token, jobContext, cvProfileId);
+      setDownloadStatus({ kind: "done" });
+      if (doneTimer.current) clearTimeout(doneTimer.current);
+      doneTimer.current = setTimeout(() => setDownloadStatus({ kind: "idle" }), 3000);
+    } catch (e: unknown) {
+      const msg = (e as Error).message;
+      if (msg === "UNAUTHORIZED") { await clearToken(); setToken(null); }
+      setDownloadStatus({ kind: "error", message: msg === "UNAUTHORIZED" ? "Session expired. Please log in again." : msg });
+    }
   }
 
   async function handleFill() {
@@ -160,9 +207,58 @@ export function Popup() {
         <button onClick={handleLogout} style={ghostBtn}>Log out</button>
       </header>
 
-      {profiles.length > 1 && (
+      {/* ── Download Optimised CV ───────────────────────── */}
+      <section style={{ display: "flex", flexDirection: "column", gap: 8, borderBottom: "1px solid #e5e7eb", paddingBottom: 12 }}>
         <div>
-          <label style={labelStyle}>Profile override</label>
+          <label style={labelStyle}>Profile for CV download</label>
+          {profilesError ? (
+            <p style={{ fontSize: 12, color: "#dc2626", margin: "4px 0 0" }}>
+              Could not load profiles: {profilesError}{" "}
+              <button onClick={() => token && loadProfiles(token)} style={ghostBtn}>Retry</button>
+            </p>
+          ) : (
+            <select
+              value={cvProfileId}
+              onChange={(e) => handleCvProfileChange(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="auto">Auto (LLM picks best match)</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} — {p.title}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <button
+          onClick={handleDownload}
+          disabled={downloadStatus.kind === "loading" || !jobContext}
+          style={primaryBtn}
+          title={!jobContext ? "No job description detected on this page" : undefined}
+        >
+          {downloadStatus.kind === "loading" ? "⟳ Generating CV…" :
+           downloadStatus.kind === "done" ? "✓ Download complete" :
+           "Download Optimised CV"}
+        </button>
+
+        {!jobContext && (
+          <p style={{ fontSize: 11, color: "#9ca3af", margin: 0 }}>
+            Could not detect a job description. Select the job text on the page and try again.
+          </p>
+        )}
+        {downloadStatus.kind === "error" && (
+          <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{downloadStatus.message}</p>
+        )}
+
+        <p style={hintStyle}>
+          Shortcut: <kbd style={kbdStyle}>{downloadShortcut}</kbd>
+        </p>
+      </section>
+
+      {/* ── Fill application fields ──────────────────────── */}
+      {profiles.length > 1 && !profilesError && (
+        <div>
+          <label style={labelStyle}>Profile for field fill</label>
           <select
             value={selectedProfileId}
             onChange={(e) => setSelectedProfileId(e.target.value)}
@@ -179,7 +275,7 @@ export function Popup() {
       <button
         onClick={handleFill}
         disabled={status.kind === "loading"}
-        style={primaryBtn}
+        style={{ ...primaryBtn, background: "#4b5563" }}
       >
         {status.kind === "loading" ? status.message : "Fill this page"}
       </button>
