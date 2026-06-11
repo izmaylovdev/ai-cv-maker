@@ -16,6 +16,5 @@ RUN python -m grpc_tools.protoc \
       /proto/llm_service.proto \
     && sed -i 's/^import llm_service_pb2/from . import llm_service_pb2/' app/grpc/llm_service_pb2_grpc.py
 
-EXPOSE 8000
-EXPOSE 50051
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8080
+CMD ["python", "-m", "app.main"]

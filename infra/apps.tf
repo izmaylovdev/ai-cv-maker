@@ -9,7 +9,7 @@ resource "google_cloud_run_v2_service" "llm_service" {
   name     = "llm-service"
   location = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
     scaling {
@@ -28,7 +28,8 @@ resource "google_cloud_run_v2_service" "llm_service" {
       }
 
       ports {
-        container_port = 50051
+        container_port = 8080
+        name           = "h2c"
       }
 
       env {
@@ -77,8 +78,9 @@ resource "google_cloud_run_v2_service" "llm_service" {
       }
 
       startup_probe {
-        tcp_socket {
-          port = 50051
+        grpc {
+          port    = 8080
+          service = "llm.LlmService"
         }
         initial_delay_seconds = 10
         period_seconds        = 10

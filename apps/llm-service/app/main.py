@@ -2,69 +2,43 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import asyncio
 import os
-from contextlib import asynccontextmanager
 
 import grpc.aio
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import make_asgi_app
+from grpc_health.v1 import health_pb2, health_pb2_grpc
+from prometheus_client import start_http_server
 
-from app.chains.cv_chain import extract_profile, generate_cv, optimize_profile
 from app.grpc.metrics_interceptor import MetricsInterceptor
 from app.grpc.servicer import LlmServiceImpl
 from app.grpc.llm_service_pb2_grpc import add_LlmServiceServicer_to_server
-from app.schemas import ExtractRequest, ExtractResponse, GenerateRequest, GenerateResponse, OptimizeRequest, OptimizeResponse
 
-_GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    grpc_server = grpc.aio.server(interceptors=[MetricsInterceptor()])
-    add_LlmServiceServicer_to_server(LlmServiceImpl(), grpc_server)
-    grpc_server.add_insecure_port(f"[::]:{_GRPC_PORT}")
-    await grpc_server.start()
-    yield
-    await grpc_server.stop(grace=5)
+_GRPC_PORT = int(os.getenv("GRPC_PORT", "8080"))
+_METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
 
 
-app = FastAPI(title="CV LLM Service", version="1.0.0", lifespan=lifespan)
+class _AsyncHealthServicer(health_pb2_grpc.HealthServicer):
+    async def Check(self, request, context):
+        return health_pb2.HealthCheckResponse(status=health_pb2.HealthCheckResponse.SERVING)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.mount("/metrics", make_asgi_app())
+    async def Watch(self, request, context):
+        await context.write(health_pb2.HealthCheckResponse(status=health_pb2.HealthCheckResponse.SERVING))
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def serve():
+    server = grpc.aio.server(interceptors=[MetricsInterceptor()])
+
+    add_LlmServiceServicer_to_server(LlmServiceImpl(), server)
+
+    health_pb2_grpc.add_HealthServicer_to_server(_AsyncHealthServicer(), server)
+
+    server.add_insecure_port(f"[::]:{_GRPC_PORT}")
+    await server.start()
+
+    start_http_server(_METRICS_PORT)
+
+    await server.wait_for_termination()
 
 
-@app.post("/generate", response_model=GenerateResponse)
-async def generate(request: GenerateRequest) -> GenerateResponse:
-    try:
-        return await generate_cv(request.profile, request.message)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.post("/optimize", response_model=OptimizeResponse)
-async def optimize(request: OptimizeRequest) -> OptimizeResponse:
-    try:
-        return await optimize_profile(request.profile, request.message)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.post("/extract", response_model=ExtractResponse)
-async def extract(request: ExtractRequest) -> ExtractResponse:
-    try:
-        return await extract_profile(request.cv_text)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+if __name__ == "__main__":
+    asyncio.run(serve())
