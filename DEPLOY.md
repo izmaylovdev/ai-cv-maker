@@ -1,28 +1,29 @@
 # Deployment Guide
 
-End-to-end instructions for deploying AI CV Maker to Azure from scratch.
+End-to-end instructions for deploying AI CV Maker to GCP Cloud Run from scratch.
 
 ## Prerequisites
 
 | Tool | Version | Install |
 |------|---------|---------|
-| [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) | ≥ 2.60 | `brew install azure-cli` |
+| [gcloud CLI](https://cloud.google.com/sdk/docs/install) | ≥ 500 | `brew install google-cloud-sdk` |
 | [Terraform](https://developer.hashicorp.com/terraform/install) | ≥ 1.7 | `brew install terraform` |
 | [Docker](https://www.docker.com/products/docker-desktop/) | ≥ 25 | Docker Desktop |
 
 ---
 
-## Step 1 — Authenticate with Azure
+## Step 1 — Authenticate with GCP
 
 ```bash
-az login --tenant "<your-tenant-id>"
-az account set --subscription "<your-subscription-id>"
+gcloud auth login
+gcloud config set project applysy-498807
+gcloud auth configure-docker europe-central2-docker.pkg.dev
 ```
 
-Verify the correct subscription is active:
+Verify:
 
 ```bash
-az account show --query "{name:name, id:id}" -o table
+gcloud auth print-identity-token  # should succeed
 ```
 
 ---
@@ -36,24 +37,34 @@ cp infra/terraform.tfvars.example infra/terraform.tfvars
 Edit `infra/terraform.tfvars` and fill in all required values:
 
 ```hcl
-project_name = "ai-cv-maker"       # used in all Azure resource names
-location     = "swedencentral"     # Azure region
+gcp_project_id = "applysy-498807"
+region         = "europe-central2"
 
 postgres_admin_login    = "cvmaker"
 postgres_admin_password = "<strong-password>"
 
-jwt_secret       = "<random-string-at-least-32-chars>"
-google_client_id = "<your-client-id>.apps.googleusercontent.com"
+jwt_secret                = "<random-string-at-least-32-chars>"
+google_web_client_id      = "<client-id>.apps.googleusercontent.com"
+google_extension_client_id = "<client-id>.apps.googleusercontent.com"
+google_client_secret      = "<client-secret>"
 
-# LLM provider — choose one section below and set llm_provider accordingly
-llm_provider = "foundry"           # google | openai | foundry
+# LLM provider — choose one section below
+llm_provider = "google"   # google | openai | foundry
 ```
 
 **For Google (Gemini):**
 ```hcl
 llm_provider   = "google"
+llm_model      = "gemini-2.0-flash"
 google_api_key = "AIzaSy..."
-# llm_model    = "gemini-1.5-flash"
+```
+
+**For OpenAI-compatible (LM Studio, OpenAI, etc.):**
+```hcl
+llm_provider    = "openai"
+openai_base_url = "https://api.openai.com/v1"
+openai_api_key  = "sk-..."
+openai_model    = "gpt-4o"
 ```
 
 **For Azure AI Foundry (Claude):**
@@ -62,189 +73,114 @@ llm_provider            = "foundry"
 foundry_api_key         = "<key-from-azure-portal>"
 foundry_base_url        = "https://<resource>.services.ai.azure.com/anthropic"
 foundry_deployment_name = "<deployment-name>"
-# llm_model             = "claude-haiku-4-5"
-```
-
-**For OpenAI-compatible (LM Studio, etc.):**
-```hcl
-llm_provider    = "openai"
-openai_base_url = "http://127.0.0.1:1234/v1"
-openai_api_key  = "lm-studio"
-openai_model    = "local-model"
 ```
 
 ---
 
-## Step 3 — Register Azure resource providers
-
-These only need to be registered once per subscription:
-
-```bash
-az provider register --namespace Microsoft.App --wait
-az provider register --namespace Microsoft.DBforPostgreSQL --wait
-az provider register --namespace Microsoft.ContainerRegistry --wait
-az provider register --namespace Microsoft.OperationalInsights --wait
-```
-
----
-
-## Step 4 — Provision infrastructure
+## Step 3 — Provision infrastructure
 
 ```bash
 cd infra
 terraform init
-```
-
-Deploy everything **except** the container apps (images don't exist yet):
-
-```bash
-terraform apply \
-  -target=azurerm_resource_group.rg \
-  -target=azurerm_log_analytics_workspace.law \
-  -target=azurerm_container_registry.acr \
-  -target=azurerm_postgresql_flexible_server.db \
-  -target=azurerm_postgresql_flexible_server_database.cvmaker \
-  -target=azurerm_postgresql_flexible_server_firewall_rule.azure_services \
-  -target=azurerm_container_app_environment.env
+terraform apply
 cd ..
 ```
 
+This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), load balancer, and SSL certificates.
+
 ---
 
-## Step 5 — Build and push container images
+## Step 4 — Build and push container images
 
-Log in to the ACR that was just created:
-
-```bash
-az acr login --name aicvmakeracr
-```
-
-> The ACR name is `${project_name}acr` with hyphens removed. With the default `project_name = "ai-cv-maker"` it is `aicvmakeracr`.
-> Run `terraform -chdir=infra output acr_login_server` to get the exact value.
-
-Build and push all three services:
+All images are built for `linux/amd64`. **All builds use the repo root as the build context** — some Dockerfiles reference `proto/` or `libs/` from the root.
 
 ```bash
-# llm-service (Python / gRPC)
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/llm-service:latest \
-  -f apps/llm-service/Dockerfile apps/llm-service
-docker push aicvmakeracr.azurecr.io/llm-service:latest
+AR="europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
 
-# cv-api (.NET 9)
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/cv-api:latest \
-  -f apps/cv-api/Dockerfile .
-docker push aicvmakeracr.azurecr.io/cv-api:latest
+# llm-service (Python/gRPC) — repo root required for proto/llm_service.proto
+docker build --platform linux/amd64 -t $AR/llm-service:latest -f apps/llm-service/Dockerfile .
+docker push $AR/llm-service:latest
+
+# cv-api (.NET)
+docker build --platform linux/amd64 -t $AR/cv-api:latest -f apps/cv-api/Dockerfile .
+docker push $AR/cv-api:latest
 
 # ui-angular (Angular + nginx)
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/ui-angular:latest \
-  -f apps/ui-angular/Dockerfile .
-docker push aicvmakeracr.azurecr.io/ui-angular:latest
+docker build --platform linux/amd64 -t $AR/ui-angular:latest -f apps/ui-angular/Dockerfile .
+docker push $AR/ui-angular:latest
+
+# chat-ui (React web component)
+docker build --platform linux/amd64 -t $AR/chat-ui:latest -f apps/chat-ui/Dockerfile .
+docker push $AR/chat-ui:latest
+
+# admin-api (NestJS)
+docker build --platform linux/amd64 -t $AR/admin-api:latest -f apps/admin-api/Dockerfile .
+docker push $AR/admin-api:latest
+
+# admin-ui (Next.js)
+docker build --platform linux/amd64 -t $AR/admin-ui:latest -f apps/admin-ui/Dockerfile .
+docker push $AR/admin-ui:latest
 ```
 
 ---
 
-## Step 6 — Deploy container apps
+## Step 5 — Deploy services
 
 ```bash
-terraform -chdir=infra apply
-```
+REGION="europe-central2"
+AR="europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
 
-This creates the three Container Apps using the images pushed in the previous step.
+gcloud run services update llm-service --region $REGION --image $AR/llm-service:latest
+gcloud run services update cv-api      --region $REGION --image $AR/cv-api:latest
+gcloud run services update ui-angular  --region $REGION --image $AR/ui-angular:latest
+gcloud run services update chat-ui     --region $REGION --image $AR/chat-ui:latest
+gcloud run services update admin-api   --region $REGION --image $AR/admin-api:latest
+gcloud run services update admin-ui    --region $REGION --image $AR/admin-ui:latest
+```
 
 ---
 
-## Step 7 — Verify
+## Step 6 — Verify
 
+Open https://app.applysy.works — the Angular UI should load and sign in via Google.
+
+Quick smoke test:
 ```bash
-terraform -chdir=infra output app_url
+BASE="https://app.applysy.works"
+curl -s -o /dev/null -w "%{http_code}" "$BASE/"                   # 200
+curl -s -o /dev/null -w "%{http_code}" "$BASE/api/job-profiles"   # 401
 ```
-
-Open the printed URL in a browser. The Angular UI should load and be able to sign in via Google.
 
 ---
 
 ## Redeploying after code changes
 
-Rebuild and push only the changed service, then restart its Container App revision:
+Rebuild and push only the changed service, then update it:
 
 ```bash
-# Example: redeploy llm-service
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/llm-service:latest \
-  -f apps/llm-service/Dockerfile apps/llm-service
-docker push aicvmakeracr.azurecr.io/llm-service:latest
+AR="europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
 
-az containerapp update \
-  --name llm-service \
-  --resource-group rg-ai-cv-maker \
-  --image aicvmakeracr.azurecr.io/llm-service:latest
+docker build --platform linux/amd64 -t $AR/llm-service:latest -f apps/llm-service/Dockerfile .
+docker push $AR/llm-service:latest
+gcloud run services update llm-service --region europe-central2 --image $AR/llm-service:latest
 ```
 
-Repeat with `cv-api` or `ui-angular` as needed. No `terraform apply` required for image-only updates.
-
----
-
-## Importing existing Azure resources into Terraform state
-
-If resources already exist in Azure (created manually or by a previous run), import them before applying.
-Replace `<sub-id>` with your subscription ID (`az account show --query id -o tsv`).
-
-```bash
-# Resource group
-terraform -chdir=infra import azurerm_resource_group.rg \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker
-
-# Log Analytics workspace
-terraform -chdir=infra import azurerm_log_analytics_workspace.law \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.OperationalInsights/workspaces/ai-cv-maker-law
-
-# Container Registry
-terraform -chdir=infra import azurerm_container_registry.acr \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.ContainerRegistry/registries/aicvmakeracr
-
-# PostgreSQL server
-terraform -chdir=infra import azurerm_postgresql_flexible_server.db \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.DBforPostgreSQL/flexibleServers/ai-cv-maker-postgres
-
-# PostgreSQL database
-terraform -chdir=infra import azurerm_postgresql_flexible_server_database.cvmaker \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.DBforPostgreSQL/flexibleServers/ai-cv-maker-postgres/databases/cvmaker
-
-# PostgreSQL firewall rule
-terraform -chdir=infra import azurerm_postgresql_flexible_server_firewall_rule.azure_services \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.DBforPostgreSQL/flexibleServers/ai-cv-maker-postgres/firewallRules/AllowAzureServices
-
-# Container App environment
-terraform -chdir=infra import azurerm_container_app_environment.env \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.App/managedEnvironments/ai-cv-maker-env
-
-# Container Apps
-terraform -chdir=infra import azurerm_container_app.llm_service \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.App/containerApps/llm-service
-
-terraform -chdir=infra import azurerm_container_app.cv_api \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.App/containerApps/cv-api
-
-terraform -chdir=infra import azurerm_container_app.ui_angular \
-  /subscriptions/<sub-id>/resourceGroups/rg-ai-cv-maker/providers/Microsoft.App/containerApps/ui-angular
-```
-
----
-
-## Teardown
-
-```bash
-terraform -chdir=infra destroy
-```
-
-> Any resources inside the resource group that were **not** created by Terraform (e.g. Azure AI Foundry accounts) will block RG deletion. Delete them manually in the Azure Portal first, or remove them from the resource group before running destroy.
+If `infra/` also changed, run `terraform apply` after pushing images.
 
 ---
 
 ## Architecture notes
 
-### cv-api external ingress
+### gRPC (llm-service)
 
-`cv-api` is deployed with `external_enabled = true` even though it is only called by the nginx proxy inside the same Container Apps environment. The reason is that Azure Container Apps internal FQDNs (`*.internal.*`) redirect plain HTTP to HTTPS, and their managed TLS certificates are not compatible with nginx's upstream SSL handshake — nginx gets a TCP RST during the ClientHello. The external FQDN uses Azure's standard managed certificate, which nginx can connect to normally. All sensitive cv-api routes require a valid JWT, so public exposure is acceptable.
+`llm-service` is a pure gRPC server (no HTTP). For it to work on Cloud Run:
+
+- The port must have `name = "h2c"` in Terraform — tells Cloud Run to forward HTTP/2 cleartext to the container.
+- Ingress must be `INGRESS_TRAFFIC_ALL` — Cloud Run v2 `INTERNAL_ONLY` means VPC-only; other Cloud Run services calling via `.run.app` URLs are treated as external and get 404.
+
+### cv-api → llm-service communication
+
+`cv-api` calls `llm-service` over gRPC using the Cloud Run service URL (`LlmService__GrpcUrl` env var, set by Terraform output). No VPC Connector is needed because llm-service ingress is open.
 
 ---
 
@@ -252,10 +188,18 @@ terraform -chdir=infra destroy
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `AADSTS700082: refresh token expired` | Azure CLI session expired | `az login --tenant <tenant-id>` |
-| `MissingSubscriptionRegistration: Microsoft.App` | Resource provider not registered | `az provider register --namespace Microsoft.App --wait` |
-| `MANIFEST_UNKNOWN: manifest tagged by "latest" is not found` | Images not pushed to ACR | Complete Step 5 |
-| `alpha numeric characters only are allowed in "name"` | ACR name contains hyphens | ACR name is auto-sanitised — check `terraform output acr_name` |
-| RG deletion blocked by nested resources | Non-Terraform resources in the RG | Delete them manually in the Portal first |
-| PostgreSQL `zone` conflict | Existing server has a pinned zone | `lifecycle { ignore_changes = [zone] }` is already set |
-| nginx 502 proxying to internal Container App | Azure internal FQDN TLS incompatible with nginx upstream SSL | Set `external_enabled = true` on the target app; nginx proxies its public FQDN instead |
+| `gcloud auth print-identity-token` fails | GCP session expired | `gcloud auth login` |
+| Docker push: `unauthorized` | AR not configured | `gcloud auth configure-docker europe-central2-docker.pkg.dev` |
+| `RpcException: HTTP status code: 404` from cv-api | llm-service ingress or h2c misconfigured | Check `ingress = "INGRESS_TRAFFIC_ALL"` and `name = "h2c"` in `infra/apps.tf`; verify llm-service logs receive requests |
+| Startup probe failed | Container not listening on declared port, or health servicer is sync in async server | Check `apps/llm-service/app/main.py` — health servicer `Check`/`Watch` must be `async def` |
+| Terraform: ssl_certificate already in use | SSL cert tainted in state | `terraform untaint google_compute_managed_ssl_certificate.app` then re-apply |
+| Terraform apply fails, then `gcloud run services update` used as workaround | State drift | Re-run `terraform apply` after the gcloud update to sync state |
+
+---
+
+## Teardown
+
+```bash
+cd infra
+terraform destroy
+```
