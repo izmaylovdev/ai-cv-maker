@@ -1,21 +1,21 @@
 ---
-description: Deploy the app to Azure by rebuilding and pushing changed Docker images, then updating the container apps.
+description: Deploy the app to GCP by rebuilding and pushing changed Docker images, then updating Cloud Run services.
 ---
 
 # Deploy
 
-Redeploy changed services to Azure Container Apps. Infrastructure is already provisioned via Terraform — this skill only handles image rebuilds and container app updates.
+Redeploy changed services to GCP Cloud Run. Infrastructure is already provisioned via Terraform — this skill only handles image rebuilds and service updates.
 
 ## Prerequisites
 
-- Azure CLI logged in: `az account show` should return the `personal` subscription
+- `gcloud` CLI authenticated: `gcloud auth print-identity-token` should succeed
 - Docker running
-- ACR login: `az acr login --name aicvmakeracr`
+- AR login: `gcloud auth configure-docker europe-central2-docker.pkg.dev`
 
-If the Azure session is expired, run:
+If the GCP session is expired, run:
 ```bash
-az login
-az acr login --name aicvmakeracr
+gcloud auth login
+gcloud auth configure-docker europe-central2-docker.pkg.dev
 ```
 
 ## Detect which services changed
@@ -24,49 +24,97 @@ az acr login --name aicvmakeracr
 git diff --name-only HEAD | grep -E "^apps/" | cut -d'/' -f2 | sort -u
 ```
 
-Services: `cv-api`, `ui-angular`, `llm-service`
+Also check if `infra/` changed — if so, run `terraform apply` (see below).
+
+Services: `cv-api`, `ui-angular`, `chat-ui`, `llm-service`, `admin-api`, `admin-ui`
 
 ## Build & push changed images
 
 Run only for services that changed. Images are built for `linux/amd64`.
+**All builds use the repo root as the build context** (some Dockerfiles copy from `proto/` or `libs/`).
 
-**cv-api** (.NET 9, build context is repo root):
+**cv-api** (.NET):
 ```bash
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/cv-api:latest \
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest \
   -f apps/cv-api/Dockerfile .
-docker push aicvmakeracr.azurecr.io/cv-api:latest
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest
 ```
 
-**ui-angular** (Angular + nginx, build context is repo root):
+**ui-angular** (Angular + nginx):
 ```bash
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/ui-angular:latest \
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:latest \
   -f apps/ui-angular/Dockerfile .
-docker push aicvmakeracr.azurecr.io/ui-angular:latest
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:latest
 ```
 
-**llm-service** (Python/gRPC, build context is the service dir):
+**chat-ui** (React web component):
 ```bash
-docker build --platform linux/amd64 -t aicvmakeracr.azurecr.io/llm-service:latest \
-  -f apps/llm-service/Dockerfile apps/llm-service
-docker push aicvmakeracr.azurecr.io/llm-service:latest
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:latest \
+  -f apps/chat-ui/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:latest
 ```
 
-## Update container apps
+**llm-service** (Python/gRPC — build context must be repo root, not service dir, because it copies `proto/llm_service.proto`):
+```bash
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:latest \
+  -f apps/llm-service/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:latest
+```
+
+**admin-api** (NestJS):
+```bash
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:latest \
+  -f apps/admin-api/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:latest
+```
+
+**admin-ui** (Next.js):
+```bash
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest \
+  -f apps/admin-ui/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest
+```
+
+## Update Cloud Run services
 
 Run only for services whose images were pushed. These can run in parallel.
 
 ```bash
-az containerapp update --name cv-api      --resource-group rg-ai-cv-maker --image aicvmakeracr.azurecr.io/cv-api:latest
-az containerapp update --name ui-angular  --resource-group rg-ai-cv-maker --image aicvmakeracr.azurecr.io/ui-angular:latest
-az containerapp update --name llm-service --resource-group rg-ai-cv-maker --image aicvmakeracr.azurecr.io/llm-service:latest
+gcloud run services update cv-api      --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest
+gcloud run services update ui-angular  --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:latest
+gcloud run services update chat-ui     --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:latest
+gcloud run services update llm-service --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:latest
+gcloud run services update admin-api   --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:latest
+gcloud run services update admin-ui    --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest
 ```
+
+Note: `gcloud run services update --image` always creates a new revision and re-pulls the image, even if the tag (`:latest`) hasn't changed. It is the correct way to deploy a newly pushed image.
+
+## Apply infrastructure changes
+
+If `infra/` changed (port config, scaling, env vars, ingress, etc.), run terraform after pushing images:
+
+```bash
+cd infra
+terraform apply
+```
+
+If terraform fails because a Cloud Run revision fails its startup probe, fix the image first, repush, then re-run `terraform apply`. Do not skip — infra state will drift otherwise.
+
+If terraform fails with "ssl_certificate resource is already being used", run:
+```bash
+terraform untaint google_compute_managed_ssl_certificate.app
+```
+Then re-run `terraform apply`.
+
+After using `gcloud run services update` to work around a terraform failure, re-run `terraform apply` to sync state.
 
 ## Smoke tests
 
 Run after every deployment (regardless of which service changed). All checks must pass before reporting success.
 
 ```bash
-BASE="https://ui-angular.wonderfulisland-ff2d44e9.swedencentral.azurecontainerapps.io"
+BASE="https://app.applysy.works"
 
 check() {
   local desc=$1 url=$2 expected=$3
@@ -81,9 +129,9 @@ check() {
 }
 
 FAILED=0
-check "app shell loads"            "$BASE/"                              200
-check "chat widget served"         "$BASE/chat-widget/chat-widget.js"   200
-check "API proxy alive (401=ok)"   "$BASE/api/job-profiles"             401
+check "app shell loads"           "$BASE/"                            200
+check "chat widget served"        "$BASE/chat-widget/chat-widget.js"  200
+check "API proxy alive (401=ok)"  "$BASE/api/job-profiles"            401
 
 if [ "$FAILED" = "1" ]; then
   echo ""
@@ -95,14 +143,29 @@ else
 fi
 ```
 
-If any check fails, inspect nginx logs and container status before declaring the deploy done:
+Known issue: `chat-widget/chat-widget.js` may return 404 if the `chat-ui` image is stale. This is a pre-existing issue unrelated to llm-service or ui-angular deploys — only fail the deploy over it if `chat-ui` was explicitly changed.
+
+If any check fails, inspect Cloud Run logs and service status:
 ```bash
-az containerapp logs show --name ui-angular --resource-group rg-ai-cv-maker --tail 30
-az containerapp show --name ui-angular --resource-group rg-ai-cv-maker --query "properties.runningStatus"
+gcloud run services describe <service> --region europe-central2
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=<service>" --limit 30 --format "table(timestamp,textPayload)"
 ```
 
-App URL: `https://ui-angular.wonderfulisland-ff2d44e9.swedencentral.azurecontainerapps.io`
+App URL: `https://app.applysy.works`
+Admin URL: `https://admin.applysy.works`
+
+## Debugging gRPC (llm-service)
+
+If cv-api logs show `RpcException: StatusCode="Unimplemented", Detail="Bad gRPC response. HTTP status code: 404"`:
+
+1. Check llm-service Cloud Run logs — if **no logs appear at all** when cv-api makes calls, the requests are not reaching the container (ingress or routing issue), not a code bug.
+2. Verify the port has `name = "h2c"` in `infra/apps.tf` — required for Cloud Run to forward HTTP/2 cleartext (gRPC) to the container.
+3. Cloud Run v2 `INGRESS_TRAFFIC_INTERNAL_ONLY` is **VPC-only** — other Cloud Run services calling via `.run.app` URLs are blocked. llm-service must use `INGRESS_TRAFFIC_ALL`.
 
 ## Full infrastructure provisioning (first time only)
 
-See `DEPLOY.md` for Terraform steps. Not needed for routine redeployments.
+```bash
+cd infra
+terraform init
+terraform apply
+```
