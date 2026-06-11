@@ -9,6 +9,8 @@ resource "google_cloud_run_v2_service" "llm_service" {
   name     = "llm-service"
   location = var.region
   deletion_protection = false
+  # Must be ALL: Cloud Run v2 INTERNAL_ONLY means VPC-only; same-project
+  # Cloud Run services calling via .run.app URLs are treated as external.
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
