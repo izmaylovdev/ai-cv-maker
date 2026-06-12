@@ -1,5 +1,6 @@
 locals {
-  db_host              = google_sql_database_instance.db.public_ip_address
+  # Private IP — DB clients (cv-api, grafana, admin-api) reach it via Direct VPC egress.
+  db_host              = google_sql_database_instance.db.private_ip_address
   db_connection_string = "Host=${local.db_host};Port=5432;Database=cvmaker;Username=${var.postgres_admin_login};Password=${var.postgres_admin_password};SslMode=Require"
 }
 
@@ -9,11 +10,15 @@ resource "google_cloud_run_v2_service" "llm_service" {
   name     = "llm-service"
   location = var.region
   deletion_protection = false
-  # Must be ALL: Cloud Run v2 INTERNAL_ONLY means VPC-only; same-project
-  # Cloud Run services calling via .run.app URLs are treated as external.
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  # INTERNAL_ONLY is reachable from cv-api because cv-api egresses through the
+  # VPC (Direct VPC egress + Private Google Access). See ADR-0001.
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
+    # No vpc_access here: llm-service calls external LLM providers
+    # (OpenAI/Foundry are non-Google) and must keep the direct internet path.
+    service_account = google_service_account.llm_service.email
+
     scaling {
       min_instance_count = 0
       max_instance_count = 2
@@ -102,7 +107,7 @@ resource "google_cloud_run_v2_service_iam_member" "llm_service_invoker" {
   location = var.region
   name     = google_cloud_run_v2_service.llm_service.name
   role     = "roles/run.invoker"
-  member   = "allUsers"
+  member   = "serviceAccount:${google_service_account.cv_api.email}"
 }
 
 # ── cv-api ─────────────────────────────────────────────────────────────────────
@@ -114,6 +119,20 @@ resource "google_cloud_run_v2_service" "cv_api" {
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
+    service_account = google_service_account.cv_api.email
+
+    # ALL_TRAFFIC is required (not PRIVATE_RANGES_ONLY): the llm-service call
+    # targets a .run.app URL, which only counts as internal traffic when it
+    # leaves through the VPC. Google endpoints stay reachable via PGA;
+    # any future non-Google egress from cv-api needs Cloud NAT (ADR-0001).
+    vpc_access {
+      network_interfaces {
+        network    = local.vpc_egress_network
+        subnetwork = local.vpc_egress_subnetwork
+      }
+      egress = "ALL_TRAFFIC"
+    }
+
     scaling {
       min_instance_count = 1
       max_instance_count = 2
@@ -144,6 +163,10 @@ resource "google_cloud_run_v2_service" "cv_api" {
       env {
         name  = "LlmService__GrpcUrl"
         value = google_cloud_run_v2_service.llm_service.uri
+      }
+      env {
+        name  = "LlmService__AuthMode"
+        value = "google"
       }
       env {
         name  = "Google__WebClientId"
@@ -248,6 +271,16 @@ resource "google_cloud_run_v2_service" "ui_angular" {
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
+
+    # Direct VPC egress: reach the private-IP database and/or INTERNAL_ONLY
+    # Cloud Run upstreams. Google-fronted endpoints are covered by PGA (ADR-0001).
+    vpc_access {
+      network_interfaces {
+        network    = local.vpc_egress_network
+        subnetwork = local.vpc_egress_subnetwork
+      }
+      egress = "ALL_TRAFFIC"
+    }
     scaling {
       min_instance_count = 0
       max_instance_count = 2
@@ -369,6 +402,16 @@ resource "google_cloud_run_v2_service" "grafana" {
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
+
+    # Direct VPC egress: reach the private-IP database and/or INTERNAL_ONLY
+    # Cloud Run upstreams. Google-fronted endpoints are covered by PGA (ADR-0001).
+    vpc_access {
+      network_interfaces {
+        network    = local.vpc_egress_network
+        subnetwork = local.vpc_egress_subnetwork
+      }
+      egress = "ALL_TRAFFIC"
+    }
     scaling {
       min_instance_count = 1
       max_instance_count = 1
@@ -470,6 +513,16 @@ resource "google_cloud_run_v2_service" "admin_api" {
   ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
+
+    # Direct VPC egress: reach the private-IP database and/or INTERNAL_ONLY
+    # Cloud Run upstreams. Google-fronted endpoints are covered by PGA (ADR-0001).
+    vpc_access {
+      network_interfaces {
+        network    = local.vpc_egress_network
+        subnetwork = local.vpc_egress_subnetwork
+      }
+      egress = "ALL_TRAFFIC"
+    }
     scaling {
       min_instance_count = 0
       max_instance_count = 2
@@ -588,6 +641,16 @@ resource "google_cloud_run_v2_service" "admin_ui" {
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
+
+    # Direct VPC egress: reach the private-IP database and/or INTERNAL_ONLY
+    # Cloud Run upstreams. Google-fronted endpoints are covered by PGA (ADR-0001).
+    vpc_access {
+      network_interfaces {
+        network    = local.vpc_egress_network
+        subnetwork = local.vpc_egress_subnetwork
+      }
+      egress = "ALL_TRAFFIC"
+    }
     scaling {
       min_instance_count = 0
       max_instance_count = 2

@@ -1,5 +1,6 @@
 using CvApi.Domain.Entities;
 using CvApi.Features.CoverLetter;
+using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,9 @@ public class CoverLetterServiceTests
             .Options;
         return new AppDbContext(opts);
     }
+
+    private static UsageService MakeUsageService(AppDbContext db)
+        => new(db, Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()));
 
     private static Profile MakeProfile(Guid userId, string title, string overview)
         => new()
@@ -46,7 +50,7 @@ public class CoverLetterServiceTests
         llm.Setup(s => s.GenerateCoverLetterAsync(It.IsAny<LlmCoverLetterRequest>()))
            .ReturnsAsync(new LlmCoverLetterResponse("Dear Hiring Manager...", profile.Id));
 
-        var svc = new CoverLetterService(db, llm.Object);
+        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
         var result = await svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
             JobTitle: "Senior Python Engineer",
             JobDescription: "We need Python/Go expertise.",
@@ -69,7 +73,7 @@ public class CoverLetterServiceTests
         await using var db = CreateDb();
 
         var llm = new Mock<ILlmService>();
-        var svc = new CoverLetterService(db, llm.Object);
+        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
@@ -95,7 +99,7 @@ public class CoverLetterServiceTests
         await db.SaveChangesAsync();
 
         var llm = new Mock<ILlmService>();
-        var svc = new CoverLetterService(db, llm.Object);
+        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
@@ -126,7 +130,7 @@ public class CoverLetterServiceTests
            .Callback<LlmCoverLetterRequest>(r => captured = r)
            .ReturnsAsync(new LlmCoverLetterResponse("Cover letter text.", p1.Id));
 
-        var svc = new CoverLetterService(db, llm.Object);
+        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
         await svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
             JobTitle: "Engineer",
             JobDescription: "Backend role.",

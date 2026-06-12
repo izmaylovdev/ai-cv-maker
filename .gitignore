@@ -79,6 +79,6 @@ appsettings.Local.json
 
 # Terraform state and plan files (may contain secrets)
 infra/*.backup
-infra/tfplan
+infra/tfplan*
 infra/terraform.tfstate
 infra/terraform.tfstate.*

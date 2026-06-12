@@ -14,18 +14,19 @@ resource "google_sql_database_instance" "db" {
     }
 
     ip_configuration {
-      ipv4_enabled = true
-      # Cloud Run services connect via public IP with SSL
-      authorized_networks {
-        name  = "all"
-        value = "0.0.0.0/0"
-      }
+      # Public IP kept only for Cloud SQL Auth Proxy admin access; with no
+      # authorized_networks it accepts no direct connections (ADR-0001).
+      ipv4_enabled    = true
+      private_network = google_compute_network.vpc.id
     }
   }
 
   deletion_protection = false
 
-  depends_on = [google_project_service.sqladmin]
+  depends_on = [
+    google_project_service.sqladmin,
+    google_service_networking_connection.private_services,
+  ]
 }
 
 resource "google_sql_database" "cvmaker" {

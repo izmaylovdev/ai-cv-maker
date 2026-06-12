@@ -283,19 +283,22 @@ Four RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `Health`.
 
 ---
 
-## Infrastructure (Azure)
+## Infrastructure (GCP)
 
-Managed by Terraform in `infra/`. All three services run as **Azure Container Apps** in a shared environment backed by a **Log Analytics Workspace**.
+Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. A global HTTPS load balancer (serverless NEGs) serves `app.applysy.works` → ui-angular and `admin.applysy.works` → admin-ui.
 
-| Container App | Replicas | Ingress | Notes |
-|---|---|---|---|
-| `llm-service` | 0–2 | Internal, HTTP/2 (gRPC), port 50051 | Scale-to-zero enabled |
-| `cv-api` | 1–2 | External HTTPS, port 8080 | Always-on |
-| `chat-ui` | 0–2 | Internal, HTTP, port 80 | Scale-to-zero; serves `chat-widget.js` IIFE; reachable only via `ui-angular` Nginx proxy |
-| `ui-angular` | 0–2 | External HTTPS, port 80 | Scale-to-zero; injects `CV_API_UPSTREAM` + `CHAT_UI_UPSTREAM` via `envsubst` |
+| Cloud Run service | Instances | Ingress | Invoker | VPC egress |
+|---|---|---|---|---|
+| `llm-service` | 0–2 | Internal only | cv-api SA only | none (direct internet to LLM providers) |
+| `cv-api` | 1–2 | All | `allUsers` (public API) | ALL_TRAFFIC |
+| `chat-ui` | 0–2 | Internal only | `allUsers` | none |
+| `ui-angular` | 0–2 | All | `allUsers` | ALL_TRAFFIC |
+| `prometheus` | 1 | Internal only | — | none |
+| `grafana` | — | All | `allUsers` | ALL_TRAFFIC |
+| `admin-api` | 0–2 | Internal only | — | ALL_TRAFFIC |
+| `admin-ui` | 0–2 | All | `allUsers` | ALL_TRAFFIC |
 
-Database: **Azure Database for PostgreSQL Flexible Server** (SSL required).  
-Images: stored in an **Azure Container Registry**.
+**Network privacy ([ADR-0001](doc/adr/0001-llm-service-network-privacy.md)):** llm-service and Cloud SQL are not reachable from the public internet. Cloud Run v2 treats CR-to-CR `.run.app` calls as external, so callers of internal-only services route egress through the project VPC (Direct VPC egress + Private Google Access). cv-api authenticates to llm-service with a Google-signed ID token (`LlmService__AuthMode=google`); IAM (`run.invoker`) enforces it at the edge. Cloud SQL has a private IP in the VPC; its public IP has no authorized networks and serves only Cloud SQL Auth Proxy admin access.
 
 ---
 
@@ -316,4 +319,4 @@ Set `LLM_PROVIDER=openai` and `OPENAI_BASE_URL=http://host.docker.internal:1234/
 
 ## CI/CD
 
-`azure-pipelines.yml` defines the build and release pipeline targeting Azure Container Apps.
+`.github/workflows/deploy.yml` builds and pushes images to Artifact Registry (auth via Workload Identity Federation) and deploys to Cloud Run on push to `main`. See `DEPLOY.md` for the full from-scratch deployment guide.

@@ -97,10 +97,27 @@ builder.Services.AddScoped<TraceContext>();
 // Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
-builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
+var llmGrpcUrl = builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051";
+var llmTokenProvider = LlmCallAuth.CreateTokenProvider(
+    builder.Configuration["LlmService:AuthMode"], llmGrpcUrl);
+builder.Services.AddSingleton(llmTokenProvider);
+
+var llmGrpcClientBuilder = builder.Services.AddGrpcClient<CvApi.Grpc.LlmService.LlmServiceClient>(o =>
 {
-    o.Address = new Uri(builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051");
+    o.Address = new Uri(llmGrpcUrl);
 });
+
+// Cloud Run only: attach a Google-signed ID token so llm-service's IAM
+// (run.invoker restricted to cv-api's service account) accepts the call.
+// Local plaintext gRPC must not carry call credentials, so the chain is conditional.
+if (llmTokenProvider is not NullLlmCallTokenProvider)
+{
+    llmGrpcClientBuilder.AddCallCredentials(async (context, metadata, serviceProvider) =>
+    {
+        var provider = serviceProvider.GetRequiredService<ILlmCallTokenProvider>();
+        await LlmCallAuth.ApplyAsync(provider, metadata, context.CancellationToken);
+    });
+}
 
 // Polly resilience pipeline for LLM gRPC calls:
 //   - Retry up to 2 times with exponential backoff on Unavailable / DeadlineExceeded

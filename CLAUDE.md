@@ -13,6 +13,12 @@ The order is:
 
 Never skip the spec phase, even for small changes.
 
+**Exception — infrastructure / security / cross-service work:** document the
+decision as an ADR in `doc/adr/` (template in `doc/adr/README.md`) instead of
+a detailed user story. Optionally pair it with an outcome-level user story for
+verification; acceptance criteria must stay observable-outcome level (no
+resource names, no tech choices — those belong in the ADR and spec).
+
 ## Documentation Must Stay in Sync
 
 After every implementation, verify that relevant docs are updated:

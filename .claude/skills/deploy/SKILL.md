@@ -160,7 +160,8 @@ If cv-api logs show `RpcException: StatusCode="Unimplemented", Detail="Bad gRPC 
 
 1. Check llm-service Cloud Run logs — if **no logs appear at all** when cv-api makes calls, the requests are not reaching the container (ingress or routing issue), not a code bug.
 2. Verify the port has `name = "h2c"` in `infra/apps.tf` — required for Cloud Run to forward HTTP/2 cleartext (gRPC) to the container.
-3. Cloud Run v2 `INGRESS_TRAFFIC_INTERNAL_ONLY` is **VPC-only** — other Cloud Run services calling via `.run.app` URLs are blocked. llm-service must use `INGRESS_TRAFFIC_ALL`.
+3. Cloud Run v2 `INGRESS_TRAFFIC_INTERNAL_ONLY` is **VPC-only** — other Cloud Run services calling via `.run.app` URLs are blocked **unless the caller has Direct VPC egress** (`vpc_access` with `egress = "ALL_TRAFFIC"` on a subnet with Private Google Access). llm-service is INTERNAL_ONLY and cv-api egresses through the VPC; see `doc/adr/0001-llm-service-network-privacy.md`. Do not "fix" gRPC 404s by opening llm-service ingress.
+4. If cv-api gets `PermissionDenied` / HTTP 403 from llm-service, the ID token is missing or the invoker IAM binding is wrong: cv-api must run with `LlmService__AuthMode=google` and its service account must hold `roles/run.invoker` on llm-service.
 
 ## Full infrastructure provisioning (first time only)
 
