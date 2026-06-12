@@ -4,6 +4,7 @@ using CvApi.Infrastructure.ExternalServices.Llm;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Polly.CircuitBreaker;
 
 namespace CvApi.Features.JobProfiles;
 
@@ -58,6 +59,10 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         {
             return UnprocessableEntity(new { error = ex.Status.Detail });
         }
+        catch (BrokenCircuitException)
+        {
+            return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service is unreachable. Please try again later.");
+        }
         catch (LlmRateLimitException)
         {
             return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
@@ -108,6 +113,10 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         catch (InvalidOperationException ex)
         {
             return BadRequest(ex.Message);
+        }
+        catch (BrokenCircuitException)
+        {
+            return StatusCode(503, "CV extraction is temporarily unavailable: the AI service is unreachable. Please try again later.");
         }
         catch (LlmRateLimitException)
         {

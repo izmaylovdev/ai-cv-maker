@@ -20,7 +20,7 @@
       "inputs": ["{projectRoot}/pyproject.toml"],
       "outputs": ["{projectRoot}/.venv"],
       "options": {
-        "command": "python3 -m venv .venv && .venv/bin/pip install -q -e .",
+        "command": "python3.13 -m venv .venv && .venv/bin/pip install -q -e .",
         "cwd": "apps/llm-service"
       }
     },
@@ -29,7 +29,7 @@
       "continuous": true,
       "dependsOn": ["install"],
       "options": {
-        "command": ".venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8080",
+        "command": ".venv/bin/python -m app.main",
         "cwd": "apps/llm-service"
       }
     },

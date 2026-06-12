@@ -81,6 +81,7 @@ services:
       FOUNDRY_BASE_URL: ${FOUNDRY_BASE_URL:-}
       FOUNDRY_DEPLOYMENT_NAME: ${FOUNDRY_DEPLOYMENT_NAME:-}
       ANTHROPIC_FOUNDRY_MAX_TOKENS: ${ANTHROPIC_FOUNDRY_MAX_TOKENS:-8192}
+      GRPC_PORT: "50051"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

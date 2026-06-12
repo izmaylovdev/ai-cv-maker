@@ -3,6 +3,7 @@ using CvApi.Infrastructure.ExternalServices.Llm;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Polly.CircuitBreaker;
 
 namespace CvApi.Features.CoverLetter;
 
@@ -31,6 +32,10 @@ public class CoverLetterController(CoverLetterService coverLetterService) : Cont
         catch (InvalidOperationException ex)
         {
             return UnprocessableEntity(new { error = ex.Message });
+        }
+        catch (BrokenCircuitException)
+        {
+            return StatusCode(503, "Cover letter generation is temporarily unavailable: the AI service is unreachable. Please try again later.");
         }
         catch (LlmRateLimitException)
         {
