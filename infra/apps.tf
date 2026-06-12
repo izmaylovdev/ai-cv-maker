@@ -1,18 +1,20 @@
 locals {
   # Private IP — DB clients (cv-api, grafana, admin-api) reach it via Direct VPC egress.
-  db_host              = google_sql_database_instance.db.private_ip_address
+  db_host = google_sql_database_instance.db.private_ip_address
+  # Consumed only by the cv-api-db-connection secret version (secrets.tf);
+  # cv-api reads it via secret_key_ref, never as a plaintext env var (ADR-0002).
   db_connection_string = "Host=${local.db_host};Port=5432;Database=cvmaker;Username=${var.postgres_admin_login};Password=${var.postgres_admin_password};SslMode=Require"
 }
 
 # ── llm-service ────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "llm_service" {
-  name     = "llm-service"
-  location = var.region
+  name                = "llm-service"
+  location            = var.region
   deletion_protection = false
   # INTERNAL_ONLY is reachable from cv-api because cv-api egresses through the
   # VPC (Direct VPC egress + Private Google Access). See ADR-0001.
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
     # No vpc_access here: llm-service calls external LLM providers
@@ -52,24 +54,39 @@ resource "google_cloud_run_v2_service" "llm_service" {
         value = var.llm_temperature
       }
       env {
-        name  = "GOOGLE_API_KEY"
-        value = var.google_api_key
+        name = "GOOGLE_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_api_key.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "OPENAI_BASE_URL"
         value = var.openai_base_url
       }
       env {
-        name  = "OPENAI_API_KEY"
-        value = var.openai_api_key
+        name = "OPENAI_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.openai_api_key.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "OPENAI_MODEL"
         value = var.openai_model
       }
       env {
-        name  = "FOUNDRY_API_KEY"
-        value = var.foundry_api_key
+        name = "FOUNDRY_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.foundry_api_key.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "FOUNDRY_BASE_URL"
@@ -99,6 +116,13 @@ resource "google_cloud_run_v2_service" "llm_service" {
   depends_on = [
     google_project_service.run,
     google_artifact_registry_repository.repo,
+    # Cloud Run validates secret access when the revision is created.
+    google_secret_manager_secret_version.google_api_key,
+    google_secret_manager_secret_version.openai_api_key,
+    google_secret_manager_secret_version.foundry_api_key,
+    google_secret_manager_secret_iam_member.google_api_key,
+    google_secret_manager_secret_iam_member.openai_api_key,
+    google_secret_manager_secret_iam_member.foundry_api_key,
   ]
 }
 
@@ -113,10 +137,10 @@ resource "google_cloud_run_v2_service_iam_member" "llm_service_invoker" {
 # ── cv-api ─────────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "cv_api" {
-  name     = "cv-api"
-  location = var.region
+  name                = "cv-api"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress             = "INGRESS_TRAFFIC_ALL"
 
   template {
     service_account = google_service_account.cv_api.email
@@ -153,12 +177,22 @@ resource "google_cloud_run_v2_service" "cv_api" {
       }
 
       env {
-        name  = "ConnectionStrings__DefaultConnection"
-        value = local.db_connection_string
+        name = "ConnectionStrings__DefaultConnection"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.cv_api_db_connection.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
-        name  = "JwtSettings__Secret"
-        value = var.jwt_secret
+        name = "JwtSettings__Secret"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.jwt_secret.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "LlmService__GrpcUrl"
@@ -177,8 +211,13 @@ resource "google_cloud_run_v2_service" "cv_api" {
         value = var.google_extension_client_id
       }
       env {
-        name  = "Google__ClientSecret"
-        value = var.google_client_secret
+        name = "Google__ClientSecret"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_client_secret.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "Cors__AllowedOrigins"
@@ -209,6 +248,13 @@ resource "google_cloud_run_v2_service" "cv_api" {
   depends_on = [
     google_cloud_run_v2_service.llm_service,
     google_sql_database_instance.db,
+    # Cloud Run validates secret access when the revision is created.
+    google_secret_manager_secret_version.cv_api_db_connection,
+    google_secret_manager_secret_version.jwt_secret,
+    google_secret_manager_secret_version.google_client_secret,
+    google_secret_manager_secret_iam_member.cv_api_db_connection,
+    google_secret_manager_secret_iam_member.jwt_secret,
+    google_secret_manager_secret_iam_member.google_client_secret,
   ]
 }
 
@@ -223,10 +269,10 @@ resource "google_cloud_run_v2_service_iam_member" "cv_api_invoker" {
 # ── chat-ui ────────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "chat_ui" {
-  name     = "chat-ui"
-  location = var.region
+  name                = "chat-ui"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
     scaling {
@@ -265,10 +311,10 @@ resource "google_cloud_run_v2_service_iam_member" "chat_ui_invoker" {
 # ── ui-angular ─────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "ui_angular" {
-  name     = "ui-angular"
-  location = var.region
+  name                = "ui-angular"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress             = "INGRESS_TRAFFIC_ALL"
 
   template {
 
@@ -352,10 +398,10 @@ resource "google_cloud_run_v2_service_iam_member" "ui_angular_invoker" {
 # ── prometheus ─────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "prometheus" {
-  name     = "prometheus"
-  location = var.region
+  name                = "prometheus"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
     scaling {
@@ -396,10 +442,10 @@ resource "google_cloud_run_v2_service_iam_member" "prometheus_invoker" {
 # ── grafana ────────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "grafana" {
-  name     = "grafana"
-  location = var.region
+  name                = "grafana"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress             = "INGRESS_TRAFFIC_ALL"
 
   template {
 
@@ -436,8 +482,13 @@ resource "google_cloud_run_v2_service" "grafana" {
         value = var.grafana_admin_user
       }
       env {
-        name  = "GF_SECURITY_ADMIN_PASSWORD"
-        value = var.grafana_admin_password
+        name = "GF_SECURITY_ADMIN_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.grafana_admin_password.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "GF_AUTH_ANONYMOUS_ENABLED"
@@ -464,8 +515,13 @@ resource "google_cloud_run_v2_service" "grafana" {
         value = var.postgres_admin_login
       }
       env {
-        name  = "POSTGRES_PASSWORD"
-        value = var.postgres_admin_password
+        name = "POSTGRES_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "POSTGRES_SSL_MODE"
@@ -493,7 +549,14 @@ resource "google_cloud_run_v2_service" "grafana" {
     }
   }
 
-  depends_on = [google_cloud_run_v2_service.prometheus]
+  depends_on = [
+    google_cloud_run_v2_service.prometheus,
+    # Cloud Run validates secret access when the revision is created.
+    google_secret_manager_secret_version.grafana_admin_password,
+    google_secret_manager_secret_version.postgres_admin_password,
+    google_secret_manager_secret_iam_member.grafana_admin_password,
+    google_secret_manager_secret_iam_member.postgres_admin_password,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "grafana_invoker" {
@@ -507,10 +570,10 @@ resource "google_cloud_run_v2_service_iam_member" "grafana_invoker" {
 # ── admin-api ──────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "admin_api" {
-  name     = "admin-api"
-  location = var.region
+  name                = "admin-api"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
 
@@ -560,8 +623,13 @@ resource "google_cloud_run_v2_service" "admin_api" {
         value = var.postgres_admin_login
       }
       env {
-        name  = "DB_PASSWORD"
-        value = var.postgres_admin_password
+        name = "DB_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "DB_SSL"
@@ -584,12 +652,22 @@ resource "google_cloud_run_v2_service" "admin_api" {
         value = var.postgres_admin_login
       }
       env {
-        name  = "ADMIN_DB_PASSWORD"
-        value = var.postgres_admin_password
+        name = "ADMIN_DB_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
-        name  = "JWT_SECRET"
-        value = var.admin_jwt_secret
+        name = "JWT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.admin_jwt_secret.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "GOOGLE_CLIENT_ID"
@@ -621,7 +699,14 @@ resource "google_cloud_run_v2_service" "admin_api" {
     }
   }
 
-  depends_on = [google_sql_database_instance.db]
+  depends_on = [
+    google_sql_database_instance.db,
+    # Cloud Run validates secret access when the revision is created.
+    google_secret_manager_secret_version.postgres_admin_password,
+    google_secret_manager_secret_version.admin_jwt_secret,
+    google_secret_manager_secret_iam_member.postgres_admin_password,
+    google_secret_manager_secret_iam_member.admin_jwt_secret,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "admin_api_invoker" {
@@ -635,10 +720,10 @@ resource "google_cloud_run_v2_service_iam_member" "admin_api_invoker" {
 # ── admin-ui ───────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "admin_ui" {
-  name     = "admin-ui"
-  location = var.region
+  name                = "admin-ui"
+  location            = var.region
   deletion_protection = false
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress             = "INGRESS_TRAFFIC_ALL"
 
   template {
 

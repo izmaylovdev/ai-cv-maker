@@ -2,22 +2,32 @@
 
 ## Overview
 
-AI CV Maker is a three-tier web application that lets users manage job profiles and generate AI-tailored CVs as PDF files. The system is organized as an Nx monorepo with three deployable services.
+AI CV Maker is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with eight apps: the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
 
 ```
-Browser
-  └─ ui-angular (Angular SPA)
-       └─ <ai-chat-widget>  ← loaded from chat-ui via Nginx proxy
-            │
-            └─ REST/HTTP ──→ cv-api (ASP.NET Core)
-                                 ├─ PostgreSQL (EF Core)
-                                 └─ gRPC ──→ llm-service (Python / FastAPI)
-                                                  └─ LLM provider (Google, OpenAI-compat, Azure Foundry)
+Browser ──────────────────────────────┐        Chrome extension (job auto-fill)
+  └─ ui-angular (Angular 21 SPA)      │          └─ REST/HTTP ─────────┐
+       └─ <ai-chat-widget>  ← chat-ui │                                │
+            │                         ▼                                ▼
+            └─ REST/HTTP ──→ cv-api (ASP.NET Core 8) ◄─────────────────┘
+                                 ├─ PostgreSQL (EF Core, main DB)
+                                 └─ gRPC ──→ llm-service (Python, grpc.aio)
+                                                  └─ LLM provider (Google, OpenAI-compat, Azure AI Foundry)
+
+Admin browser
+  └─ admin-ui (Next.js) ──→ admin-api (NestJS)
+                               ├─ admin DB (PostgreSQL — admin users/sessions)
+                               └─ main DB (direct read-only queries)
+
+Monitoring
+  prometheus ── scrapes /metrics on cv-api + llm-service ──→ grafana (dashboards; also queries main DB)
 
 Nginx (ui-angular container)
   ├─ /api/*          → cv-api
   └─ /chat-widget/*  → chat-ui (Nginx serving chat-widget.js IIFE)
 ```
+
+Networking topology and service isolation decisions are recorded in [ADR-0001](doc/adr/0001-llm-service-network-privacy.md).
 
 ---
 
@@ -92,6 +102,10 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/auth/register` | `RegisterComponent` | — |
 | `/job-profiles` | `JobProfilesComponent` | `authGuard` |
 | `/job-profiles/:id` | `ProfileComponent` | `authGuard` |
+| `/job-profiles/:id/pdf` | `PdfPreviewPageComponent` | `authGuard` |
+| `/chat` | `ChatPageComponent` (hosts `<ai-chat-widget>`) | `authGuard` |
+| `/settings` | `SettingsComponent` (global AI preferences) | `authGuard` |
+| `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
 
 **Key features**
 - Reactive forms with drag-and-drop section ordering (`@angular/cdk/drag-drop`)
@@ -181,11 +195,13 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 The central backend. Exposes a JSON REST API, owns the database, generates PDFs, and orchestrates all LLM calls via gRPC.
 
 **Controllers**
-| Route prefix | Controller | Purpose |
+| Route | Controller | Purpose |
 |---|---|---|
 | `POST /api/auth/register` | `AuthController` | Email/password registration |
 | `POST /api/auth/login` | `AuthController` | Email/password login → JWT + HttpOnly refresh cookie |
-| `POST /api/auth/google` | `AuthController` | Google One-Tap login → JWT + HttpOnly refresh cookie |
+| `POST /api/auth/google` | `AuthController` | Google One-Tap login (ID-token credential) |
+| `POST /api/auth/google/token` | `AuthController` | Google access-token login (Chrome extension via `chrome.identity`) |
+| `POST /api/auth/google/code` | `AuthController` | Google authorization-code login |
 | `POST /api/auth/refresh` | `AuthController` | Rotate refresh token → new JWT |
 | `POST /api/auth/logout` | `AuthController` | Revoke refresh token in DB + clear cookie |
 | `GET /api/job-profiles` | `JobProfileController` | List profiles for current user |
@@ -194,35 +210,50 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content |
 | `DELETE /api/job-profiles/:id` | `JobProfileController` | Delete profile |
 | `POST /api/job-profiles/:id/optimize` | `JobProfileController` | AI-rewrite profile via LLM |
-| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text) |
+| `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat |
+| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) |
 | `GET /api/job-profiles/:id/cvs` | `CvController` | List generated CVs |
 | `POST /api/job-profiles/:id/cvs` | `CvController` | Generate new tailored CV via LLM |
 | `GET /api/job-profiles/:id/cvs/:cvId/pdf` | `CvController` | Download generated CV as PDF |
 | `GET /api/job-profiles/:id/cvs/default/pdf` | `CvController` | Download raw (non-LLM) profile as PDF |
 | `DELETE /api/job-profiles/:id/cvs/:cvId` | `CvController` | Delete generated CV |
 | `POST /api/cvs/generate-auto` | `CvController` | LLM selects best profile then generates CV |
+| `POST /api/cvs/draft-pdf` | `CvController` | Render an unsaved profile draft as PDF (live preview) |
+| `POST /api/chat` | `ChatController` | Account-wide AI chat (used by `<ai-chat-widget>`); can update `GlobalPreferences` when the agent signals one |
+| `POST /api/cover-letter` | `CoverLetterController` | Generate cover letter from job description (auto-selects profile) |
+| `POST /api/ai/enhance-field` | `AiController` | AI-enhance a single text field |
+| `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
+| `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
 | `GET /api/usage` | `UsageController` | Current user's token usage & estimated cost |
 
 **Services**
-- `AuthService` — password hashing (BCrypt), JWT issuance, Google token verification
-- `LlmService` — gRPC client to `llm-service`; calls `Generate`, `Optimize`, `ExtractProfile`, `SelectBestProfile`
+- `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
+- `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
+- `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
 - `PdfService` — renders CV to PDF using QuestPDF (A4, respects user-defined `SectionOrder`)
+- `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
 
 **PDF generation**  
 `PdfService.GenerateCv` renders header, summary, highlights, then iterates `sectionOrder` (comma-separated string stored on `Profile`) to emit work experience, education, and skills sections in user-defined order.
 
 ---
 
-### `apps/llm-service` — LLM Gateway (Python / FastAPI + gRPC)
+### `apps/llm-service` — LLM Gateway (Python / gRPC)
 
-A thin async service that exposes three LLM operations over both HTTP (FastAPI) and gRPC (same logic, different transport). The gRPC interface is the one used by `cv-api` in all environments.
+A thin async service exposing LLM operations over gRPC only. `app/main.py` runs a pure `grpc.aio` server (port `GRPC_PORT`, default 8080) plus a Prometheus metrics HTTP endpoint (`prometheus_client.start_http_server`, port `METRICS_PORT`, default 9090). There is no FastAPI/HTTP API anymore; `cv-api` is the sole consumer, over gRPC, in all environments. A standard gRPC health servicer (async) answers Cloud Run health checks.
 
-**Operations**
+**Operations** (implemented in `app/grpc/servicer.py`, prompt chains in `app/chains/`)
 | Operation | Description |
 |---|---|
 | `Generate` | Takes a full profile + optional notes → returns tailored CV content (summary, work, education, skills, highlights) |
 | `Optimize` | Takes a profile + free-text instruction → returns rewritten title, overview, work experiences, and skills |
 | `ExtractProfile` | Takes raw CV text → returns structured profile fields |
+| `EnhanceField` | Takes one text field + its purpose → returns an improved version |
+| `Chat` | Profile-scoped conversational assistant |
+| `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
+| `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover letter text |
+| `SelectBestProfile` | Job description + profile summaries → best-matching profile id |
+| `Health` | Liveness check |
 
 **LLM provider switching**  
 Controlled entirely by environment variables — no code changes required:
@@ -235,6 +266,31 @@ Controlled entirely by environment variables — no code changes required:
 
 ---
 
+### `apps/admin-api` + `apps/admin-ui` — Admin Plane
+
+A separate admin panel for operating the product, isolated from the user-facing plane.
+
+| App | Stack | Role |
+|---|---|---|
+| `admin-api` | NestJS (global prefix `/api`, port 3000) | Admin backend: admin login (`POST /api/auth/google`, `POST /api/auth/login`), registered-users list (`GET /api/users`) |
+| `admin-ui` | Next.js | Admin frontend; calls `admin-api` (`ADMIN_API_URL`) and embeds Grafana dashboards (`GRAFANA_URL`) |
+
+`admin-api` uses **two databases**: its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`) and direct read access to the main application database for user data. It does not call `cv-api` or `llm-service`. Domain docs: [`doc/admin/`](doc/admin/).
+
+---
+
+### `apps/chrome-extension` — Job Application Auto-Fill (Chrome MV3)
+
+A Manifest V3 extension ("AI CV Maker — Job Fill", TypeScript + Vite, React popup) that fills job-application forms using the user's profiles. It is a pure client of `cv-api` — no backend of its own.
+
+- `Alt+Shift+F` — content script heuristically detects cover-letter/free-text fields on the page and fills them via `POST /api/cover-letter` (the backend auto-selects the best profile)
+- `Alt+Shift+D` — generates and downloads an optimized CV PDF for the current job posting (`POST /api/cvs/generate-auto`, or `POST /api/job-profiles/:id/cvs` + PDF download when a profile is forced in the popup)
+- Auth: Google sign-in via `chrome.identity` → `POST /api/auth/google/token`, or email/password login; the JWT is stored in `chrome.storage.local` under the shared `TOKEN_KEY` constant from `@ai-cv-maker/auth`
+
+Domain docs: [`doc/chrome-extension/`](doc/chrome-extension/).
+
+---
+
 ## Data Model
 
 ```
@@ -242,7 +298,9 @@ User
  ├── id (UUID PK)
  ├── email (unique)
  ├── passwordHash (nullable)
- └── googleId (nullable, unique)
+ ├── googleId (nullable, unique)
+ ├── createdAt
+ └── globalPreferences  — nullable free-text AI preferences (edited on /settings or by the UserChat agent)
 
 Profile  (FK → User, cascade delete)
  ├── id, userId
@@ -269,9 +327,23 @@ LlmUsage  (no FK constraint; UserId nullable for system calls)
  ├── promptTokens, completionTokens (int)
  ├── modelName  — e.g. "claude-sonnet-4-6"
  └── createdAt (UTC, indexed)
+
+RefreshToken  (FK → User, cascade delete)
+ ├── id (UUID PK)
+ ├── userId
+ ├── token  — SHA-256 hash of the cookie value (unique, max 128 chars)
+ ├── expiresAt, createdAt
+ └── isRevoked
+
+RequestSpan  (no FK; observability data written by RequestTracingMiddleware)
+ ├── id (bigint PK)
+ ├── traceId (Guid, indexed)
+ ├── service, spanKind, operation
+ ├── statusCode (nullable), isError, durationMs
+ └── startedAt (indexed)
 ```
 
-Migrations are EF Core code-first, stored in `apps/cv-api/Migrations/`.
+Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persistence/Migrations/`. The admin plane's database is separate and schema-managed by `apps/admin-api/migrations/init-admin-db.sql` (see the admin section above).
 
 ---
 
@@ -279,7 +351,7 @@ Migrations are EF Core code-first, stored in `apps/cv-api/Migrations/`.
 
 Defined in `proto/llm_service.proto`. The C# stubs are generated at build time; the Python stubs are checked in under `apps/llm-service/app/grpc/`.
 
-Four RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `Health`.
+Nine RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
 
 ---
 
@@ -300,18 +372,26 @@ Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live 
 
 **Network privacy ([ADR-0001](doc/adr/0001-llm-service-network-privacy.md)):** llm-service and Cloud SQL are not reachable from the public internet. Cloud Run v2 treats CR-to-CR `.run.app` calls as external, so callers of internal-only services route egress through the project VPC (Direct VPC egress + Private Google Access). cv-api authenticates to llm-service with a Google-signed ID token (`LlmService__AuthMode=google`); IAM (`run.invoker`) enforces it at the edge. Cloud SQL has a private IP in the VPC; its public IP has no authorized networks and serves only Cloud SQL Auth Proxy admin access.
 
+**Secret management ([ADR-0002](doc/adr/0002-secret-management.md)):** sensitive runtime values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) live in **Secret Manager** (`infra/secrets.tf`) and reach Cloud Run via `secret_key_ref` env references — never plaintext env vars. Each secret grants `secretAccessor` only to the consuming service's runtime SA. Terraform state is remote in a versioned GCS bucket (`applysy-tf-state`).
+
 ---
 
 ## Local Development
 
-`docker-compose.yml` mirrors the production topology:
+`docker-compose.yml` mirrors the production topology, including the admin plane and monitoring stack:
 
-```
-postgres:5432   ←  cv-api connects via EF Core
-cv-api:8080     ←  ui-angular proxies /api/* here
-ui-angular:80   →  browser at localhost:4200
-llm-service:50051 (gRPC) + :8000 (HTTP health)
-```
+| Service | Host port | Notes |
+|---|---|---|
+| `postgres` | 5433 | Main DB (container 5432); cv-api, admin-api, and grafana connect to it |
+| `cv-api` | 5050 | REST API (container 8080) |
+| `ui-angular` | 4200 | Browser entry point; Nginx proxies `/api/*` → cv-api and `/chat-widget/*` → chat-ui |
+| `chat-ui` | 4202 | Nginx serving the chat-widget bundle |
+| `llm-service` | 50051 (gRPC), 8080 (metrics) | gRPC server + Prometheus metrics HTTP endpoint |
+| `admin-db` | 5434 | Admin PostgreSQL (container 5432), seeded by `init-admin-db.sql` |
+| `admin-api` | 3001 | NestJS admin backend (container 3000); connects to both DBs |
+| `admin-ui` | 3002 | Next.js admin frontend (container 3000) |
+| `prometheus` | 9090 | Scrapes `/metrics` on cv-api and llm-service |
+| `grafana` | 3000 | Dashboards provisioned from `monitoring/grafana/provisioning/` |
 
 Set `LLM_PROVIDER=openai` and `OPENAI_BASE_URL=http://host.docker.internal:1234/v1` to target a local LM Studio instance instead of a cloud API.
 

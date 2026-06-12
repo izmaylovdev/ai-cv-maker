@@ -77,7 +77,31 @@ foundry_deployment_name = "<deployment-name>"
 
 ---
 
-## Step 3 — Provision infrastructure
+## Step 3 — Terraform remote state (one-time)
+
+State lives in a versioned GCS bucket (`backend "gcs"` in `infra/providers.tf`) — see [ADR-0002](doc/adr/0002-secret-management.md). The bucket cannot manage itself, so create it once by hand:
+
+```bash
+gcloud storage buckets create gs://applysy-tf-state \
+  --project=applysy-498807 --location=europe-central2 \
+  --uniform-bucket-level-access
+gcloud storage buckets update gs://applysy-tf-state --versioning
+```
+
+**Migrating from existing local state** (`infra/terraform.tfstate`): after creating the bucket, run
+
+```bash
+cd infra
+terraform init -migrate-state   # answer "yes" to copy local state to GCS
+```
+
+Once migrated, delete the local `terraform.tfstate*` files — the state contains secrets and should not linger on disk.
+
+On a fresh checkout (no local state), a plain `terraform init` picks up the GCS backend automatically.
+
+---
+
+## Step 4 — Provision infrastructure
 
 ```bash
 cd infra
@@ -86,11 +110,13 @@ terraform apply
 cd ..
 ```
 
-This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), load balancer, and SSL certificates.
+This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), load balancer, SSL certificates, and Secret Manager secrets.
+
+**Secrets:** sensitive values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
 
 ---
 
-## Step 4 — Build and push container images
+## Step 5 — Build and push container images
 
 All images are built for `linux/amd64`. **All builds use the repo root as the build context** — some Dockerfiles reference `proto/` or `libs/` from the root.
 
@@ -124,7 +150,7 @@ docker push $AR/admin-ui:latest
 
 ---
 
-## Step 5 — Deploy services
+## Step 6 — Deploy services
 
 ```bash
 REGION="europe-central2"
@@ -140,7 +166,7 @@ gcloud run services update admin-ui    --region $REGION --image $AR/admin-ui:lat
 
 ---
 
-## Step 6 — Verify
+## Step 7 — Verify
 
 Open https://app.applysy.works — the Angular UI should load and sign in via Google.
 

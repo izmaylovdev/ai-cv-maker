@@ -78,5 +78,5 @@ docker-compose up
 - Angular app uses standalone components (no NgModules)
 - Auth token stored in `localStorage` via `@ai-cv-maker/auth` constants — do not hardcode key names
 - LLM provider is controlled by env vars (`LLM_PROVIDER`, `LLM_MODEL`, etc.) — no code changes needed to switch
-- EF Core migrations live in `apps/cv-api/Migrations/` — always generate a migration for schema changes
+- EF Core migrations live in `apps/cv-api/Infrastructure/Persistence/Migrations/` — always generate a migration for schema changes
 - gRPC contract is the source of truth in `proto/llm_service.proto`

@@ -56,3 +56,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-llm-service-network-privacy.md) | llm-service network privacy on Cloud Run | Accepted |
+| [0002](0002-secret-management.md) | Secret management for GCP infrastructure | Accepted |
