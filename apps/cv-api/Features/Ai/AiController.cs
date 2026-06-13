@@ -23,6 +23,8 @@ public class AiController(ILlmService llmService, UsageService usageService) : C
         if (string.IsNullOrWhiteSpace(request.FieldPurpose))
             return BadRequest("FieldPurpose is required.");
 
+        await usageService.EnsureWithinLimitAsync(UserId);
+
         try
         {
             var llmResponse = await llmService.EnhanceFieldAsync(new LlmEnhanceFieldRequest(request.Content, request.FieldPurpose));

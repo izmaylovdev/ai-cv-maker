@@ -99,3 +99,17 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 - Cost is derived on-the-fly from a configurable price-per-token table (stored in `appsettings.json`, keyed by model name, separate rates for prompt vs. completion tokens).
 - The admin panel exposes an endpoint listing all users with their aggregate token usage and estimated cost in USD.
 - A user-facing `/settings/usage` page shows the current user's own total prompt tokens, completion tokens, and estimated cost to date.
+
+### US-AI-7 — Enforce a per-user LLM spending limit
+
+**As a** platform operator,
+**I want to** automatically block a user's AI requests once their cumulative estimated LLM cost reaches a configured cap (default $0.10),
+**so that** no single user can run up unbounded LLM costs.
+
+**Acceptance criteria:**
+- Every AI-backed action (CV generate, optimize, enhance field, extract, chat, cover letter, user chat) is rejected once the requesting user's cumulative estimated LLM cost has reached the configured limit.
+- The limit is checked *before* the LLM call is made, so a blocked request incurs no additional LLM cost.
+- A user whose accrued cost is still below the limit is allowed to proceed, even if that single request later pushes the total over the cap (the cap is evaluated against cost accrued so far, since the cost of the pending call is not known in advance).
+- When blocked, the user receives a clear, distinct message stating that the spending limit has been reached — not a generic "AI is unavailable" error — and their profile/CV data is left unchanged.
+- The limit amount is configurable without a code change (default $0.10).
+- The `/settings/usage` page shows the user their spending limit alongside their accrued cost (and how much remains), so they can see how close they are to the cap.

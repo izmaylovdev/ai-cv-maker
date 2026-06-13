@@ -61,6 +61,7 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
             GlobalPreferences: string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
+        await usageService.EnsureWithinLimitAsync(userId);
         var result = await llmService.GenerateCoverLetterAsync(llmRequest);
         await usageService.RecordAsync(userId, "CoverLetter", result.Usage ?? LlmTokenUsage.Empty);
 

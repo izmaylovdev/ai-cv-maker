@@ -61,6 +61,7 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
             string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
+        await usageService.EnsureWithinLimitAsync(userId);
         var llmResponse = await llmService.GenerateAsync(llmRequest);
         await usageService.RecordAsync(userId, "Generate", llmResponse.Usage);
 
@@ -181,6 +182,8 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
             .ToListAsync();
 
         if (profiles.Count == 0) return null;
+
+        await usageService.EnsureWithinLimitAsync(userId);
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
 

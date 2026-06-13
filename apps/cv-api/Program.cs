@@ -190,7 +190,13 @@ builder.Services.AddScoped<ICvService, CvService>();
 builder.Services.AddScoped<CoverLetterService>();
 builder.Services.Configure<CvApi.Features.Usage.LlmPricingOptions>(
     builder.Configuration.GetSection(CvApi.Features.Usage.LlmPricingOptions.SectionName));
+builder.Services.Configure<CvApi.Features.Usage.UsageLimitOptions>(
+    builder.Configuration.GetSection(CvApi.Features.Usage.UsageLimitOptions.SectionName));
 builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
+
+// Map the per-user spending-limit guard (US-AI-7) to HTTP 402.
+builder.Services.AddExceptionHandler<CvApi.Features.Usage.UsageLimitExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // Admin plane (ADR-0005): admin-api reads the user list through this endpoint
 // instead of querying the DB directly. Guarded by the shared API key, not JWT.
@@ -211,6 +217,7 @@ if (builder.Configuration.GetValue<bool>("RunMigrationsOnStartup"))
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseExceptionHandler();
 app.UseCors();
 app.UseMetricServer("/metrics");
 app.UseHttpMetrics();

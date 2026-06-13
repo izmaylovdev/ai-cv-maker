@@ -587,6 +587,104 @@ New standalone component `UsageComponent` at `features/settings/usage/`. Route: 
 ### 8.3 Out of Scope (MVP)
 
 - Per-operation breakdown in the user-facing view
-- Usage quotas / hard limits
+- ~~Usage quotas / hard limits~~ — implemented in §9 (US-AI-7)
 - Real-time streaming token counts
 - Usage for non-LLM operations
+
+## 9. Per-User LLM Spending Limit (US-AI-7)
+
+Builds directly on §8: reuses the `LlmUsage` ledger and the `UsageService`
+cost calculation. Adds a hard cap that blocks AI requests once a user's
+accrued estimated cost reaches a configurable limit, editable from the admin
+panel.
+
+### 9.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-9.1 | Before any LLM call (Generate, GenerateAuto, Optimize, Extract, Chat, UserChat, EnhanceField, CoverLetter), cv-api compares the user's accrued estimated cost (from §8 calculation) against the effective limit and rejects the request if accrued cost ≥ limit. |
+| F-AI-9.2 | The check runs *before* the gRPC call, so a blocked request makes no LLM call and records no new `LlmUsage` row. |
+| F-AI-9.3 | A request from a user still under the limit is allowed even if it would push the total over; the cap is evaluated on cost accrued so far (the pending call's cost is unknown in advance). |
+| F-AI-9.4 | A blocked request returns HTTP 402 with a stable machine-readable code `usage_limit_exceeded` and a human-readable message; no profile/CV data is mutated. |
+| F-AI-9.5 | The effective limit is read from the `LlmUsageLimitUsd` app-setting in the DB; when absent it falls back to `UsageLimit:MaxCostUsdPerUser` in `appsettings.json` (default `0.50`). |
+| F-AI-9.6 | Admin can read and update the limit: cv-api exposes `GET`/`PUT /api/admin/usage-limit` (API-key auth, ADR-0005); admin-api proxies them; admin-ui provides a control to view and change the value. |
+| F-AI-9.7 | A non-positive or non-numeric limit is rejected (`PUT` returns 400); the limit applies globally to all users. |
+| F-AI-9.8 | When the Angular app receives a 402 `usage_limit_exceeded` from any AI action, it shows a distinct "spending limit reached" message rather than the generic AI-failure message. |
+| F-AI-9.9 | The `/settings/usage` page displays the user's effective spending limit and remaining budget (limit − accrued cost, floored at 0) alongside their accrued cost. |
+
+### 9.2 Technical Specification
+
+#### Data model
+
+New key-value table `AppSettings` (generic, single string value per key):
+
+| Column | Type | Notes |
+|--------|------|-------|
+| Key | string PK | e.g. `LlmUsageLimitUsd` |
+| Value | string | serialized value (e.g. `"0.50"`) |
+| UpdatedAt | DateTime | UTC |
+
+EF Core migration `AddAppSettings`. No seed row — absence means "use the
+`appsettings.json` default", so a fresh DB needs no migration data.
+
+#### Config (`appsettings.json`)
+
+```json
+"UsageLimit": { "MaxCostUsdPerUser": 0.50 }
+```
+
+#### Enforcement (cv-api)
+
+- New `UsageLimitExceededException` (carries the effective limit).
+- `UsageService.GetEffectiveLimitAsync()` — reads `AppSettings[LlmUsageLimitUsd]`, falls back to `UsageLimitOptions.MaxCostUsdPerUser`.
+- `UsageService.EnsureWithinLimitAsync(Guid? userId)` — computes accrued cost (existing `Summarize`) and throws `UsageLimitExceededException` when `accrued >= limit`. A `null` userId (system calls) is exempt.
+- Call `EnsureWithinLimitAsync` at the start of each of the 8 LLM operations (the same call sites that already call `RecordAsync`).
+- Global exception handling (`IExceptionHandler` registered in `Program.cs`) maps `UsageLimitExceededException` → 402 with body:
+
+```json
+{ "code": "usage_limit_exceeded", "message": "You've reached your AI usage limit of $0.50.", "limitUsd": 0.50 }
+```
+
+#### Admin API (cv-api, behind `AdminApiKeyFilter`)
+
+`GET /api/admin/usage-limit` →
+```json
+{ "maxCostUsd": 0.50 }
+```
+
+`PUT /api/admin/usage-limit` body `{ "maxCostUsd": 0.50 }` → 200 with the saved value; 400 if `maxCostUsd` ≤ 0 or missing. Persists to `AppSettings`.
+
+#### admin-api (NestJS proxy)
+
+New `UsageLimitModule` (controller + service) mirroring `UsersService`: forwards
+`GET`/`PUT /usage-limit` to cv-api `…/api/admin/usage-limit` with the
+`X-Admin-Api-Key` header. JWT-guarded like the users route.
+
+#### admin-ui (Next.js)
+
+New `/settings` page (linked from the main nav) with a numeric USD input showing
+the current limit and a Save button that `PUT`s the new value. Shows success/error feedback.
+
+#### Angular
+
+`api.interceptor.ts` (or a small shared error helper) maps a 402 with
+`code === 'usage_limit_exceeded'` to a distinct user-facing message reused by the
+AI entry points (optimize dialog, chat, field enhance, CV generation).
+
+`GET /api/usage` is extended to include the effective limit:
+
+```json
+{ "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081, "limitUsd": 0.50 }
+```
+
+(`UsageController` composes `limitUsd` from `UsageService.GetEffectiveLimitAsync()`;
+the shared `Summarize`/admin DTOs are unchanged.) The `/settings/usage` page
+shows the limit and the remaining budget (`limitUsd − estimatedCostUsd`, floored
+at 0) next to the accrued cost.
+
+### 9.3 Out of Scope (MVP)
+
+- Per-user individual limit overrides (limit is global)
+- Time-windowed / resetting quotas (e.g. monthly) — this is a lifetime cumulative cap
+- Soft warnings as the user approaches the cap
+- Admin audit log of limit changes

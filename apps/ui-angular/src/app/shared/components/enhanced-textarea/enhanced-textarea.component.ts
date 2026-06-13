@@ -10,6 +10,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ProfileService } from '../../../features/profile/profile.service';
 import { NotifyService } from '../../services/notify.service';
+import { isUsageLimitError } from '../../../core/usage-limit';
 
 @Component({
   selector: 'app-enhanced-textarea',
@@ -122,8 +123,12 @@ export class EnhancedTextareaComponent implements ControlValueAccessor, OnDestro
           this.onChange(enhanced);
           this.enhancing.set(false);
         },
-        error: () => {
-          this.notify.error('Failed to enhance text. Please try again.');
+        error: (err: unknown) => {
+          // The spending-limit message is surfaced globally by the interceptor;
+          // don't add a contradictory generic toast on top of it.
+          if (!isUsageLimitError(err)) {
+            this.notify.error('Failed to enhance text. Please try again.');
+          }
           this.enhancing.set(false);
         },
       });

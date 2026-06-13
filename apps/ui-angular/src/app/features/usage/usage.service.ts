@@ -5,6 +5,7 @@ export interface UsageSummary {
   promptTokens: number;
   completionTokens: number;
   estimatedCostUsd: number;
+  limitUsd: number;
 }
 
 @Injectable({ providedIn: 'root' })

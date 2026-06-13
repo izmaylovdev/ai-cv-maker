@@ -151,6 +151,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
             string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
 
+        await usageService.EnsureWithinLimitAsync(userId);
         var llmResponse = await llmService.OptimizeAsync(llmRequest);
         await usageService.RecordAsync(userId, "Optimize", llmResponse.Usage);
 
@@ -194,6 +195,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         if (string.IsNullOrWhiteSpace(cvText))
             throw new InvalidOperationException("Could not extract text from the uploaded file.");
 
+        await usageService.EnsureWithinLimitAsync(userId);
         var llmResponse = await llmService.ExtractAsync(new LlmExtractRequest(cvText));
         await usageService.RecordAsync(userId, "Extract", llmResponse.Usage);
 
@@ -249,6 +251,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
             (request.History ?? []).Select(h => new LlmChatMessage(h.Role, h.Content)).ToList()
         );
 
+        await usageService.EnsureWithinLimitAsync(userId);
         var llmResponse = await llmService.ChatAsync(llmRequest);
         await usageService.RecordAsync(userId, "Chat", llmResponse.Usage);
 

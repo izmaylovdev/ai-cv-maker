@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL, TEST_PROFILE_ID } from './support/constants';
 import { mockProfileApi } from './support/mocks/profile.mock';
-import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockOptimizeApi, mockOptimizeFailApi, mockOptimizeUrlFetchErrorApi, registerFakeChatWidget } from './support/mocks/ai.mock';
+import { mockEnhanceFieldApi, mockEnhanceFieldFailApi, mockEnhanceFieldLimitApi, mockOptimizeApi, mockOptimizeFailApi, mockOptimizeLimitApi, mockOptimizeUrlFetchErrorApi, registerFakeChatWidget } from './support/mocks/ai.mock';
+
+const LIMIT_MESSAGE = "You've reached your AI usage limit of $0.50.";
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
@@ -66,6 +68,23 @@ test.describe('AI field enhancement', () => {
 
     await enhancedTextarea.locator('button[type="button"]').click();
     await expect(textarea).toHaveValue('Original unchanged text');
+  });
+
+  // US-AI-7 — spending limit
+  test('shows the distinct spending-limit message when blocked (402)', async ({ page }) => {
+    await mockEnhanceFieldLimitApi(page, PROFILE_ID, LIMIT_MESSAGE);
+
+    const enhancedTextarea = page.locator('app-enhanced-textarea').first();
+    const textarea = enhancedTextarea.locator('textarea');
+    await textarea.fill('Some text to enhance');
+    await textarea.click();
+
+    await enhancedTextarea.locator('button[type="button"]').click();
+    await expect(page.getByText(LIMIT_MESSAGE)).toBeVisible();
+    // Generic AI-failure message must NOT appear.
+    await expect(page.getByText('Failed to enhance text. Please try again.')).toHaveCount(0);
+    // Original text is untouched.
+    await expect(textarea).toHaveValue('Some text to enhance');
   });
 });
 
@@ -231,6 +250,21 @@ test.describe('AI optimization error handling', () => {
     await page.getByRole('button', { name: 'Apply' }).click();
 
     await expect(page.getByText('Failed to optimize profile. Please try again.')).toBeVisible();
+  });
+
+  // US-AI-7 — spending limit
+  test('shows the distinct spending-limit message in the optimize dialog (402)', async ({ page }) => {
+    await setupAuth(page);
+    await mockProfileApi(page);
+    await page.goto(`/job-profiles/${PROFILE_ID}`);
+    await mockOptimizeLimitApi(page, PROFILE_ID, LIMIT_MESSAGE);
+
+    await page.getByRole('button', { name: /Optimize with AI/ }).click();
+    await page.getByPlaceholder(/Senior React developer/).fill('Some target role');
+    await page.getByRole('button', { name: 'Apply' }).click();
+
+    await expect(page.getByText(LIMIT_MESSAGE).first()).toBeVisible();
+    await expect(page.getByText('Failed to optimize profile. Please try again.')).toHaveCount(0);
   });
 });
 

@@ -22,6 +22,8 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest("Message is required.");
 
+        await usageService.EnsureWithinLimitAsync(UserId);
+
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
 
         var profiles = await db.Profiles

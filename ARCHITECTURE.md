@@ -225,13 +225,16 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `POST /api/ai/enhance-field` | `AiController` | AI-enhance a single text field |
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
-| `GET /api/usage` | `UsageController` | Current user's token usage & estimated cost |
+| `GET /api/usage` | `UsageController` | Current user's token usage, estimated cost, and effective spending limit (`limitUsd`) |
 | `GET /api/admin/users` | `AdminUsersController` | Registered-users list for admin-api (service-to-service, API-key auth, **not** JWT) |
+| `GET /api/admin/usage-limit` | `AdminUsageLimitController` | Read the global per-user spending limit (service-to-service, API-key auth) |
+| `PUT /api/admin/usage-limit` | `AdminUsageLimitController` | Update the global per-user spending limit (service-to-service, API-key auth) |
 
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
 - `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
+- **Spending limit (US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches the effective limit; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }`. The limit is read from the `LlmUsageLimitUsd` row in `AppSettings`, falling back to `UsageLimit:MaxCostUsdPerUser` in config (default `$0.50`); admins change it via `PUT /api/admin/usage-limit`.
 - `PdfService` — renders CV to PDF using QuestPDF (A4, respects user-defined `SectionOrder`)
 - `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
 
@@ -279,7 +282,7 @@ A separate admin panel for operating the product, isolated from the user-facing 
 | `admin-api` | NestJS (global prefix `/api`, port 3000) | Admin backend: admin login (`POST /api/auth/google`, `POST /api/auth/login`), registered-users list (`GET /api/users`) |
 | `admin-ui` | Next.js | Admin frontend; calls `admin-api` (`ADMIN_API_URL`) and embeds Grafana dashboards (`GRAFANA_URL`) |
 
-`admin-api` owns **one** database — its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`). It does **not** touch the main application database. For user data it calls cv-api's `GET /api/admin/users` over HTTP (`CV_API_URL`), authenticated with a shared API key (`CV_API_ADMIN_KEY`) that cv-api validates against `AdminApi:ApiKey` — cv-api is the sole owner of the `Users`/`Profiles` schema ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md), superseding [ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). Domain docs: [`doc/admin/`](doc/admin/).
+`admin-api` owns **one** database — its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`). It does **not** touch the main application database. For user data it calls cv-api's `GET /api/admin/users` over HTTP (`CV_API_URL`), authenticated with a shared API key (`CV_API_ADMIN_KEY`) that cv-api validates against `AdminApi:ApiKey` — cv-api is the sole owner of the `Users`/`Profiles` schema ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md), superseding [ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). The same pattern carries the per-user spending limit: admin-ui → admin-api `GET/PUT /api/usage-limit` → cv-api `GET/PUT /api/admin/usage-limit`, exposed in admin-ui at `/settings` (US-AI-7). Domain docs: [`doc/admin/`](doc/admin/).
 
 ---
 
@@ -338,6 +341,11 @@ RefreshToken  (FK → User, cascade delete)
  ├── token  — SHA-256 hash of the cookie value (unique, max 128 chars)
  ├── expiresAt, createdAt
  └── isRevoked
+
+AppSetting  (generic runtime key-value config, no FK)
+ ├── key (string PK, max 100)  — e.g. "LlmUsageLimitUsd" (per-user spending cap, US-AI-7)
+ ├── value (string, max 512)
+ └── updatedAt (UTC)
 
 RequestSpan  (no FK; observability data written by RequestTracingMiddleware)
  ├── id (bigint PK)

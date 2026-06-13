@@ -12,6 +12,12 @@ public class UsageController(UsageService usageService) : ControllerBase
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<UserUsageSummaryDto> GetMyUsage()
-        => await usageService.GetUserSummaryAsync(UserId);
+    public async Task<MyUsageDto> GetMyUsage()
+    {
+        var summary = await usageService.GetUserSummaryAsync(UserId);
+        var limit = await usageService.GetEffectiveLimitAsync();
+        return new MyUsageDto(summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, limit);
+    }
 }
+
+public record MyUsageDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd, decimal LimitUsd);

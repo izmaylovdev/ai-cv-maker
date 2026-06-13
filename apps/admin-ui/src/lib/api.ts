@@ -22,4 +22,6 @@ export const api = {
   get: (path: string) => apiFetch(path),
   post: (path: string, body: unknown) =>
     apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+  put: (path: string, body: unknown) =>
+    apiFetch(path, { method: 'PUT', body: JSON.stringify(body) }),
 };

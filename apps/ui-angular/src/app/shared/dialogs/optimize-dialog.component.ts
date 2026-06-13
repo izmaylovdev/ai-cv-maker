@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogRef, DIALOG_DATA } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ProfileService, OptimizeProfileResponse } from '../../features/profile/profile.service';
+import { isUsageLimitError, usageLimitMessage } from '../../core/usage-limit';
 
 @Component({
   selector: 'app-optimize-dialog',
@@ -55,9 +56,16 @@ export class OptimizeDialogComponent {
         this.loading.set(false);
         this.ref.close(result);
       },
-      error: (err: HttpErrorResponse) => {
+      error: (err: unknown) => {
         this.loading.set(false);
-        const apiError = (err.error as { error?: string } | null)?.error;
+        if (isUsageLimitError(err)) {
+          this.error.set(usageLimitMessage(err));
+          return;
+        }
+        const apiError =
+          err instanceof HttpErrorResponse
+            ? (err.error as { error?: string } | null)?.error
+            : null;
         this.error.set(apiError ?? 'Failed to optimize profile. Please try again.');
       },
     });

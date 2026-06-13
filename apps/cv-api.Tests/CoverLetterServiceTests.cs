@@ -19,7 +19,9 @@ public class CoverLetterServiceTests
     }
 
     private static UsageService MakeUsageService(AppDbContext db)
-        => new(db, Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()));
+        => new(db,
+            Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
+            Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()));
 
     private static Profile MakeProfile(Guid userId, string title, string overview)
         => new()

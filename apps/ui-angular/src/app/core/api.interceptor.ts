@@ -5,6 +5,8 @@ import {
 import { inject } from '@angular/core';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
+import { NotifyService } from '../shared/services/notify.service';
+import { isUsageLimitError, usageLimitMessage } from './usage-limit';
 
 /**
  * HTTP interceptor that:
@@ -23,6 +25,7 @@ import { AuthService } from '../auth/auth.service';
  */
 export const apiInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
+  const notify = inject(NotifyService);
   const token = authService.getToken();
 
   const authedReq = token
@@ -31,6 +34,13 @@ export const apiInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authedReq).pipe(
     catchError((err: unknown) => {
+      // Spending-limit cap (US-AI-7): surface a distinct message for any AI
+      // action that is blocked, regardless of the calling component.
+      if (isUsageLimitError(err)) {
+        notify.error(usageLimitMessage(err));
+        return throwError(() => err);
+      }
+
       // Only attempt refresh for 401s on non-auth endpoints
       if (
         err instanceof HttpErrorResponse &&

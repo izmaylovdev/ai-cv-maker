@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RequestSpan> RequestSpans => Set<RequestSpan>();
     public DbSet<LlmUsage> LlmUsages => Set<LlmUsage>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,6 +107,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(u => u.ModelName).HasMaxLength(100).IsRequired();
             e.HasIndex(u => u.UserId);
             e.HasIndex(u => u.CreatedAt);
+        });
+
+        modelBuilder.Entity<AppSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.Property(s => s.Key).HasMaxLength(100);
+            e.Property(s => s.Value).HasMaxLength(512).IsRequired();
         });
 
         modelBuilder.Entity<RefreshToken>(e =>

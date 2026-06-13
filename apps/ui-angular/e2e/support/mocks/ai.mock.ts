@@ -14,6 +14,24 @@ export async function mockEnhanceFieldFailApi(page: Page, _profileId: string) {
   });
 }
 
+export async function mockEnhanceFieldLimitApi(page: Page, _profileId: string, message: string) {
+  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
+    route.fulfill({
+      status: 402,
+      json: { code: 'usage_limit_exceeded', message, limitUsd: 0.5 },
+    });
+  });
+}
+
+export async function mockOptimizeLimitApi(page: Page, profileId: string, message: string) {
+  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
+    route.fulfill({
+      status: 402,
+      json: { code: 'usage_limit_exceeded', message, limitUsd: 0.5 },
+    });
+  });
+}
+
 export async function mockOptimizeApi(page: Page, profileId: string) {
   await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
     route.fulfill({
