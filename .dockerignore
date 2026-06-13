@@ -10,3 +10,8 @@ dist
 **/obj
 .env
 .git
+
+# Never ship local-only config into images — it overrides Secret Manager /
+# env-var config at runtime and contains dev DB creds & secrets (ADR-0002).
+**/appsettings.Local.json
+**/appsettings.*.Local.json

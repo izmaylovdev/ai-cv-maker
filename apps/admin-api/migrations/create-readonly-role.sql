@@ -15,15 +15,18 @@
 -- Terraform variable (stored in Secret Manager, wired to admin-api's
 -- DB_PASSWORD). Re-running is safe.
 
+-- Create the role if missing (psql variables can't be interpolated inside a
+-- dollar-quoted DO block, so the password is set separately below).
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'admin_readonly') THEN
-    CREATE ROLE admin_readonly LOGIN PASSWORD :readonly_password;
-  ELSE
-    ALTER ROLE admin_readonly LOGIN PASSWORD :readonly_password;
+    CREATE ROLE admin_readonly LOGIN;
   END IF;
 END
 $$;
+
+-- Set/reset the password (plain statement → :readonly_password is substituted).
+ALTER ROLE admin_readonly LOGIN PASSWORD :readonly_password;
 
 -- Connect + read the public schema, nothing more.
 GRANT CONNECT ON DATABASE cvmaker TO admin_readonly;
