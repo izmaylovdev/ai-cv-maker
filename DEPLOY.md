@@ -207,7 +207,33 @@ curl -s -o /dev/null -w "%{http_code}" "$BASE/api/job-profiles"   # 401
 
 ---
 
-## Redeploying after code changes
+## Automated deploys (GitHub Actions)
+
+`.github/workflows/deploy.yml` builds all images and deploys to Cloud Run on
+every push to `main`, authenticating via Workload Identity Federation (no
+service-account keys) — see [ADR-0006](doc/adr/0006-cicd-workload-identity.md).
+The WIF pool, OIDC provider, and `github-deployer` service account are defined
+in `infra/cicd.tf` and created by `terraform apply`.
+
+The workflow needs four GitHub repo secrets. The two GCP ones come from
+Terraform outputs:
+
+```bash
+cd infra
+terraform output -raw github_wif_provider   # → GCP_WORKLOAD_IDENTITY_PROVIDER
+terraform output -raw github_deployer_sa     # → GCP_SERVICE_ACCOUNT
+
+gh secret set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$(terraform output -raw github_wif_provider)"
+gh secret set GCP_SERVICE_ACCOUNT           --body "$(terraform output -raw github_deployer_sa)"
+gh secret set GCP_REGION                    --body "europe-central2"
+gh secret set AR_REGISTRY                   --body "europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
+```
+
+CI deploys by git-SHA tag and runs the `cv-api-migrate` job before rolling
+cv-api (ADR-0003). It does **not** run `terraform apply` — infra changes remain
+a manual step, so apply infra before pushing code that depends on it.
+
+## Redeploying after code changes (manual)
 
 Rebuild and push only the changed service, then update it:
 
@@ -230,7 +256,7 @@ If `infra/` also changed, run `terraform apply` after pushing images.
 `llm-service` is a pure gRPC server (no HTTP). For it to work on Cloud Run:
 
 - The port must have `name = "h2c"` in Terraform — tells Cloud Run to forward HTTP/2 cleartext to the container.
-- Ingress must be `INGRESS_TRAFFIC_ALL` — Cloud Run v2 `INTERNAL_ONLY` means VPC-only; other Cloud Run services calling via `.run.app` URLs are treated as external and get 404.
+- Ingress is `INGRESS_TRAFFIC_INTERNAL_ONLY` (ADR-0001): the service is private. cv-api can still reach it because cv-api egresses through the VPC (Direct VPC egress + Private Google Access), so its `.run.app` call counts as internal. Without that VPC egress, Cloud Run v2 treats CR-to-CR `.run.app` calls as external and returns 404.
 
 ### cv-api → llm-service communication
 

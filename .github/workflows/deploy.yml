@@ -44,7 +44,7 @@ jobs:
           docker build \
             -t $AR_REGISTRY/llm-service:${{ github.sha }} \
             -t $AR_REGISTRY/llm-service:latest \
-            apps/llm-service
+            -f apps/llm-service/Dockerfile .
           docker push $AR_REGISTRY/llm-service:${{ github.sha }}
           docker push $AR_REGISTRY/llm-service:latest
 

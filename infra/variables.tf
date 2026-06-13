@@ -134,3 +134,9 @@ variable "admin_seed_email" {
   type    = string
   default = ""
 }
+
+# GitHub repo (owner/name) allowed to deploy via Workload Identity Federation (ADR-0006).
+variable "github_repository" {
+  type    = string
+  default = "izmaylovdev/ai-cv-maker"
+}
