@@ -14,7 +14,7 @@
   </div>
 } @else {
   <div
-    class="sticky top-14 md:top-0 z-20 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
+    class="sticky md:top-0 z-20 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
     <div class="flex items-center gap-3 min-w-0">
       <button (click)="router.navigate(['/job-profiles'])"
               aria-label="Back to job profiles"
@@ -420,7 +420,7 @@
     </div><!-- end outer left column -->
 
     <!-- Right: live preview (hidden on mobile and tablet) -->
-    <div class="hidden lg:flex lg:sticky h-[calc(100vh-90px)] flex-col pb-6 top-14">
+    <div class="hidden lg:flex lg:sticky h-[calc(100vh-90px)] flex-col pb-6 top-22.5">
       <div #previewContainer
         class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm overflow-hidden transition-colors flex-1 min-h-0 overflow-y-auto scrollbar-thin">
         <app-profile-preview [profile]="profilePreview" />
