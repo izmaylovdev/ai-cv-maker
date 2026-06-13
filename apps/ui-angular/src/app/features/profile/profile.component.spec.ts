@@ -82,7 +82,6 @@ describe('ProfileComponent — scroll sync', () => {
         { provide: DialogService, useValue: {
           openReorder: () => of(undefined),
           openOptimize: () => of(undefined),
-          openDownloadCv: () => of(undefined),
         }},
         { provide: NotifyService, useValue: { success: vi.fn(), error: vi.fn() } },
         { provide: Router, useValue: { navigate: vi.fn() } },

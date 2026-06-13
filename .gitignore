@@ -45,6 +45,11 @@ Thumbs.db
 
 __screenshots__/
 
+# Playwright
+test-results/
+playwright-report/
+.last-run.json
+
 # .NET
 **/bin/
 **/obj/

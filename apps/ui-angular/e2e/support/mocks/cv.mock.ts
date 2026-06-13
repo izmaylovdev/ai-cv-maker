@@ -32,6 +32,16 @@ export async function mockDefaultPdfApi(page: Page, profileId: string) {
   });
 }
 
+export async function mockDraftPdfApi(page: Page) {
+  await page.route(`${API_URL}/cvs/draft-pdf`, (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/pdf',
+      body: FAKE_PDF,
+    });
+  });
+}
+
 export async function mockCvGenerateFailApi(page: Page, profileId: string) {
   await page.route(`${API_URL}/job-profiles/${profileId}/cvs`, (route) => {
     route.fulfill({ status: 502, body: 'CV generation failed' });

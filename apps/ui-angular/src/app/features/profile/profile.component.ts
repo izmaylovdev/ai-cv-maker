@@ -1,4 +1,14 @@
-import { Component, AfterViewChecked, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import {
+  Component,
+  AfterViewChecked,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  inject,
+  signal,
+  ChangeDetectorRef,
+} from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { finalize } from 'rxjs';
@@ -21,7 +31,16 @@ import { DropdownTriggerDirective } from '../../shared/components/dropdown/dropd
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [ReactiveFormsModule, PhoneMaskDirective, DragDropModule, ProfilePreviewComponent, EnhancedTextareaComponent, DropdownComponent, DropdownItemDirective, DropdownTriggerDirective],
+  imports: [
+    ReactiveFormsModule,
+    PhoneMaskDirective,
+    DragDropModule,
+    ProfilePreviewComponent,
+    EnhancedTextareaComponent,
+    DropdownComponent,
+    DropdownItemDirective,
+    DropdownTriggerDirective,
+  ],
   templateUrl: './profile.component.html',
 })
 export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
@@ -32,6 +51,7 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   private dialogs = inject(DialogService);
   private notify = inject(NotifyService);
   private doc = inject(DOCUMENT);
+  private cdr = inject(ChangeDetectorRef);
   readonly router = inject(Router);
   readonly theme = inject(ThemeService);
 
@@ -42,7 +62,11 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly saving = signal(false);
   readonly optimizing = signal(false);
 
-  readonly sectionOrder = signal<string[]>(['workExperiences', 'educations', 'skills']);
+  readonly sectionOrder = signal<string[]>([
+    'workExperiences',
+    'educations',
+    'skills',
+  ]);
 
   private readonly sectionLabels: Record<string, string> = {
     workExperiences: 'Work Experience',
@@ -54,8 +78,10 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('leftWork') private leftWork?: ElementRef<HTMLElement>;
   @ViewChild('leftEdu') private leftEdu?: ElementRef<HTMLElement>;
   @ViewChild('leftSkills') private leftSkills?: ElementRef<HTMLElement>;
-  @ViewChild('previewContainer') private previewContainer?: ElementRef<HTMLElement>;
-  @ViewChild(ProfilePreviewComponent) private previewRef?: ProfilePreviewComponent;
+  @ViewChild('previewContainer')
+  private previewContainer?: ElementRef<HTMLElement>;
+  @ViewChild(ProfilePreviewComponent)
+  private previewRef?: ProfilePreviewComponent;
 
   private lastActiveSection = 'personal';
   private scrollSyncReady = false;
@@ -107,13 +133,17 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
         if (previewEl && container) {
           const elTop = previewEl.getBoundingClientRect().top;
           const containerTop = container.getBoundingClientRect().top;
-          container.scrollTo({ top: container.scrollTop + elTop - containerTop, behavior: 'smooth' });
+          container.scrollTo({
+            top: container.scrollTop + elTop - containerTop,
+            behavior: 'smooth',
+          });
         }
       }
     };
 
     mainEl.addEventListener('scroll', onScroll, { passive: true });
-    this.scrollUnsubscribe = () => mainEl.removeEventListener('scroll', onScroll);
+    this.scrollUnsubscribe = () =>
+      mainEl.removeEventListener('scroll', onScroll);
   }
 
   get workExperiences() {
@@ -166,33 +196,62 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   openReorderDialog() {
-    this.dialogs.openReorder(this.sectionOrder()).subscribe(result => {
+    this.dialogs.openReorder(this.sectionOrder()).subscribe((result) => {
       if (result) this.sectionOrder.set(result);
     });
   }
 
   openOptimizeDialog() {
-    this.dialogs.openOptimize(this.profileId).subscribe(result => {
+    this.dialogs.openOptimize(this.profileId).subscribe((result) => {
       if (!result) return;
       this.form.patchValue({ title: result.title, overview: result.overview });
       this.workExperiences.clear();
-      result.workExperiences.forEach((w) => this.workExperiences.push(this.createWorkExperienceGroup(w)));
+      result.workExperiences.forEach((w) =>
+        this.workExperiences.push(this.createWorkExperienceGroup(w)),
+      );
       this.skills.clear();
       result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
-      this.notify.success('Profile optimized! Review the changes and save when ready.');
+      this.notify.success(
+        'Profile optimized! Review the changes and save when ready.',
+      );
+      this.cdr.detectChanges();
     });
   }
 
-  openPdfDialog() {
-    this.dialogs.openDownloadCv().subscribe(notes => {
-      if (notes === undefined) return;
-      const raw = this.form.value;
-      const fullName = (raw.fullName as string) ?? '';
-      const jobTitle = (raw.title as string) ?? '';
-      this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
-        state: { notes: notes || '', title: `${fullName} — ${jobTitle}` },
-      });
+  // Opens the current on-screen profile (including unsaved edits) as a PDF directly,
+  // with no optimization-notes dialog and no AI generation (US-CV-7). The PDF preview
+  // page renders the draft payload via the draft-pdf endpoint.
+  openPdf() {
+    const raw = this.form.value;
+    const fullName = (raw.fullName as string) ?? '';
+    const jobTitle = (raw.title as string) ?? '';
+    this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
+      state: {
+        draft: this.buildProfilePayload(),
+        title: `${fullName} — ${jobTitle}`,
+      },
     });
+  }
+
+  // Maps the reactive-form value to the profile payload shape shared by save() and the
+  // draft PDF export (normalises blank optional fields to null).
+  private buildProfilePayload() {
+    const raw = this.form.value;
+    return {
+      ...raw,
+      location: (raw.location as string)?.trim() || null,
+      sectionOrder: this.sectionOrder(),
+      workExperiences: ((raw.workExperiences as WorkExperience[]) ?? []).map(
+        (w) => ({
+          ...w,
+          endDate: w.endDate || null,
+        }),
+      ),
+      educations: ((raw.educations as Education[]) ?? []).map((e) => ({
+        ...e,
+        endYear: e.endYear || null,
+      })),
+    };
   }
 
   save() {
@@ -200,20 +259,7 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       this.form.markAllAsTouched();
       return;
     }
-    const raw = this.form.value;
-    const payload = {
-      ...raw,
-      location: (raw.location as string)?.trim() || null,
-      sectionOrder: this.sectionOrder(),
-      workExperiences: (raw.workExperiences as WorkExperience[] ?? []).map((w) => ({
-        ...w,
-        endDate: w.endDate || null,
-      })),
-      educations: (raw.educations as Education[] ?? []).map((e) => ({
-        ...e,
-        endYear: e.endYear || null,
-      })),
-    };
+    const payload = this.buildProfilePayload();
     this.saving.set(true);
     this.profileService.updateProfile(this.profileId, payload).subscribe({
       next: () => {
@@ -236,7 +282,11 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   get profilePreview(): Profile | null {
     if (!this.form) return null;
-    return { id: '', ...this.form.value, sectionOrder: this.sectionOrder() } as Profile;
+    return {
+      id: '',
+      ...this.form.value,
+      sectionOrder: this.sectionOrder(),
+    } as Profile;
   }
 
   get profileName(): string {
@@ -263,52 +313,66 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
   private loadProfile() {
     this.loading.set(true);
     this.loadError.set(false);
-    this.profileService.getProfile(this.profileId).pipe(
-      finalize(() => this.loading.set(false))
-    ).subscribe({
-      next: (profile: Profile) => {
-        this.form.patchValue({
-          name: profile.name ?? '',
-          fullName: profile.fullName,
-          title: profile.title,
-          overview: profile.overview,
-          location: profile.location ?? '',
-          contacts: {
-            email: profile.contacts?.email ?? '',
-            phone: profile.contacts?.phone ?? '',
-          },
-        });
-        const sortedWork = [...(profile.workExperiences ?? [])].sort((a, b) => {
-          const aEnd = a.endDate ? new Date(a.endDate).getTime() : Infinity;
-          const bEnd = b.endDate ? new Date(b.endDate).getTime() : Infinity;
-          if (bEnd !== aEnd) return bEnd - aEnd;
-          return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
-        });
-        sortedWork.forEach((w) => this.workExperiences.push(this.createWorkExperienceGroup(w)));
+    this.profileService
+      .getProfile(this.profileId)
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: (profile: Profile) => {
+          this.form.patchValue({
+            name: profile.name ?? '',
+            fullName: profile.fullName,
+            title: profile.title,
+            overview: profile.overview,
+            location: profile.location ?? '',
+            contacts: {
+              email: profile.contacts?.email ?? '',
+              phone: profile.contacts?.phone ?? '',
+            },
+          });
+          const sortedWork = [...(profile.workExperiences ?? [])].sort(
+            (a, b) => {
+              const aEnd = a.endDate ? new Date(a.endDate).getTime() : Infinity;
+              const bEnd = b.endDate ? new Date(b.endDate).getTime() : Infinity;
+              if (bEnd !== aEnd) return bEnd - aEnd;
+              return (
+                new Date(b.startDate).getTime() -
+                new Date(a.startDate).getTime()
+              );
+            },
+          );
+          sortedWork.forEach((w) =>
+            this.workExperiences.push(this.createWorkExperienceGroup(w)),
+          );
 
-        const sortedEdu = [...(profile.educations ?? [])].sort((a, b) => {
-          const aEnd = a.endYear ?? Infinity;
-          const bEnd = b.endYear ?? Infinity;
-          if (bEnd !== aEnd) return bEnd - aEnd;
-          return b.startYear - a.startYear;
-        });
-        sortedEdu.forEach((e) => this.educations.push(this.createEducationGroup(e)));
-        profile.skills?.forEach((s) => this.skills.push(this.createSkillGroup(s)));
-        if (profile.sectionOrder?.length) {
-          this.sectionOrder.set(profile.sectionOrder);
-        }
-      },
-      error: (err: HttpErrorResponse) => {
-        if (err.status === 401) {
-          this.auth.logout();
-        } else {
-          this.loadError.set(true);
-        }
-      },
-    });
+          const sortedEdu = [...(profile.educations ?? [])].sort((a, b) => {
+            const aEnd = a.endYear ?? Infinity;
+            const bEnd = b.endYear ?? Infinity;
+            if (bEnd !== aEnd) return bEnd - aEnd;
+            return b.startYear - a.startYear;
+          });
+          sortedEdu.forEach((e) =>
+            this.educations.push(this.createEducationGroup(e)),
+          );
+          profile.skills?.forEach((s) =>
+            this.skills.push(this.createSkillGroup(s)),
+          );
+          if (profile.sectionOrder?.length) {
+            this.sectionOrder.set(profile.sectionOrder);
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          if (err.status === 401) {
+            this.auth.logout();
+          } else {
+            this.loadError.set(true);
+          }
+        },
+      });
   }
 
-  private createWorkExperienceGroup(data?: Partial<Profile['workExperiences'][0]>) {
+  private createWorkExperienceGroup(
+    data?: Partial<Profile['workExperiences'][0]>,
+  ) {
     return this.fb.group({
       company: [data?.company ?? '', Validators.required],
       role: [data?.role ?? '', Validators.required],
@@ -323,7 +387,10 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       institution: [data?.institution ?? '', Validators.required],
       degree: [data?.degree ?? '', Validators.required],
       field: [data?.field ?? '', Validators.required],
-      startYear: [data?.startYear ?? '', [Validators.required, Validators.min(1950), Validators.max(2100)]],
+      startYear: [
+        data?.startYear ?? '',
+        [Validators.required, Validators.min(1950), Validators.max(2100)],
+      ],
       endYear: [data?.endYear ?? ''],
     });
   }

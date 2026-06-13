@@ -2,53 +2,65 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL, TEST_PROFILE_ID } from './support/constants';
 import { mockProfileApi } from './support/mocks/profile.mock';
-import { mockCvGenerateApi, mockCvGenerateFailApi, mockDefaultPdfApi } from './support/mocks/cv.mock';
+import { mockCvGenerateApi, mockCvGenerateFailApi, mockDefaultPdfApi, mockDraftPdfApi } from './support/mocks/cv.mock';
 import { mockJobProfilesListApi } from './support/mocks/job-profiles.mock';
 import { mockProfilesList } from './support/fixtures/profiles-list.fixture';
 import { TEST_CV_ID, mockCvListItem } from './support/fixtures/cv.fixture';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
-// US-CV-1 — Open PDF dialog from profile page
-test.describe('CV generation dialog', () => {
+// US-CV-7 — PDF button on profile editor opens the current profile directly (no dialog, no AI)
+test.describe('Profile editor PDF button', () => {
   test.beforeEach(async ({ page }) => {
     await setupAuth(page);
     await mockProfileApi(page);
+    await mockDraftPdfApi(page);
     await page.goto(`/job-profiles/${PROFILE_ID}`);
   });
 
-  test('opens Preview CV dialog when clicking PDF button', async ({ page }) => {
+  test('navigates straight to the PDF preview without showing an intermediate dialog', async ({ page }) => {
     await page.getByRole('button', { name: /PDF/ }).click();
-    await expect(page.getByRole('heading', { name: 'Preview CV' })).toBeVisible();
-  });
-
-  test('dialog shows optional optimization notes textarea', async ({ page }) => {
-    await page.getByRole('button', { name: /PDF/ }).click();
-    await expect(page.getByLabel(/Optimization notes/)).toBeVisible();
-    await expect(page.getByLabel(/Optimization notes/)).toBeEditable();
-  });
-
-  test('closes dialog without navigating when Cancel is clicked', async ({ page }) => {
-    await page.getByRole('button', { name: /PDF/ }).click();
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page).toHaveURL(`/job-profiles/${PROFILE_ID}/pdf`);
     await expect(page.getByRole('heading', { name: 'Preview CV' })).not.toBeVisible();
-    await expect(page).toHaveURL(`/job-profiles/${PROFILE_ID}`);
   });
 
-  // US-CV-1 — Navigate to PDF preview after confirming generation
-  test('navigates to PDF preview page after clicking Open PDF', async ({ page }) => {
-    await mockCvGenerateApi(page, PROFILE_ID);
+  test('renders the PDF iframe via the draft-pdf endpoint', async ({ page }) => {
     await page.getByRole('button', { name: /PDF/ }).click();
-    await page.getByRole('button', { name: /Open PDF/ }).click();
-    await expect(page).toHaveURL(`/job-profiles/${PROFILE_ID}/pdf`);
+    await expect(page.locator('iframe[title="PDF Preview"]')).toBeVisible({ timeout: 10000 });
   });
 
-  test('navigates to PDF preview page with optimization notes', async ({ page }) => {
-    await mockCvGenerateApi(page, PROFILE_ID);
+  test('does not call the AI CV generation endpoint', async ({ page }) => {
+    let generateCalled = false;
+    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs`, (route) => {
+      if (route.request().method() === 'POST') generateCalled = true;
+      route.continue();
+    });
+
+    const draftResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/cvs/draft-pdf') && resp.request().method() === 'POST'
+    );
     await page.getByRole('button', { name: /PDF/ }).click();
-    await page.getByLabel(/Optimization notes/).fill('Targeting fintech senior backend role');
-    await page.getByRole('button', { name: /Open PDF/ }).click();
-    await expect(page).toHaveURL(`/job-profiles/${PROFILE_ID}/pdf`);
+    await draftResponse;
+
+    expect(generateCalled).toBe(false);
+  });
+
+  test('sends the current form state, including unsaved edits, to the draft-pdf endpoint', async ({ page }) => {
+    let capturedBody: Record<string, unknown> = {};
+    await page.route(`${API_URL}/cvs/draft-pdf`, (route) => {
+      capturedBody = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4') });
+    });
+
+    await page.getByLabel('Full Name', { exact: true }).fill('Edited Name Unsaved');
+
+    const draftResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/cvs/draft-pdf') && resp.request().method() === 'POST'
+    );
+    await page.getByRole('button', { name: /PDF/ }).click();
+    await draftResponse;
+
+    expect(capturedBody['fullName']).toBe('Edited Name Unsaved');
   });
 });
 
@@ -185,62 +197,5 @@ test.describe('Default PDF title', () => {
     await page.locator('li').first().getByTitle('Open default CV').click();
     // scope to the PDF viewer overlay to avoid matching p.truncate on profile cards beneath it
     await expect(page.locator('app-pdf-preview p').filter({ hasText: 'Jane Doe' })).toBeVisible();
-  });
-});
-
-// US-CV-1 — Generate CV with notes passed to API
-test.describe('Optimization notes are sent to API', () => {
-  test('POST request to create CV includes optimization notes from dialog', async ({ page }) => {
-    await setupAuth(page);
-    await mockProfileApi(page);
-
-    let capturedNotes: string | null = null;
-    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs`, (route) => {
-      const body = JSON.parse(route.request().postData() || '{}');
-      capturedNotes = body.optimizationNotes ?? null;
-      route.fulfill({ json: { id: 'new-cv', createdAt: new Date().toISOString(), title: 'Test', optimizationNotes: capturedNotes } });
-    });
-    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs/new-cv/pdf`, (route) =>
-      route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4') })
-    );
-
-    await page.goto(`/job-profiles/${PROFILE_ID}`);
-    await page.getByRole('button', { name: /PDF/ }).click();
-    await page.getByLabel(/Optimization notes/).fill('Targeting senior fintech role');
-
-    // waitForResponse ensures the API has been called and capturedNotes is populated
-    const responsePromise = page.waitForResponse(
-      (resp) => resp.url().includes(`/job-profiles/${PROFILE_ID}/cvs`) && resp.request().method() === 'POST'
-    );
-    await page.getByRole('button', { name: /Open PDF/ }).click();
-    await responsePromise;
-
-    expect(capturedNotes).toBe('Targeting senior fintech role');
-  });
-
-  test('POST request has null optimizationNotes when dialog notes are blank', async ({ page }) => {
-    await setupAuth(page);
-    await mockProfileApi(page);
-
-    let capturedNotes: string | null | undefined = undefined;
-    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs`, (route) => {
-      const body = JSON.parse(route.request().postData() || '{}');
-      capturedNotes = body.optimizationNotes;
-      route.fulfill({ json: { id: 'new-cv', createdAt: new Date().toISOString(), title: 'Test', optimizationNotes: null } });
-    });
-    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}/cvs/new-cv/pdf`, (route) =>
-      route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4') })
-    );
-
-    await page.goto(`/job-profiles/${PROFILE_ID}`);
-    await page.getByRole('button', { name: /PDF/ }).click();
-
-    const responsePromise = page.waitForResponse(
-      (resp) => resp.url().includes(`/job-profiles/${PROFILE_ID}/cvs`) && resp.request().method() === 'POST'
-    );
-    await page.getByRole('button', { name: /Open PDF/ }).click();
-    await responsePromise;
-
-    expect(capturedNotes).toBeNull();
   });
 });

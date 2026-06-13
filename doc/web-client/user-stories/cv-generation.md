@@ -89,3 +89,17 @@ From a saved profile a user can generate one or more tailored CV versions. Each 
 - A delete action is available on each generated CV entry.
 - I am asked to confirm before deletion.
 - Deletion does not affect the underlying profile or other generated versions.
+
+---
+
+### US-CV-7 — Open the current profile (including unsaved edits) as PDF from the editor
+
+**As a** user editing my profile,
+**I want to** click the PDF button and immediately see my profile as a PDF reflecting my current on-screen changes,
+**so that** I can preview exactly what I'm working on without first saving or running AI generation.
+
+**Acceptance criteria:**
+- Clicking the PDF button on the profile edit page opens the PDF directly, with no intermediate notes/optimization dialog.
+- The rendered PDF reflects the current form state, including edits that have not yet been saved.
+- No AI rewriting or CV generation occurs — sections render as entered.
+- Section order and skill order currently set in the editor are respected.

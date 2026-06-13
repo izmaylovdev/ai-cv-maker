@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Dialog } from '@angular/cdk/dialog';
 import { Observable } from 'rxjs';
-import { GenerateCvDialogComponent } from '../dialogs/generate-cv-dialog.component';
 import { OptimizeDialogComponent } from '../dialogs/optimize-dialog.component';
 import { ReorderDialogComponent } from '../dialogs/reorder-dialog.component';
 import { OptimizeProfileResponse } from '../../features/profile/profile.service';
@@ -9,12 +8,6 @@ import { OptimizeProfileResponse } from '../../features/profile/profile.service'
 @Injectable({ providedIn: 'root' })
 export class DialogService {
   private readonly dialog = inject(Dialog);
-
-  openDownloadCv(): Observable<string | undefined> {
-    return this.dialog.open<string>(GenerateCvDialogComponent, {
-      backdropClass: 'dialog-backdrop',
-    }).closed;
-  }
 
   openOptimize(profileId: string): Observable<OptimizeProfileResponse | undefined> {
     return this.dialog.open<OptimizeProfileResponse, { profileId: string }>(OptimizeDialogComponent, {

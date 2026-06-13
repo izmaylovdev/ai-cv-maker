@@ -64,6 +64,14 @@ From a saved profile a user can generate one or more tailored CV versions. Each 
 | F-CV-6.2 | The user must confirm deletion via a dialog. |
 | F-CV-6.3 | Deletion removes only that version; the underlying profile and other generated CVs are unaffected. |
 
+### 2.7 Open Current Editor State as PDF (US-CV-7)
+
+| # | Requirement |
+|---|-------------|
+| F-CV-7.1 | The PDF action on the profile editor opens the PDF directly, with no intermediate optimization-notes dialog and no AI generation. |
+| F-CV-7.2 | The rendered PDF reflects the current form state, including edits not yet saved to the profile. |
+| F-CV-7.3 | Sections render as entered (no AI rewriting); section order and skill order currently set in the editor are respected. |
+
 ---
 
 ## 3. Technical Specification
@@ -126,6 +134,16 @@ Returns the PDF file for a specific generated CV version.
 #### `GET /api/profiles/:id/pdf`
 
 Returns a raw PDF export of the profile (no AI generation).
+
+**Response 200:** `Content-Type: application/pdf` — the PDF binary stream.
+
+---
+
+#### `POST /api/cvs/draft-pdf`
+
+Renders a raw PDF from profile data supplied in the request body, without persisting a `GeneratedCV` or invoking AI. Used by the editor's PDF action to preview the current on-screen state, including unsaved edits.
+
+**Request body:** the in-editor profile payload (same shape as the profile update request — name, contact fields, work experiences, educations, skills, `sectionOrder`).
 
 **Response 200:** `Content-Type: application/pdf` — the PDF binary stream.
 
@@ -229,6 +247,10 @@ interface GeneratedCVData {
 - AI generation: max **5 generations per profile per hour** per user.
 - Raw PDF export: no rate limit (pure rendering, no AI cost).
 - HTTP 429 returned when limit exceeded.
+
+### 3.8 Editor PDF Action (US-CV-7)
+
+The profile editor's PDF button maps the current reactive-form value to the draft payload (matching `save()`'s payload shape, including `sectionOrder`) and navigates to the PDF preview page with that payload as router `draft` state. The preview page renders it via `CvService.getDraftPdf` (`POST /api/cvs/draft-pdf`). No optimization-notes dialog is shown and `CvService.create` (AI generation) is not called. The page title is derived from the form's full name and job title.
 
 ---
 
