@@ -122,6 +122,13 @@ variable "admin_jwt_secret" {
   sensitive = true
 }
 
+# Password for the admin_readonly role on the main DB (ADR-0004). Must match the
+# password used when running apps/admin-api/migrations/create-readonly-role.sql.
+variable "admin_readonly_db_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "admin_seed_email" {
   type    = string
   default = ""

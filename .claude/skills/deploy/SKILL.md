@@ -33,12 +33,26 @@ Services: `cv-api`, `ui-angular`, `chat-ui`, `llm-service`, `admin-api`, `admin-
 Run only for services that changed. Images are built for `linux/amd64`.
 **All builds use the repo root as the build context** (some Dockerfiles copy from `proto/` or `libs/`).
 
+**Tag by commit SHA, deploy by that SHA** (ADR-0003). Deploys are pinned to an
+immutable tag so a revision maps to an exact commit and Terraform never reverts
+it (services carry `lifecycle { ignore_changes = [image] }`). Push `:latest` too
+for convenience, but always `update --image …:$TAG`, never `:latest`.
+
+```bash
+export TAG=$(git rev-parse HEAD)   # or any unique tag
+```
+
 **cv-api** (.NET):
 ```bash
-docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest \
+docker build --platform linux/amd64 \
+  -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG \
+  -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest \
   -f apps/cv-api/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG
 docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest
 ```
+
+(For the other services, substitute the name; same `:$TAG` + `:latest` pattern.)
 
 **ui-angular** (Angular + nginx):
 ```bash
@@ -75,20 +89,32 @@ docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-49
 docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest
 ```
 
+## Run migrations (only when cv-api schema changed)
+
+If the deploy includes EF Core migrations, apply them via the migrate job
+**before** updating the cv-api service (ADR-0003) — never let the service
+migrate on startup in production:
+
+```bash
+gcloud run jobs update cv-api-migrate --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG
+gcloud run jobs execute cv-api-migrate --region europe-central2 --wait
+```
+
 ## Update Cloud Run services
 
 Run only for services whose images were pushed. These can run in parallel.
+Deploy the **same `$TAG`** you built — not `:latest`.
 
 ```bash
-gcloud run services update cv-api      --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:latest
-gcloud run services update ui-angular  --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:latest
-gcloud run services update chat-ui     --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:latest
-gcloud run services update llm-service --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:latest
-gcloud run services update admin-api   --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:latest
-gcloud run services update admin-ui    --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest
+gcloud run services update cv-api      --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG
+gcloud run services update ui-angular  --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:$TAG
+gcloud run services update chat-ui     --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:$TAG
+gcloud run services update llm-service --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:$TAG
+gcloud run services update admin-api   --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:$TAG
+gcloud run services update admin-ui    --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:$TAG
 ```
 
-Note: `gcloud run services update --image` always creates a new revision and re-pulls the image, even if the tag (`:latest`) hasn't changed. It is the correct way to deploy a newly pushed image.
+Note: `gcloud run services update --image` always creates a new revision and re-pulls the image. It is the correct way to deploy a newly pushed image.
 
 ## Apply infrastructure changes
 

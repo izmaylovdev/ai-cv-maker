@@ -201,6 +201,28 @@ resource "google_secret_manager_secret_iam_member" "admin_jwt_secret" {
   member    = local.default_compute_sa
 }
 
+# Password for the main-DB read-only role admin-api connects as (ADR-0004).
+resource "google_secret_manager_secret" "admin_readonly_db_password" {
+  secret_id = "admin-readonly-db-password"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.secretmanager]
+}
+
+resource "google_secret_manager_secret_version" "admin_readonly_db_password" {
+  secret      = google_secret_manager_secret.admin_readonly_db_password.id
+  secret_data = var.admin_readonly_db_password
+}
+
+resource "google_secret_manager_secret_iam_member" "admin_readonly_db_password" {
+  secret_id = google_secret_manager_secret.admin_readonly_db_password.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = local.default_compute_sa
+}
+
 resource "google_secret_manager_secret" "grafana_admin_password" {
   secret_id = "grafana-admin-password"
 

@@ -275,7 +275,7 @@ A separate admin panel for operating the product, isolated from the user-facing 
 | `admin-api` | NestJS (global prefix `/api`, port 3000) | Admin backend: admin login (`POST /api/auth/google`, `POST /api/auth/login`), registered-users list (`GET /api/users`) |
 | `admin-ui` | Next.js | Admin frontend; calls `admin-api` (`ADMIN_API_URL`) and embeds Grafana dashboards (`GRAFANA_URL`) |
 
-`admin-api` uses **two databases**: its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`) and direct read access to the main application database for user data. It does not call `cv-api` or `llm-service`. Domain docs: [`doc/admin/`](doc/admin/).
+`admin-api` uses **two databases**: its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`) and direct **read-only** access to the main application database for user data (a single `SELECT`). In deployed environments it connects to the main DB as the least-privilege `admin_readonly` role, not the superuser ([ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). It does not call `cv-api` or `llm-service`. Domain docs: [`doc/admin/`](doc/admin/).
 
 ---
 
@@ -399,4 +399,4 @@ Set `LLM_PROVIDER=openai` and `OPENAI_BASE_URL=http://host.docker.internal:1234/
 
 ## CI/CD
 
-`.github/workflows/deploy.yml` builds and pushes images to Artifact Registry (auth via Workload Identity Federation) and deploys to Cloud Run on push to `main`. See `DEPLOY.md` for the full from-scratch deployment guide.
+`.github/workflows/deploy.yml` builds and pushes images to Artifact Registry (auth via Workload Identity Federation) and deploys to Cloud Run on push to `main`. Images are deployed by **immutable git-SHA tag**, not `:latest` — every Cloud Run service carries `lifecycle { ignore_changes = [image] }` so Terraform owns config while CI owns the running image ([ADR-0003](doc/adr/0003-migrations-and-image-pinning.md)). EF Core migrations run as the `cv-api-migrate` Cloud Run job (`cv-api migrate` CLI mode) **before** the cv-api service rolls out, not on app startup. See `DEPLOY.md` for the full from-scratch deployment guide.

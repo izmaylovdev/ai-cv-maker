@@ -21,6 +21,32 @@ using QuestPDF.Infrastructure;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
+// CLI mode: `dotnet cv-api.dll migrate` applies EF Core migrations and exits
+// (0 on success, non-zero on failure) without starting the web host. Used by
+// the cv-api-migrate Cloud Run job so schema changes run exactly once per
+// deploy instead of racing across service instances (ADR-0003).
+if (args.FirstOrDefault() == "migrate")
+{
+    var migrateBuilder = Host.CreateApplicationBuilder();
+    migrateBuilder.Configuration.AddJsonFile("appsettings.Local.json", optional: true);
+    migrateBuilder.Services.AddDbContext<AppDbContext>(opt =>
+        opt.UseNpgsql(migrateBuilder.Configuration.GetConnectionString("DefaultConnection")));
+
+    using var migrateHost = migrateBuilder.Build();
+    using var migrateScope = migrateHost.Services.CreateScope();
+    try
+    {
+        migrateScope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+        Console.WriteLine("Database migrations applied successfully.");
+        return;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Database migration failed: {ex}");
+        Environment.Exit(1);
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
@@ -62,6 +88,8 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 // JWT Auth
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]
     ?? throw new InvalidOperationException("JwtSettings:Secret is not configured");
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "cv-api";
+var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "cv-app";
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
@@ -70,8 +98,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
             ClockSkew = TimeSpan.Zero
         };
     });
@@ -158,11 +188,13 @@ builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
 var app = builder.Build();
 
-// Apply pending migrations on startup
-using (var scope = app.Services.CreateScope())
+// Local-dev convenience only (docker-compose sets RunMigrationsOnStartup=true).
+// Production applies migrations through the `migrate` CLI mode, executed as the
+// cv-api-migrate Cloud Run job before the service rolls out (ADR-0003).
+if (builder.Configuration.GetValue<bool>("RunMigrationsOnStartup"))
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 }
 
 app.UseSwagger();

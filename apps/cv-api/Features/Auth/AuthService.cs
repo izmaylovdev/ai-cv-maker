@@ -248,7 +248,10 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
             new Claim(ClaimTypes.Email, user.Email)
         };
 
+        // Defaults must match the validation defaults in Program.cs.
         var token = new JwtSecurityToken(
+            issuer: config["JwtSettings:Issuer"] ?? "cv-api",
+            audience: config["JwtSettings:Audience"] ?? "cv-app",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: credentials

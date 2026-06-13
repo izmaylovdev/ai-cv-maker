@@ -124,6 +124,12 @@ resource "google_cloud_run_v2_service" "llm_service" {
     google_secret_manager_secret_iam_member.openai_api_key,
     google_secret_manager_secret_iam_member.foundry_api_key,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "llm_service_invoker" {
@@ -256,6 +262,12 @@ resource "google_cloud_run_v2_service" "cv_api" {
     google_secret_manager_secret_iam_member.jwt_secret,
     google_secret_manager_secret_iam_member.google_client_secret,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "cv_api_invoker" {
@@ -264,6 +276,60 @@ resource "google_cloud_run_v2_service_iam_member" "cv_api_invoker" {
   name     = google_cloud_run_v2_service.cv_api.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ── cv-api-migrate (EF Core migrations as a deploy step) ────────────────────────
+#
+# Runs `cv-api migrate` exactly once per deploy instead of letting every service
+# instance race db.Database.Migrate() at startup (ADR-0003). CI executes this job
+# with --wait after pushing the image and before rolling out the cv-api service.
+resource "google_cloud_run_v2_job" "cv_api_migrate" {
+  name                = "cv-api-migrate"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    template {
+      service_account = google_service_account.cv_api.email
+
+      # The DB is private-IP; reach it through the same VPC egress as cv-api.
+      vpc_access {
+        network_interfaces {
+          network    = local.vpc_egress_network
+          subnetwork = local.vpc_egress_subnetwork
+        }
+        egress = "ALL_TRAFFIC"
+      }
+
+      max_retries = 1
+
+      containers {
+        image = "${local.ar_repository}/cv-api:latest"
+        args  = ["migrate"]
+
+        env {
+          name = "ConnectionStrings__DefaultConnection"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.cv_api_db_connection.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    # CI deploys the job by SHA tag; :latest here is bootstrap-only (ADR-0003).
+    ignore_changes = [template[0].template[0].containers[0].image]
+  }
+
+  depends_on = [
+    google_sql_database_instance.db,
+    google_secret_manager_secret_version.cv_api_db_connection,
+    google_secret_manager_secret_iam_member.cv_api_db_connection,
+  ]
 }
 
 # ── chat-ui ────────────────────────────────────────────────────────────────────
@@ -298,6 +364,12 @@ resource "google_cloud_run_v2_service" "chat_ui" {
   }
 
   depends_on = [google_project_service.run]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "chat_ui_invoker" {
@@ -385,6 +457,12 @@ resource "google_cloud_run_v2_service" "ui_angular" {
     google_cloud_run_v2_service.cv_api,
     google_cloud_run_v2_service.chat_ui,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "ui_angular_invoker" {
@@ -429,6 +507,12 @@ resource "google_cloud_run_v2_service" "prometheus" {
     google_cloud_run_v2_service.cv_api,
     google_project_service.run,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "prometheus_invoker" {
@@ -557,6 +641,12 @@ resource "google_cloud_run_v2_service" "grafana" {
     google_secret_manager_secret_iam_member.grafana_admin_password,
     google_secret_manager_secret_iam_member.postgres_admin_password,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "grafana_invoker" {
@@ -618,15 +708,17 @@ resource "google_cloud_run_v2_service" "admin_api" {
         name  = "DB_NAME"
         value = "cvmaker"
       }
+      # Main DB is read-only for admin-api — connect as the least-privilege
+      # admin_readonly role, not the superuser (ADR-0004).
       env {
         name  = "DB_USER"
-        value = var.postgres_admin_login
+        value = "admin_readonly"
       }
       env {
         name = "DB_PASSWORD"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
+            secret  = google_secret_manager_secret.admin_readonly_db_password.secret_id
             version = "latest"
           }
         }
@@ -702,11 +794,20 @@ resource "google_cloud_run_v2_service" "admin_api" {
   depends_on = [
     google_sql_database_instance.db,
     # Cloud Run validates secret access when the revision is created.
+    # admin_readonly → main DB (read-only); postgres_admin_password → ADMIN_DB.
+    google_secret_manager_secret_version.admin_readonly_db_password,
     google_secret_manager_secret_version.postgres_admin_password,
     google_secret_manager_secret_version.admin_jwt_secret,
+    google_secret_manager_secret_iam_member.admin_readonly_db_password,
     google_secret_manager_secret_iam_member.postgres_admin_password,
     google_secret_manager_secret_iam_member.admin_jwt_secret,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "admin_api_invoker" {
@@ -790,6 +891,12 @@ resource "google_cloud_run_v2_service" "admin_ui" {
     google_cloud_run_v2_service.admin_api,
     google_cloud_run_v2_service.grafana,
   ]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "admin_ui_invoker" {

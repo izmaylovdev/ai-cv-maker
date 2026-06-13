@@ -39,3 +39,7 @@ grafana_admin_password = "change-me-grafana-password"
 # --- Admin panel ---
 admin_jwt_secret  = "change-me-admin-jwt-secret"
 # admin_seed_email = "admin@example.com"
+
+# Password for the admin_readonly role on the main DB (ADR-0004). Must match the
+# password you pass when running apps/admin-api/migrations/create-readonly-role.sql.
+admin_readonly_db_password = "change-me-readonly-password"

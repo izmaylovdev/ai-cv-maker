@@ -57,3 +57,5 @@ What becomes easier, what becomes harder, what new obligations exist
 |---|---|---|
 | [0001](0001-llm-service-network-privacy.md) | llm-service network privacy on Cloud Run | Accepted |
 | [0002](0002-secret-management.md) | Secret management for GCP infrastructure | Accepted |
+| [0003](0003-migrations-and-image-pinning.md) | Migrations as a deploy step; SHA-pinned image deploys | Accepted |
+| [0004](0004-admin-api-main-db-access.md) | admin-api read-only access to the main database | Accepted |

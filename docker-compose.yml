@@ -25,6 +25,9 @@ services:
     env_file: .env
     environment:
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Local convenience only — production runs migrations via the
+      # cv-api-migrate Cloud Run job before deploying (ADR-0003).
+      RunMigrationsOnStartup: "true"
       JwtSettings__Secret: ${JWT_SECRET}
       LlmService__GrpcUrl: http://llm-service:50051
       Google__WebClientId: ${GOOGLE_WEB_CLIENT_ID}

@@ -114,6 +114,23 @@ This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), l
 
 **Secrets:** sensitive values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
 
+**Database migrations** are *not* run by the cv-api service at startup (ADR-0003); they run as the `cv-api-migrate` Cloud Run job. CI executes it automatically before each cv-api rollout. For a manual deploy, see the `deploy` skill or Step 6.
+
+### Step 4a — Create the admin-api read-only DB role (one-time per environment)
+
+`admin-api` reads the main database with a least-privilege `admin_readonly` role (ADR-0004), not the superuser. Create it once via the Cloud SQL Auth Proxy:
+
+```bash
+# Cloud SQL has no public authorized networks — connect through the proxy.
+cloud-sql-proxy applysy-498807:europe-central2:ai-cv-maker-postgres &
+
+psql "host=127.0.0.1 dbname=cvmaker user=<postgres_admin_login>" \
+  -v readonly_password="'<admin_readonly_db_password from terraform.tfvars>'" \
+  -f apps/admin-api/migrations/create-readonly-role.sql
+```
+
+Re-running is safe (it resets the role's password to the supplied value). The password must match the `admin_readonly_db_password` Terraform variable so the Secret Manager value and the actual role agree.
+
 ---
 
 ## Step 5 — Build and push container images
