@@ -33,6 +33,8 @@ services:
       Google__WebClientId: ${GOOGLE_WEB_CLIENT_ID}
       Google__ExtensionClientId: ${GOOGLE_EXTENSION_CLIENT_ID}
       Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
+      # Shared key admin-api uses to call /api/admin/* (ADR-0005).
+      AdminApi__ApiKey: ${CV_API_ADMIN_KEY:-localdevkey}
     ports:
       - "5050:8080"
     depends_on:
@@ -118,11 +120,9 @@ services:
       dockerfile: apps/admin-api/Dockerfile
     restart: unless-stopped
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: ${POSTGRES_DB}
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # admin-api reads user data from cv-api, not the main DB (ADR-0005).
+      CV_API_URL: http://cv-api:8080
+      CV_API_ADMIN_KEY: ${CV_API_ADMIN_KEY:-localdevkey}
       ADMIN_DB_HOST: admin-db
       ADMIN_DB_PORT: "5432"
       ADMIN_DB_NAME: ${ADMIN_DB_NAME:-admin}
@@ -134,8 +134,8 @@ services:
     ports:
       - "3001:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      cv-api:
+        condition: service_started
       admin-db:
         condition: service_healthy
 

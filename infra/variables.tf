@@ -122,9 +122,10 @@ variable "admin_jwt_secret" {
   sensitive = true
 }
 
-# Password for the admin_readonly role on the main DB (ADR-0004). Must match the
-# password used when running apps/admin-api/migrations/create-readonly-role.sql.
-variable "admin_readonly_db_password" {
+# Shared API key admin-api sends to cv-api's GET /api/admin/users (ADR-0005).
+# Same value reaches cv-api (AdminApi__ApiKey) and admin-api (CV_API_ADMIN_KEY)
+# via the cv-api-admin-key secret.
+variable "cv_api_admin_key" {
   type      = string
   sensitive = true
 }

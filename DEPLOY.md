@@ -116,20 +116,31 @@ This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), l
 
 **Database migrations** are *not* run by the cv-api service at startup (ADR-0003); they run as the `cv-api-migrate` Cloud Run job. CI executes it automatically before each cv-api rollout. For a manual deploy, see the `deploy` skill or Step 6.
 
-### Step 4a — Create the admin-api read-only DB role (one-time per environment)
+### Step 4a — admin-api → cv-api API key (no manual DB step)
 
-`admin-api` reads the main database with a least-privilege `admin_readonly` role (ADR-0004), not the superuser. Create it once via the Cloud SQL Auth Proxy:
+`admin-api` no longer touches the main database. It reads user data from cv-api's
+`GET /api/admin/users`, authenticated with a shared key ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md)).
+Set `cv_api_admin_key` in `terraform.tfvars` (e.g. `openssl rand -base64 32`);
+`terraform apply` puts it in the `cv-api-admin-key` Secret Manager secret and wires
+it to both services (`AdminApi__ApiKey` on cv-api, `CV_API_ADMIN_KEY` on admin-api).
+**No `psql` / Cloud SQL Auth Proxy step is needed.**
+
+**Decommissioning the old read-only role (one-time, upgrading from ADR-0004):** once
+the new cv-api and admin-api revisions are live, drop the now-unused `admin_readonly`
+role so the stale credential and grant are gone:
 
 ```bash
 # Cloud SQL has no public authorized networks — connect through the proxy.
 cloud-sql-proxy applysy-498807:europe-central2:ai-cv-maker-postgres &
 
-psql "host=127.0.0.1 dbname=cvmaker user=<postgres_admin_login>" \
-  -v readonly_password="'<admin_readonly_db_password from terraform.tfvars>'" \
-  -f apps/admin-api/migrations/create-readonly-role.sql
+psql "host=127.0.0.1 dbname=cvmaker user=<postgres_admin_login>" -c \
+  "REASSIGN OWNED BY admin_readonly TO <postgres_admin_login>;
+   DROP OWNED BY admin_readonly;
+   DROP ROLE IF EXISTS admin_readonly;"
 ```
 
-Re-running is safe (it resets the role's password to the supplied value). The password must match the `admin_readonly_db_password` Terraform variable so the Secret Manager value and the actual role agree.
+The `admin-readonly-db-password` secret is removed by `terraform apply` (the variable
+no longer exists). On a fresh environment there is no role to drop — skip this block.
 
 ---
 

@@ -1,7 +1,14 @@
 # ADR-0004: admin-api read-only access to the main database
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0005](0005-admin-api-via-cv-api.md) (2026-06-13)
 - **Date:** 2026-06-13
+
+> **Superseded.** The "keep the direct read" decision below was reversed on the
+> same day: admin-api no longer touches the main DB at all. It now calls a
+> dedicated cv-api endpoint (`GET /api/admin/users`) over HTTP, authenticated
+> with a shared API key. See [ADR-0005](0005-admin-api-via-cv-api.md). The
+> `admin_readonly` role, its password secret, and `create-readonly-role.sql`
+> described here have been decommissioned. The section is kept for history.
 
 ## Context
 

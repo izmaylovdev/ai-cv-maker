@@ -17,7 +17,7 @@ Browser ────────────────────────
 Admin browser
   └─ admin-ui (Next.js) ──→ admin-api (NestJS)
                                ├─ admin DB (PostgreSQL — admin users/sessions)
-                               └─ main DB (direct read-only queries)
+                               └─ REST/HTTP ──→ cv-api  (user list via /api/admin/users; API key)
 
 Monitoring
   prometheus ── scrapes /metrics on cv-api + llm-service ──→ grafana (dashboards; also queries main DB)
@@ -195,6 +195,7 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 The central backend. Exposes a JSON REST API, owns the database, generates PDFs, and orchestrates all LLM calls via gRPC.
 
 **Controllers**
+
 | Route | Controller | Purpose |
 |---|---|---|
 | `POST /api/auth/register` | `AuthController` | Email/password registration |
@@ -225,6 +226,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
 | `GET /api/usage` | `UsageController` | Current user's token usage & estimated cost |
+| `GET /api/admin/users` | `AdminUsersController` | Registered-users list for admin-api (service-to-service, API-key auth, **not** JWT) |
 
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
@@ -237,6 +239,8 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 `PdfService.GenerateCv` renders header, summary, highlights, then iterates `sectionOrder` (comma-separated string stored on `Profile`) to emit work experience, education, and skills sections in user-defined order.
 
 ---
+
+
 
 ### `apps/llm-service` — LLM Gateway (Python / gRPC)
 
@@ -275,7 +279,7 @@ A separate admin panel for operating the product, isolated from the user-facing 
 | `admin-api` | NestJS (global prefix `/api`, port 3000) | Admin backend: admin login (`POST /api/auth/google`, `POST /api/auth/login`), registered-users list (`GET /api/users`) |
 | `admin-ui` | Next.js | Admin frontend; calls `admin-api` (`ADMIN_API_URL`) and embeds Grafana dashboards (`GRAFANA_URL`) |
 
-`admin-api` uses **two databases**: its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`) and direct **read-only** access to the main application database for user data (a single `SELECT`). In deployed environments it connects to the main DB as the least-privilege `admin_readonly` role, not the superuser ([ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). It does not call `cv-api` or `llm-service`. Domain docs: [`doc/admin/`](doc/admin/).
+`admin-api` owns **one** database — its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`). It does **not** touch the main application database. For user data it calls cv-api's `GET /api/admin/users` over HTTP (`CV_API_URL`), authenticated with a shared API key (`CV_API_ADMIN_KEY`) that cv-api validates against `AdminApi:ApiKey` — cv-api is the sole owner of the `Users`/`Profiles` schema ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md), superseding [ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). Domain docs: [`doc/admin/`](doc/admin/).
 
 ---
 
@@ -343,7 +347,7 @@ RequestSpan  (no FK; observability data written by RequestTracingMiddleware)
  └── startedAt (indexed)
 ```
 
-Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persistence/Migrations/`. The admin plane's database is separate and schema-managed by `apps/admin-api/migrations/init-admin-db.sql` (see the admin section above).
+Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persistence/Migrations/`. Only cv-api reads or writes this schema; admin-api reaches `Users`/`Profiles` through cv-api's `GET /api/admin/users` ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md)). The admin plane's own database is separate and schema-managed by `apps/admin-api/migrations/init-admin-db.sql` (see the admin section above).
 
 ---
 
@@ -382,13 +386,13 @@ Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live 
 
 | Service | Host port | Notes |
 |---|---|---|
-| `postgres` | 5433 | Main DB (container 5432); cv-api, admin-api, and grafana connect to it |
+| `postgres` | 5433 | Main DB (container 5432); cv-api and grafana connect to it (admin-api does **not** — it calls cv-api) |
 | `cv-api` | 5050 | REST API (container 8080) |
 | `ui-angular` | 4200 | Browser entry point; Nginx proxies `/api/*` → cv-api and `/chat-widget/*` → chat-ui |
 | `chat-ui` | 4202 | Nginx serving the chat-widget bundle |
 | `llm-service` | 50051 (gRPC), 8080 (metrics) | gRPC server + Prometheus metrics HTTP endpoint |
 | `admin-db` | 5434 | Admin PostgreSQL (container 5432), seeded by `init-admin-db.sql` |
-| `admin-api` | 3001 | NestJS admin backend (container 3000); connects to both DBs |
+| `admin-api` | 3001 | NestJS admin backend (container 3000); connects to its own admin DB and calls cv-api for user data |
 | `admin-ui` | 3002 | Next.js admin frontend (container 3000) |
 | `prometheus` | 9090 | Scrapes `/metrics` on cv-api and llm-service |
 | `grafana` | 3000 | Dashboards provisioned from `monitoring/grafana/provisioning/` |

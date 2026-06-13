@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The admin panel exposes a read-only view of all registered users. It is served by a dedicated NestJS backend (`admin-api`) and a Next.js frontend (`admin-ui`). The `admin-api` connects directly to the same PostgreSQL database used by `cv-api` but only performs read queries.
+The admin panel exposes a read-only view of all registered users. It is served by a dedicated NestJS backend (`admin-api`) and a Next.js frontend (`admin-ui`). `admin-api` does **not** access the main database; it reads the user list from cv-api's `GET /api/admin/users` over HTTP, authenticated with a shared API key ([ADR-0005](../../adr/0005-admin-api-via-cv-api.md)). cv-api owns the `Users`/`Profiles` schema.
 
 ---
 
@@ -46,7 +46,8 @@ The admin panel exposes a read-only view of all registered users. It is served b
 admin-ui (Next.js)
   └─ /api/users  (Next.js route — proxies to admin-api, avoids CORS)
         └─ admin-api (NestJS, port 3000)
-              └─ PostgreSQL (same DB as cv-api)
+              └─ GET /api/admin/users  (cv-api, X-Admin-Api-Key)
+                    └─ PostgreSQL (cv-api owns it)
 ```
 
 ### 3.2 API Endpoint
@@ -76,7 +77,9 @@ No authentication required for MVP (admin panel assumed to be internal/network-r
 | `createdAt` | ISO 8601 datetime | UTC |
 | `profileCount` | number | Count of associated profiles |
 
-### 3.3 Database Query
+### 3.3 Data source
+
+`admin-api` issues `GET ${CV_API_URL}/api/admin/users` with header `X-Admin-Api-Key: ${CV_API_ADMIN_KEY}`. The projection (sorted newest-first, profile count via `Profiles`) is owned by cv-api's `AdminUsersService`, which runs the EF Core equivalent of:
 
 ```sql
 SELECT u."Id"       AS id,
@@ -94,12 +97,11 @@ ORDER BY u."CreatedAt" DESC
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `DB_HOST` | `localhost` | PostgreSQL host |
-| `DB_PORT` | `5433` | PostgreSQL port |
-| `DB_NAME` | `cvmaker` | Database name |
-| `DB_USER` | `cvmaker` | Database user |
-| `DB_PASSWORD` | `changeme` | Database password |
+| `CV_API_URL` | `http://localhost:5050` | cv-api base URL (admin-api → cv-api) |
+| `CV_API_ADMIN_KEY` | _(none)_ | Shared key sent as `X-Admin-Api-Key`; must match cv-api's `AdminApi:ApiKey` |
 | `ADMIN_API_URL` | `http://localhost:3000` | admin-api base URL (used by admin-ui proxy) |
+
+> The admin-database (`ADMIN_DB_*`) variables, unchanged by this refactor, are listed in section 5.
 
 ---
 

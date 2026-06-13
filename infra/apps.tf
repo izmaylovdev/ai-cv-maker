@@ -225,6 +225,16 @@ resource "google_cloud_run_v2_service" "cv_api" {
           }
         }
       }
+      # Shared key that authenticates admin-api's calls to /api/admin/* (ADR-0005).
+      env {
+        name = "AdminApi__ApiKey"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.cv_api_admin_key.secret_id
+            version = "latest"
+          }
+        }
+      }
       env {
         name  = "Cors__AllowedOrigins"
         value = "https://app.applysy.works"
@@ -258,9 +268,11 @@ resource "google_cloud_run_v2_service" "cv_api" {
     google_secret_manager_secret_version.cv_api_db_connection,
     google_secret_manager_secret_version.jwt_secret,
     google_secret_manager_secret_version.google_client_secret,
+    google_secret_manager_secret_version.cv_api_admin_key,
     google_secret_manager_secret_iam_member.cv_api_db_connection,
     google_secret_manager_secret_iam_member.jwt_secret,
     google_secret_manager_secret_iam_member.google_client_secret,
+    google_secret_manager_secret_iam_member.cv_api_admin_key_cv_api,
   ]
 
   lifecycle {
@@ -696,36 +708,21 @@ resource "google_cloud_run_v2_service" "admin_api" {
         container_port = 3000
       }
 
+      # admin-api no longer touches the main DB — it reads user data from cv-api
+      # (ADR-0005). cv-api's URL is a Google-fronted endpoint, reachable through
+      # the existing Direct VPC egress + Private Google Access (no Cloud NAT).
       env {
-        name  = "DB_HOST"
-        value = local.db_host
+        name  = "CV_API_URL"
+        value = google_cloud_run_v2_service.cv_api.uri
       }
       env {
-        name  = "DB_PORT"
-        value = "5432"
-      }
-      env {
-        name  = "DB_NAME"
-        value = "cvmaker"
-      }
-      # Main DB is read-only for admin-api — connect as the least-privilege
-      # admin_readonly role, not the superuser (ADR-0004).
-      env {
-        name  = "DB_USER"
-        value = "admin_readonly"
-      }
-      env {
-        name = "DB_PASSWORD"
+        name = "CV_API_ADMIN_KEY"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.admin_readonly_db_password.secret_id
+            secret  = google_secret_manager_secret.cv_api_admin_key.secret_id
             version = "latest"
           }
         }
-      }
-      env {
-        name  = "DB_SSL"
-        value = "true"
       }
       env {
         name  = "ADMIN_DB_HOST"
@@ -793,12 +790,13 @@ resource "google_cloud_run_v2_service" "admin_api" {
 
   depends_on = [
     google_sql_database_instance.db,
+    google_cloud_run_v2_service.cv_api,
     # Cloud Run validates secret access when the revision is created.
-    # admin_readonly → main DB (read-only); postgres_admin_password → ADMIN_DB.
-    google_secret_manager_secret_version.admin_readonly_db_password,
+    # cv_api_admin_key → cv-api calls; postgres_admin_password → ADMIN_DB.
+    google_secret_manager_secret_version.cv_api_admin_key,
     google_secret_manager_secret_version.postgres_admin_password,
     google_secret_manager_secret_version.admin_jwt_secret,
-    google_secret_manager_secret_iam_member.admin_readonly_db_password,
+    google_secret_manager_secret_iam_member.cv_api_admin_key_admin_api,
     google_secret_manager_secret_iam_member.postgres_admin_password,
     google_secret_manager_secret_iam_member.admin_jwt_secret,
   ]

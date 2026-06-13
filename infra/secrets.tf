@@ -201,9 +201,12 @@ resource "google_secret_manager_secret_iam_member" "admin_jwt_secret" {
   member    = local.default_compute_sa
 }
 
-# Password for the main-DB read-only role admin-api connects as (ADR-0004).
-resource "google_secret_manager_secret" "admin_readonly_db_password" {
-  secret_id = "admin-readonly-db-password"
+# Shared API key for admin-api → cv-api service-to-service calls (ADR-0005).
+# Replaces the old admin_readonly DB password: admin-api no longer touches the
+# main DB, it calls cv-api's GET /api/admin/users with this key in a header.
+# Both consumers need read access: cv-api validates it, admin-api sends it.
+resource "google_secret_manager_secret" "cv_api_admin_key" {
+  secret_id = "cv-api-admin-key"
 
   replication {
     auto {}
@@ -212,13 +215,19 @@ resource "google_secret_manager_secret" "admin_readonly_db_password" {
   depends_on = [google_project_service.secretmanager]
 }
 
-resource "google_secret_manager_secret_version" "admin_readonly_db_password" {
-  secret      = google_secret_manager_secret.admin_readonly_db_password.id
-  secret_data = var.admin_readonly_db_password
+resource "google_secret_manager_secret_version" "cv_api_admin_key" {
+  secret      = google_secret_manager_secret.cv_api_admin_key.id
+  secret_data = var.cv_api_admin_key
 }
 
-resource "google_secret_manager_secret_iam_member" "admin_readonly_db_password" {
-  secret_id = google_secret_manager_secret.admin_readonly_db_password.id
+resource "google_secret_manager_secret_iam_member" "cv_api_admin_key_cv_api" {
+  secret_id = google_secret_manager_secret.cv_api_admin_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cv_api.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "cv_api_admin_key_admin_api" {
+  secret_id = google_secret_manager_secret.cv_api_admin_key.id
   role      = "roles/secretmanager.secretAccessor"
   member    = local.default_compute_sa
 }

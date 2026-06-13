@@ -192,6 +192,11 @@ builder.Services.Configure<CvApi.Features.Usage.LlmPricingOptions>(
     builder.Configuration.GetSection(CvApi.Features.Usage.LlmPricingOptions.SectionName));
 builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
+// Admin plane (ADR-0005): admin-api reads the user list through this endpoint
+// instead of querying the DB directly. Guarded by the shared API key, not JWT.
+builder.Services.AddScoped<CvApi.Features.Admin.AdminUsersService>();
+builder.Services.AddScoped<CvApi.Features.Admin.AdminApiKeyFilter>();
+
 var app = builder.Build();
 
 // Local-dev convenience only (docker-compose sets RunMigrationsOnStartup=true).
