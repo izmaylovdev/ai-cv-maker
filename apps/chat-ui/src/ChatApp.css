@@ -100,10 +100,95 @@
 
 .chat-message__text {
   margin: 0 0 8px;
+  /* Preserve author line breaks in plain-text (user/error) messages. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .chat-message__text:last-child {
   margin-bottom: 0;
+}
+
+/* Rendered Markdown (assistant messages). Block elements manage their own
+   spacing, so the wrapper itself uses normal whitespace handling. */
+.chat-markdown {
+  white-space: normal;
+}
+
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p {
+  margin: 0 0 8px;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.chat-markdown li {
+  margin: 2px 0;
+}
+
+.chat-markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+  overflow-wrap: break-word;
+}
+
+.chat-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.chat-markdown pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.chat-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.chat-markdown blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+}
+
+.chat-markdown table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  display: block;
+  overflow-x: auto;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.chat-markdown img {
+  max-width: 100%;
+  height: auto;
 }
 
 .chat-typing {
@@ -268,6 +353,25 @@
 .dark .chat-message--assistant {
   background: #27272a;
   color: #f4f4f5;
+}
+
+.dark .chat-markdown a {
+  color: #60a5fa;
+}
+
+.dark .chat-markdown code,
+.dark .chat-markdown pre {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .chat-markdown blockquote {
+  border-left-color: #52525b;
+  color: #a1a1aa;
+}
+
+.dark .chat-markdown th,
+.dark .chat-markdown td {
+  border-color: #3f3f46;
 }
 
 .dark .chat-message--error {

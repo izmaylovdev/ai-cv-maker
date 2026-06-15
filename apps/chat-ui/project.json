@@ -17,6 +17,13 @@
       "options": {
         "buildTarget": "chat-ui:build"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --reporter=verbose --config vite.config.mts",
+        "cwd": "apps/chat-ui"
+      }
     }
   }
 }

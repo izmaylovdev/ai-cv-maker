@@ -124,7 +124,7 @@ A self-contained React chat interface packaged as a [Custom Element](https://dev
 Vite builds the entire app — React, CSS, and all — into one file:
 
 ```
-dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~50 kB gzipped)
+dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~110 kB gzipped)
 ```
 
 CSS is injected at runtime by `vite-plugin-css-injected-by-js`, so the single script file is fully standalone with no separate stylesheet.
@@ -169,8 +169,8 @@ The widget has no auth of its own. `ChatPageComponent` passes the current JWT as
 | Component | File | Role |
 |---|---|---|
 | `ChatApp` | `src/ChatApp.tsx` | Root — owns message state, calls the API, renders the layout |
-| `MessageList` | `src/components/MessageList.tsx` | Renders the conversation; shows an empty-state prompt when no messages exist |
-| `MessageInput` | `src/components/MessageInput.tsx` | Textarea + Send button; `Enter` submits, `Shift+Enter` inserts a newline |
+| `MessageList` | `src/components/MessageList.tsx` | Renders the conversation; assistant replies are rendered as sanitized Markdown (`react-markdown` + `remark-gfm`), user/error messages as plain text with line breaks preserved; shows an empty-state prompt when no messages exist |
+| `MessageInput` | `src/components/MessageInput.tsx` | Auto-growing textarea + Send button; `Enter` submits, `Shift+Enter` inserts a newline |
 
 **Local development**
 

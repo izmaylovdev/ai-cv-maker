@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
   onSend: (text: string) => void;
@@ -8,6 +8,18 @@ interface Props {
 
 export function MessageInput({ onSend, disabled, landing }: Props) {
   const [value, setValue] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow: collapse to baseline, then expand to fit content. The CSS
+  // max-height caps growth and switches the textarea to internal scrolling.
+  useLayoutEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    if (value) {
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
+  }, [value]);
 
   function submit() {
     const text = value.trim();
@@ -26,6 +38,7 @@ export function MessageInput({ onSend, disabled, landing }: Props) {
   return (
     <div className={`chat-input${landing ? ' chat-input--landing' : ''}`}>
       <textarea
+        ref={textareaRef}
         className="chat-input__textarea"
         placeholder="Ask a question or give an instruction…"
         value={value}

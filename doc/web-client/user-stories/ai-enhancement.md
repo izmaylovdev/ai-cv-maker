@@ -113,3 +113,17 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 - When blocked, the user receives a clear, distinct message stating that the spending limit has been reached — not a generic "AI is unavailable" error — and their profile/CV data is left unchanged.
 - The limit amount is configurable without a code change (default $0.10).
 - The `/settings/usage` page shows the user their spending limit alongside their accrued cost (and how much remains), so they can see how close they are to the cap.
+
+### US-AI-8 — Read and write multiline / formatted chat messages
+
+**As a** user chatting with the AI Career Assistant,
+**I want to** compose multiline messages and see the assistant's replies rendered with formatting (paragraphs, lists, bold, links, code),
+**so that** longer instructions are easy to write and structured answers are easy to read instead of arriving as one unbroken block of text.
+
+**Acceptance criteria:**
+- The input grows in height as I type multiple lines, up to a maximum, after which it scrolls.
+- Shift+Enter inserts a newline; Enter still sends the message.
+- My own multiline messages preserve their line breaks when displayed.
+- Assistant replies render common Markdown — paragraphs, bullet/numbered lists, bold/italic, inline code, code blocks, and links.
+- Rendered Markdown is sanitized so assistant/user content cannot inject active markup (no raw HTML/script execution); links open safely.
+- Formatting renders correctly in both light and dark themes.

@@ -110,3 +110,50 @@ If loading fails (e.g. `chat-ui` dev server not running), `ChatPageComponent` sh
 - Targeting a specific profile within chat — all profiles are sent as context for every message.
 - Streaming / progressive responses.
 - Token limits or conversation truncation on long histories.
+
+---
+
+## 5. Multiline Input & Markdown Rendering (US-AI-8)
+
+### 5.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-CHAT-5.1 | The input textarea auto-grows in height as content wraps or newlines are added, up to a max height; beyond that it scrolls internally. |
+| F-CHAT-5.2 | Enter submits the message; Shift+Enter inserts a newline (unchanged from F-CHAT-1.9, now explicitly paired with auto-grow). |
+| F-CHAT-5.3 | The textarea resets to its single-row height after a message is sent or cleared. |
+| F-CHAT-5.4 | `user` and `error` messages preserve author line breaks when displayed. |
+| F-CHAT-5.5 | `assistant` messages are rendered as Markdown: paragraphs, bullet and numbered lists, bold/italic, inline code, fenced code blocks, blockquotes, and links. GitHub-flavored extensions (tables, strikethrough, task lists) are supported. |
+| F-CHAT-5.6 | Rendered Markdown never executes embedded raw HTML or scripts; only the supported Markdown element set is emitted. |
+| F-CHAT-5.7 | Links rendered from Markdown open in a new tab with `rel="noopener noreferrer"`. |
+| F-CHAT-5.8 | All rendered Markdown elements are styled for both light and dark themes and stay within the message bubble width (long code/URLs wrap or scroll, never overflow the widget). |
+
+### 5.2 Technical Specification
+
+#### Dependencies (new)
+
+Added to the root `package.json` (consumed by the `chat-ui` esbuild IIFE bundle):
+
+- `react-markdown` (v9) — renders Markdown to React elements. Raw HTML is **not** parsed by default, which provides the sanitization guarantee in F-CHAT-5.6 (no `rehype-raw`, no `dangerouslySetInnerHTML`).
+- `remark-gfm` (v4) — GitHub-flavored Markdown (tables, strikethrough, task lists, autolinks).
+
+No `dompurify`/`rehype-sanitize` is required because react-markdown's default pipeline already drops raw HTML; we only enable the safe remark/rehype plugins listed above.
+
+#### Components
+
+| Component | File | Change |
+|-----------|------|--------|
+| `MessageInput` | `apps/chat-ui/src/components/MessageInput.tsx` | Auto-grow via a ref + `useLayoutEffect` that sets `height = scrollHeight` capped at the CSS `max-height`; reset height on send/clear. |
+| `MessageList` | `apps/chat-ui/src/components/MessageList.tsx` | For `assistant` role, render `<ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: <new-tab link> }}>`. For `user`/`error`, keep plain text but render with `white-space: pre-wrap` to preserve newlines. |
+
+#### Styling
+
+`apps/chat-ui/src/ChatApp.css`:
+- `.chat-message__text` (and the message bubble) gets `white-space: pre-wrap` / `overflow-wrap` handling for plain text.
+- New `.chat-markdown` scope styles for `p, ul, ol, li, code, pre, a, blockquote, strong, em, table` tuned to the bubble, with dark-theme overrides under `.dark`. `pre`/`code` get a subtle background, wrapping, and horizontal scroll for overflow.
+
+#### Out of scope (this iteration)
+
+- Rendering Markdown in the input box (live preview / WYSIWYG) — input stays plain text.
+- Syntax highlighting of code blocks (plain monospace only).
+- Markdown in `user` messages (treated as literal text with preserved newlines, not parsed).
