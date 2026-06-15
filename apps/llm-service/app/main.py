@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio
+import logging
 import os
 
 import grpc.aio
@@ -15,6 +16,8 @@ from app.grpc.llm_service_pb2_grpc import add_LlmServiceServicer_to_server
 
 _GRPC_PORT = int(os.getenv("GRPC_PORT", "8080"))
 _METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
+
+_logger = logging.getLogger(__name__)
 
 
 class _AsyncHealthServicer(health_pb2_grpc.HealthServicer):
@@ -35,7 +38,15 @@ async def serve():
     server.add_insecure_port(f"[::]:{_GRPC_PORT}")
     await server.start()
 
-    start_http_server(_METRICS_PORT)
+    # A metrics-port collision (e.g. the local Prometheus container already
+    # binds 9090) must not take down the gRPC server, which is the actual
+    # service. Log and continue without the metrics endpoint.
+    try:
+        start_http_server(_METRICS_PORT)
+    except OSError as exc:
+        _logger.warning(
+            "Prometheus metrics server not started on port %d: %s", _METRICS_PORT, exc
+        )
 
     await server.wait_for_termination()
 

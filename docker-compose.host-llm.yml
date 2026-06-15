@@ -1,0 +1,24 @@
+# Hybrid local dev: run the full stack in Docker, but serve llm-service on the
+# host (e.g. `GRPC_PORT=50051 npx nx run llm-service:serve`) for fast iteration.
+#
+# Usage:
+#   docker-compose up -d                     # start everything
+#   docker-compose stop llm-service          # free port 50051 on the host
+#   docker-compose -f docker-compose.yml -f docker-compose.host-llm.yml \
+#       up -d --no-deps cv-api               # re-point cv-api at the host
+#   GRPC_PORT=50051 npx nx run llm-service:serve
+#
+# This override only changes where cv-api looks for llm-service; the gRPC URL
+# now points at the host instead of the (stopped) llm-service container.
+services:
+  cv-api:
+    environment:
+      LlmService__GrpcUrl: http://host.docker.internal:50051
+    # Required on Linux so host.docker.internal resolves to the host; harmless
+    # on Docker Desktop (Mac/Windows), where it already resolves.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Don't drag the llm-service container back up — we're serving it on the host.
+    depends_on:
+      postgres:
+        condition: service_healthy

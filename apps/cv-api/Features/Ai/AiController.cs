@@ -35,6 +35,10 @@ public class AiController(ILlmService llmService, UsageService usageService) : C
         {
             return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");
         }
+        catch (LlmUnavailableException ex)
+        {
+            return StatusCode(503, $"AI enhancement is temporarily unavailable: {ex.Message}");
+        }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
             return StatusCode(503, "AI enhancement is temporarily unavailable. Please try again later.");

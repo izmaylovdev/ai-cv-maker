@@ -51,6 +51,43 @@ docker compose up --build
 npx nx serve ui-angular
 ```
 
+### Run cv-api on the host (.NET dev)
+
+When you run cv-api outside Docker (`dotnet run` / `nx serve cv-api`), secrets
+come from [.NET User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets),
+**not** from a committed config file. Load them from your `.env` once:
+
+```sh
+./scripts/load-cv-api-secrets.sh        # reads .env, writes to User Secrets
+dotnet user-secrets list --project apps/cv-api   # verify
+```
+
+This populates `Google:ClientSecret`, `JwtSettings:Secret`, and
+`ConnectionStrings:DefaultConnection` (pointed at the Docker postgres published
+on `localhost:5433`). User Secrets live in your OS profile, so nothing secret is
+ever committed or shipped in the image. Re-run the script after editing `.env`.
+
+> Override the local DB endpoint with `DB_HOST` / `DB_PORT` env vars if needed.
+
+### Hybrid: full stack in Docker, llm-service on the host
+
+To iterate on `llm-service` while everything else stays in Docker, serve it on
+the host and re-point cv-api at it. The host process must bind the gRPC port
+cv-api expects (50051) — use the `serve-host` target, which sets `GRPC_PORT`
+for you (plain `serve` defaults to 8080).
+
+```sh
+docker-compose up -d                       # start the full stack
+docker-compose stop llm-service            # free port 50051 on the host
+docker-compose -f docker-compose.yml -f docker-compose.host-llm.yml \
+    up -d --no-deps cv-api                 # re-point cv-api at the host
+npx nx run llm-service:serve-host          # serve on the host (gRPC :50051)
+```
+
+The override only changes cv-api's `LlmService__GrpcUrl` to
+`http://host.docker.internal:50051`; to go back to all-Docker, restart
+llm-service and re-create cv-api without the override file.
+
 ## LLM providers
 
 Set `LLM_PROVIDER` in `.env` to switch backends:

@@ -33,6 +33,18 @@
         "cwd": "apps/llm-service"
       }
     },
+    "serve-host": {
+      "executor": "nx:run-commands",
+      "continuous": true,
+      "dependsOn": ["install"],
+      "options": {
+        "command": ".venv/bin/python -m app.main",
+        "cwd": "apps/llm-service",
+        "env": {
+          "GRPC_PORT": "50051"
+        }
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "cache": true,

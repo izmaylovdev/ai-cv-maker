@@ -43,8 +43,12 @@ public class LlmService(
 
     /// <summary>
     /// Executes <paramref name="grpcCall"/> inside the Polly resilience pipeline and
-    /// translates <see cref="RpcException"/> with <see cref="StatusCode.ResourceExhausted"/>
-    /// (gRPC equivalent of HTTP 429) into <see cref="LlmRateLimitException"/>.
+    /// translates well-known <see cref="RpcException"/> statuses into domain exceptions:
+    /// <see cref="StatusCode.ResourceExhausted"/> (gRPC equivalent of HTTP 429) into
+    /// <see cref="LlmRateLimitException"/>, and connectivity failures
+    /// (<see cref="StatusCode.Unavailable"/> / <see cref="StatusCode.DeadlineExceeded"/>)
+    /// into <see cref="LlmUnavailableException"/> so callers return a 503 instead of an
+    /// unhandled 500.
     /// </summary>
     private async Task<T> ExecuteAsync<T>(Func<CancellationToken, ValueTask<T>> grpcCall)
     {
@@ -56,6 +60,11 @@ public class LlmService(
         {
             throw new LlmRateLimitException(
                 "The AI service has exceeded its quota. Please try again later.", ex);
+        }
+        catch (RpcException ex) when (ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded)
+        {
+            throw new LlmUnavailableException(
+                "The AI service is currently unreachable. Please try again later.", ex);
         }
     }
 

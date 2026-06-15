@@ -61,9 +61,19 @@ there is no separate "password" knob without app code changes).
    blob — remote state reduces the blast radius (IAM-controlled, encrypted,
    versioned) rather than eliminating that property.
 5. **No real credentials in tracked files.** `apps/cv-api/appsettings.json`
-   keeps only obviously-fake placeholders; real local-dev values live in
-   the gitignored `appsettings.Local.json` (loaded by `Program.cs`) or come
-   from docker-compose env vars (`.env`, also gitignored).
+   keeps only obviously-fake placeholders; real local-dev values for a
+   host-side `dotnet run` live in [.NET User Secrets][us] (outside the repo,
+   in the OS user profile), and docker-compose runs take them from env vars
+   (`.env`, gitignored). `scripts/load-cv-api-secrets.sh` seeds User Secrets
+   from `.env`.
+
+   > **Amendment (2026-06-15):** originally this used a gitignored
+   > `apps/cv-api/appsettings.Local.json` loaded by `Program.cs`. That file
+   > was removed in favour of User Secrets — a Local.json could accidentally
+   > be copied into the Docker image and override Secret Manager config in
+   > prod, whereas User Secrets cannot ship in an image.
+
+[us]: https://learn.microsoft.com/aspnet/core/security/app-secrets
 
 ## Alternatives considered
 

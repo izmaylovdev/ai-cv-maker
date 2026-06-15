@@ -28,9 +28,8 @@ QuestPDF.Settings.License = LicenseType.Community;
 if (args.FirstOrDefault() == "migrate")
 {
     var migrateBuilder = Host.CreateApplicationBuilder();
-    migrateBuilder.Configuration.AddJsonFile("appsettings.Local.json", optional: true);
-    // Local-only convenience file; env vars / Secret Manager must always win.
-    migrateBuilder.Configuration.AddEnvironmentVariables();
+    // Local secrets come from .NET User Secrets (auto-loaded in Development);
+    // in deployed environments env vars / Secret Manager supply them.
     migrateBuilder.Services.AddDbContext<AppDbContext>(opt =>
         opt.UseNpgsql(migrateBuilder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -50,11 +49,10 @@ if (args.FirstOrDefault() == "migrate")
 }
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
-// Re-assert env vars after the local file so Secret Manager / Cloud Run env
-// always overrides appsettings.Local.json (which is dev-only and must never
-// win in a deployed environment). The file is also excluded via .dockerignore.
-builder.Configuration.AddEnvironmentVariables();
+// Local-dev secrets come from .NET User Secrets, which WebApplication.CreateBuilder
+// auto-loads only in the Development environment and never in a deployed image
+// (so they can't override Secret Manager). Seed them with
+// scripts/load-cv-api-secrets.sh. Env vars / Secret Manager win in deployed envs.
 
 builder.Services.AddControllers()
     .AddJsonOptions(opt =>

@@ -137,3 +137,47 @@ async def test_generate_cover_letter_propagates_llm_error(senior_backend_profile
     ):
         with pytest.raises(RuntimeError, match="LLM unavailable"):
             await generate_cover_letter(request)
+
+
+# ---------------------------------------------------------------------------
+# _SYSTEM_PROMPT guardrails — default rules must not contradict user
+# preferences (e.g. "do not list my work experience", "facts not assumptions").
+# The system prompt is the source of contradictions, so we assert on its text.
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_does_not_force_listing_work_history():
+    """The default rules must not mandate enumerating experience — that fights a
+    common user preference of "do not list my work experience"."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    # The old mandate "Reference specific experience and skills..." reads as
+    # "list the work history" and overrode the user's preference.
+    assert "reference specific experience" not in lowered
+    # Replacement must scope content to what's relevant, not the full history.
+    assert "relevant" in lowered
+    assert "do not enumerate" in lowered or "do not list" in lowered
+
+
+def test_system_prompt_does_not_command_strong_fit_statement():
+    """Opening must not force a "strong fit" assertion — that produces the
+    "makes me a strong fit" assumption the user asked to avoid."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    assert "strong fit statement" not in _SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_does_not_force_enthusiasm_close():
+    """No hardcoded enthusiastic close — it conflicts with a facts-only style."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "enthusiasm" not in lowered
+
+
+def test_system_prompt_preserves_output_contract():
+    """Structural output rules are non-negotiable and must survive prompt edits."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    assert "PROFILE_INDEX:" in _SYSTEM_PROMPT
+    assert "COVER_LETTER:" in _SYSTEM_PROMPT

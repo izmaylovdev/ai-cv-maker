@@ -41,9 +41,8 @@ Your task has two steps:
 
 Rules:
 - Choose the profile whose skills, title, and experience best match the job description.
-- The cover letter must open with the candidate's name and a strong fit statement.
-- Reference specific experience and skills that are relevant to the role.
-- Close with enthusiasm and a call to action.
+- The cover letter must open with the candidate's name greetings.
+- Mention only skills and accomplishments directly relevant to the role; do not enumerate the candidate's full work history.
 - Do NOT invent facts not present in the profile.
 - Return ONLY two lines, no extra text:
   PROFILE_INDEX: <zero-based integer index of the chosen profile>
