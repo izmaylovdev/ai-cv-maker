@@ -163,6 +163,10 @@ docker push $AR/cv-api:latest
 docker build --platform linux/amd64 -t $AR/ui-angular:latest -f apps/ui-angular/Dockerfile .
 docker push $AR/ui-angular:latest
 
+# landing (static marketing site + nginx)
+docker build --platform linux/amd64 -t $AR/landing:latest -f apps/landing/Dockerfile .
+docker push $AR/landing:latest
+
 # chat-ui (React web component)
 docker build --platform linux/amd64 -t $AR/chat-ui:latest -f apps/chat-ui/Dockerfile .
 docker push $AR/chat-ui:latest
@@ -187,6 +191,7 @@ AR="europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
 gcloud run services update llm-service --region $REGION --image $AR/llm-service:latest
 gcloud run services update cv-api      --region $REGION --image $AR/cv-api:latest
 gcloud run services update ui-angular  --region $REGION --image $AR/ui-angular:latest
+gcloud run services update landing     --region $REGION --image $AR/landing:latest
 gcloud run services update chat-ui     --region $REGION --image $AR/chat-ui:latest
 gcloud run services update admin-api   --region $REGION --image $AR/admin-api:latest
 gcloud run services update admin-ui    --region $REGION --image $AR/admin-ui:latest
@@ -197,12 +202,19 @@ gcloud run services update admin-ui    --region $REGION --image $AR/admin-ui:lat
 ## Step 7 — Verify
 
 Open https://app.applysy.works — the Angular UI should load and sign in via Google.
+Open https://applysy.works — the marketing landing page should load.
+
+> **DNS:** point A records for `applysy.works`, `www.applysy.works`,
+> `app.applysy.works`, and `admin.applysy.works` at the load balancer IP
+> (`terraform output dns_a_record`). Google-managed certs stay in `PROVISIONING`
+> until each name resolves to that IP.
 
 Quick smoke test:
 ```bash
 BASE="https://app.applysy.works"
 curl -s -o /dev/null -w "%{http_code}" "$BASE/"                   # 200
 curl -s -o /dev/null -w "%{http_code}" "$BASE/api/job-profiles"   # 401
+curl -s -o /dev/null -w "%{http_code}" "https://applysy.works/"   # 200 (landing)
 ```
 
 ---

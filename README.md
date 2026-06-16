@@ -6,6 +6,7 @@ An AI-powered CV generation platform built as an Nx monorepo. Users authenticate
 
 | App | Tech | Description |
 |-----|------|-------------|
+| `landing` | Static HTML + Vite + Nginx | Public marketing landing page |
 | `ui-angular` | Angular + Nginx | Frontend SPA (auth, profile, CV pages) |
 | `cv-api` | ASP.NET Core 9 + PostgreSQL | REST API — auth, user profiles, CV management, PDF export |
 | `llm-service` | Python / FastAPI + LangChain | AI microservice — generates CV content via a configurable LLM |
@@ -118,6 +119,9 @@ LLM_TEMPERATURE           # default 0.4
 ```sh
 # Serve a specific app
 npx nx serve ui-angular
+
+# Serve the marketing landing page (Vite dev server on port 4203)
+npx nx serve landing
 
 # Build for production
 npx nx build ui-angular

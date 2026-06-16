@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI CV Maker is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with eight apps: the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
+Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with nine apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
 
 ```
 Browser ──────────────────────────────┐        Chrome extension (job auto-fill)
@@ -90,6 +90,12 @@ On logout:
 ---
 
 ## Services
+
+### `apps/landing` — Marketing Landing Page
+
+A standalone public marketing site — a single self-contained `index.html` (inline CSS/JS, no framework) bundled by Vite and served as static files by Nginx. It is independent of the SPA: no auth, no API calls, its CTAs link out to the app. Served on port `4203` in dev (`npx nx serve landing`); the production image (`apps/landing/Dockerfile`) builds with `nx build landing` and ships the output behind Nginx.
+
+---
 
 ### `apps/ui-angular` — Angular SPA
 
@@ -369,13 +375,14 @@ Nine RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Cha
 
 ## Infrastructure (GCP)
 
-Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. A global HTTPS load balancer (serverless NEGs) serves `app.applysy.works` → ui-angular and `admin.applysy.works` → admin-ui.
+Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. A global HTTPS load balancer (serverless NEGs) does host-based routing on one IP: `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0007](doc/adr/0007-landing-page-deployment.md)).
 
 | Cloud Run service | Instances | Ingress | Invoker | VPC egress |
 |---|---|---|---|---|
 | `llm-service` | 0–2 | Internal only | cv-api SA only | none (direct internet to LLM providers) |
 | `cv-api` | 1–2 | All | `allUsers` (public API) | ALL_TRAFFIC |
 | `chat-ui` | 0–2 | Internal only | `allUsers` | none |
+| `landing` | 0–2 | All | `allUsers` | none |
 | `ui-angular` | 0–2 | All | `allUsers` | ALL_TRAFFIC |
 | `prometheus` | 1 | Internal only | — | none |
 | `grafana` | — | All | `allUsers` | ALL_TRAFFIC |

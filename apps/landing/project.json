@@ -1,0 +1,29 @@
+{
+  "name": "landing",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/landing",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/vite:build",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/landing"
+      }
+    },
+    "serve": {
+      "executor": "@nx/vite:dev-server",
+      "options": {
+        "buildTarget": "landing:build",
+        "port": 4203
+      }
+    },
+    "preview": {
+      "executor": "@nx/vite:preview-server",
+      "options": {
+        "buildTarget": "landing:build"
+      }
+    }
+  }
+}

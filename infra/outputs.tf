@@ -3,8 +3,13 @@ output "app_url" {
   value       = "https://app.applysy.works"
 }
 
+output "landing_url" {
+  description = "Public URL of the marketing landing page (apex domain)."
+  value       = "https://applysy.works"
+}
+
 output "dns_a_record" {
-  description = "Create an A record in your DNS provider: app.applysy.works → <value>"
+  description = "Point these A records at <value>: applysy.works, www.applysy.works, app.applysy.works, admin.applysy.works"
   value       = google_compute_global_address.app.address
 }
 

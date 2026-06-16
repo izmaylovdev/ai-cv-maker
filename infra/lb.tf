@@ -4,8 +4,9 @@
 # traffic through a global HTTPS LB with serverless NEGs instead.
 #
 # Domains served (same IP, host-based routing):
-#   app.applysy.works   → ui-angular
-#   admin.applysy.works → admin-ui
+#   applysy.works / www.applysy.works → landing
+#   app.applysy.works                 → ui-angular
+#   admin.applysy.works               → admin-ui
 
 resource "google_project_service" "compute" {
   service            = "compute.googleapis.com"
@@ -29,6 +30,16 @@ resource "google_compute_managed_ssl_certificate" "admin" {
 
   managed {
     domains = ["admin.applysy.works"]
+  }
+
+  depends_on = [google_project_service.compute]
+}
+
+resource "google_compute_managed_ssl_certificate" "landing" {
+  name = "applysy-works"
+
+  managed {
+    domains = ["applysy.works", "www.applysy.works"]
   }
 
   depends_on = [google_project_service.compute]
@@ -60,6 +71,18 @@ resource "google_compute_region_network_endpoint_group" "admin_ui" {
   depends_on = [google_project_service.compute]
 }
 
+resource "google_compute_region_network_endpoint_group" "landing" {
+  name                  = "landing-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+
+  cloud_run {
+    service = google_cloud_run_v2_service.landing.name
+  }
+
+  depends_on = [google_project_service.compute]
+}
+
 # --- Backend services ---------------------------------------------------------
 
 resource "google_compute_backend_service" "ui_angular" {
@@ -86,11 +109,30 @@ resource "google_compute_backend_service" "admin_ui" {
   depends_on = [google_project_service.compute]
 }
 
+resource "google_compute_backend_service" "landing" {
+  name                  = "landing-backend"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  timeout_sec           = 30
+
+  backend {
+    group = google_compute_region_network_endpoint_group.landing.id
+  }
+
+  depends_on = [google_project_service.compute]
+}
+
 # --- URL map (host-based routing) ---------------------------------------------
 
 resource "google_compute_url_map" "app" {
-  name            = "app-applysy-works"
-  default_service = google_compute_backend_service.ui_angular.id
+  name = "app-applysy-works"
+  # Apex/marketing host is the default — anything not matching app./admin.
+  # (including bare applysy.works and www.) lands on the marketing site.
+  default_service = google_compute_backend_service.landing.id
+
+  host_rule {
+    hosts        = ["applysy.works", "www.applysy.works"]
+    path_matcher = "landing"
+  }
 
   host_rule {
     hosts        = ["app.applysy.works"]
@@ -100,6 +142,11 @@ resource "google_compute_url_map" "app" {
   host_rule {
     hosts        = ["admin.applysy.works"]
     path_matcher = "admin"
+  }
+
+  path_matcher {
+    name            = "landing"
+    default_service = google_compute_backend_service.landing.id
   }
 
   path_matcher {
@@ -146,6 +193,7 @@ resource "google_compute_target_https_proxy" "app" {
   name    = "app-applysy-works-https-proxy"
   url_map = google_compute_url_map.app.id
   ssl_certificates = [
+    google_compute_managed_ssl_certificate.landing.id,
     google_compute_managed_ssl_certificate.app.id,
     google_compute_managed_ssl_certificate.admin.id,
   ]

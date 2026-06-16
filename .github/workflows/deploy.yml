@@ -66,6 +66,15 @@ jobs:
           docker push $AR_REGISTRY/ui-angular:${{ github.sha }}
           docker push $AR_REGISTRY/ui-angular:latest
 
+      - name: Build and push landing
+        run: |
+          docker build \
+            -t $AR_REGISTRY/landing:${{ github.sha }} \
+            -t $AR_REGISTRY/landing:latest \
+            -f apps/landing/Dockerfile .
+          docker push $AR_REGISTRY/landing:${{ github.sha }}
+          docker push $AR_REGISTRY/landing:latest
+
       - name: Build and push prometheus
         run: |
           docker build \
@@ -138,6 +147,12 @@ jobs:
           gcloud run services update ui-angular \
             --region $GCP_REGION \
             --image $AR_REGISTRY/ui-angular:${{ github.sha }}
+
+      - name: Deploy landing
+        run: |
+          gcloud run services update landing \
+            --region $GCP_REGION \
+            --image $AR_REGISTRY/landing:${{ github.sha }}
 
       - name: Deploy prometheus
         run: |

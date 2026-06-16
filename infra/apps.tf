@@ -485,6 +485,77 @@ resource "google_cloud_run_v2_service_iam_member" "ui_angular_invoker" {
   member   = "allUsers"
 }
 
+# ── landing ────────────────────────────────────────────────────────────────────
+#
+# Public marketing site (apps/landing): a single static index.html served by
+# Nginx. Fronted by the shared LB at applysy.works / www.applysy.works (ADR-0007).
+# Purely static — no Direct VPC egress, no secrets, no DB.
+
+resource "google_cloud_run_v2_service" "landing" {
+  name                = "landing"
+  location            = var.region
+  deletion_protection = false
+  ingress             = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+
+    containers {
+      image = "${local.ar_repository}/landing:latest"
+
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 80
+      }
+
+      liveness_probe {
+        http_get {
+          path = "/"
+          port = 80
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 30
+        failure_threshold     = 3
+      }
+
+      startup_probe {
+        http_get {
+          path = "/"
+          port = 80
+        }
+        period_seconds    = 10
+        failure_threshold = 3
+      }
+    }
+  }
+
+  depends_on = [google_project_service.run]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "landing_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.landing.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 # ── prometheus ─────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "prometheus" {

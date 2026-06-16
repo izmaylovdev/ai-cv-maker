@@ -61,3 +61,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0004](0004-admin-api-main-db-access.md) | admin-api read-only access to the main database | Superseded by 0005 |
 | [0005](0005-admin-api-via-cv-api.md) | admin-api reads user data via a cv-api endpoint | Accepted |
 | [0006](0006-cicd-workload-identity.md) | CI/CD deploys via Workload Identity Federation | Accepted |
+| [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted |
