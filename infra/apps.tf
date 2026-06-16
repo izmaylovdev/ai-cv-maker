@@ -30,6 +30,9 @@ resource "google_cloud_run_v2_service" "llm_service" {
       image = "${local.ar_repository}/llm-service:latest"
 
       resources {
+        # Request-based billing: CPU is only allocated during request
+        # processing, not for the full instance lifetime (ADR-0008).
+        cpu_idle = true
         limits = {
           cpu    = "1"
           memory = "1Gi"
@@ -164,7 +167,9 @@ resource "google_cloud_run_v2_service" "cv_api" {
     }
 
     scaling {
-      min_instance_count = 1
+      # Scale to zero when idle. cv-api is request-driven; there is no
+      # background work that requires a warm instance (ADR-0008).
+      min_instance_count = 0
       max_instance_count = 2
     }
 
@@ -172,6 +177,8 @@ resource "google_cloud_run_v2_service" "cv_api" {
       image = "${local.ar_repository}/cv-api:latest"
 
       resources {
+        # Request-based billing: CPU only allocated during requests (ADR-0008).
+        cpu_idle = true
         limits = {
           cpu    = "1"
           memory = "1Gi"
@@ -566,7 +573,11 @@ resource "google_cloud_run_v2_service" "prometheus" {
 
   template {
     scaling {
-      min_instance_count = 1
+      # Scale to zero when idle (ADR-0008). NOTE: a scaled-to-zero Prometheus
+      # does not scrape on a schedule — it only runs when its HTTP endpoint is
+      # hit. Acceptable while the platform is unused; revisit (min 1) if
+      # continuous metrics collection is needed again.
+      min_instance_count = 0
       max_instance_count = 1
     }
 
@@ -574,6 +585,8 @@ resource "google_cloud_run_v2_service" "prometheus" {
       image = "${local.ar_repository}/prometheus:latest"
 
       resources {
+        # Request-based billing: CPU only allocated during requests (ADR-0008).
+        cpu_idle = true
         limits = {
           cpu    = "1"
           memory = "512Mi"
@@ -626,7 +639,10 @@ resource "google_cloud_run_v2_service" "grafana" {
       egress = "ALL_TRAFFIC"
     }
     scaling {
-      min_instance_count = 1
+      # Scale to zero when idle (ADR-0008). Grafana cold-starts on first
+      # request; background alerting does not run while scaled to zero.
+      # Acceptable while the platform is unused.
+      min_instance_count = 0
       max_instance_count = 1
     }
 
@@ -634,6 +650,8 @@ resource "google_cloud_run_v2_service" "grafana" {
       image = "${local.ar_repository}/grafana:latest"
 
       resources {
+        # Request-based billing: CPU only allocated during requests (ADR-0008).
+        cpu_idle = true
         limits = {
           cpu    = "1"
           memory = "512Mi"

@@ -62,3 +62,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0005](0005-admin-api-via-cv-api.md) | admin-api reads user data via a cv-api endpoint | Accepted |
 | [0006](0006-cicd-workload-identity.md) | CI/CD deploys via Workload Identity Federation | Accepted |
 | [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted |
+| [0008](0008-cloud-run-scale-to-zero.md) | Scale-to-zero and request-based billing for idle Cloud Run services | Accepted |
