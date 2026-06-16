@@ -4,7 +4,11 @@ resource "google_sql_database_instance" "db" {
   region           = var.region
 
   settings {
-    tier    = "db-g1-small"
+    # Smallest available tier (shared vCPU, ~0.6 GB RAM). Cost-minimal for a
+    # no-traffic platform; not SLA-covered, but shared-core tiers never are, so
+    # this loses nothing relative to db-g1-small (ADR-0009). Size up if the DB
+    # starts serving real load or runs short on memory.
+    tier    = "db-f1-micro"
     edition = "ENTERPRISE"
 
     backup_configuration {
