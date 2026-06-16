@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from anthropic import AsyncAnthropicFoundry
+from anthropic import AsyncAnthropic, AsyncAnthropicFoundry
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -130,11 +130,17 @@ def _anthropic_text_content(message) -> str:
     return "".join(parts)
 
 
-def _build_foundry_client() -> AsyncAnthropicFoundry:
+def _build_anthropic_messages_client(provider: str) -> AsyncAnthropic | AsyncAnthropicFoundry:
+    if provider == "anthropic":
+        api_key = app_settings.anthropic_api_key()
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic.")
+        return AsyncAnthropic(api_key=api_key)
+    # foundry / azure variants
     api_key = app_settings.foundry_api_key()
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_FOUNDRY_API_KEY is required when LLM_PROVIDER is foundry "
+            "FOUNDRY_API_KEY is required when LLM_PROVIDER is foundry "
             "(Azure Foundry key from Keys and Endpoint)."
         )
     base_url = app_settings.foundry_base_url()
@@ -149,21 +155,27 @@ def _build_foundry_client() -> AsyncAnthropicFoundry:
     )
 
 
-async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: str = ""):
-    model = app_settings.foundry_model()
+def _get_anthropic_model(provider: str) -> str:
+    if provider == "anthropic":
+        return app_settings.anthropic_model()
+    return app_settings.foundry_model()
+
+
+async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry"):
+    model = _get_anthropic_model(provider)
     if not model:
         raise ValueError(
             "Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name "
             "(e.g. claude-haiku-4-5)."
         )
-    client = _build_foundry_client()
+    client = _build_anthropic_messages_client(provider)
     user_content = _HUMAN_PROMPT.format(**inputs)
     system_prompt = _SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
         system_prompt = f"{_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
     message = await client.messages.create(
         model=model,
-        max_tokens=app_settings.foundry_max_tokens(),
+        max_tokens=app_settings.anthropic_max_tokens(),
         temperature=app_settings.llm_temperature(),
         system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
@@ -171,9 +183,9 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: s
     return _parse_generate_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _generate_cv_foundry(inputs: dict[str, str], global_preferences: str = "") -> tuple[GenerateResponse, TokenUsage]:
-    result, raw_usage = await _generate_cv_foundry_raw(inputs, global_preferences)
-    model = app_settings.foundry_model() or ""
+async def _generate_cv_foundry(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry") -> tuple[GenerateResponse, TokenUsage]:
+    result, raw_usage = await _generate_cv_foundry_raw(inputs, global_preferences, provider)
+    model = _get_anthropic_model(provider) or ""
     return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
@@ -205,14 +217,14 @@ def _build_llm() -> BaseChatModel:
             temperature=temperature,
         )
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
         raise ValueError(
-            "LLM_PROVIDER=foundry uses AsyncAnthropicFoundry directly, not LangChain; "
+            f"LLM_PROVIDER={provider!r} uses the Anthropic SDK directly, not LangChain; "
             "call generate_cv() which routes by provider."
         )
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER={provider!r}. Use 'google', 'openai', or 'foundry'."
+        f"Unknown LLM_PROVIDER={provider!r}. Use 'google', 'openai', 'anthropic', or 'foundry'."
     )
 
 
@@ -225,6 +237,8 @@ def _llm_model_name() -> str:
         return app_settings.openai_model() or ""
     if provider == "azure_openai":
         return app_settings.foundry_model() or ""
+    if provider == "anthropic":
+        return app_settings.anthropic_model() or ""
     return ""
 
 
@@ -257,8 +271,8 @@ async def generate_cv(
     inputs = _profile_to_prompt_vars(profile, message)
     provider = app_settings.llm_provider()
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _generate_cv_foundry(inputs, global_preferences)
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        return await _generate_cv_foundry(inputs, global_preferences, provider)
 
     system_prompt = _SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
@@ -325,20 +339,20 @@ def _parse_optimize_response_json(text: str) -> OptimizeResponse:
         raise ValueError(f"Model did not return valid optimize JSON: {exc}\n---\n{snippet}") from exc
 
 
-async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferences: str = ""):
-    model = app_settings.foundry_model()
+async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry"):
+    model = _get_anthropic_model(provider)
     if not model:
         raise ValueError(
             "Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name."
         )
-    client = _build_foundry_client()
+    client = _build_anthropic_messages_client(provider)
     user_content = _OPTIMIZE_HUMAN_PROMPT.format(**inputs)
     system_prompt = _OPTIMIZE_SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
         system_prompt = f"{_OPTIMIZE_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
     message = await client.messages.create(
         model=model,
-        max_tokens=app_settings.foundry_max_tokens(),
+        max_tokens=app_settings.anthropic_max_tokens(),
         temperature=app_settings.llm_temperature(),
         system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
@@ -346,9 +360,9 @@ async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferenc
     return _parse_optimize_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _optimize_profile_foundry(inputs: dict[str, str], global_preferences: str = "") -> tuple[OptimizeResponse, TokenUsage]:
-    result, raw_usage = await _optimize_profile_foundry_raw(inputs, global_preferences)
-    model = app_settings.foundry_model() or ""
+async def _optimize_profile_foundry(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry") -> tuple[OptimizeResponse, TokenUsage]:
+    result, raw_usage = await _optimize_profile_foundry_raw(inputs, global_preferences, provider)
+    model = _get_anthropic_model(provider) or ""
     return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
@@ -380,8 +394,8 @@ async def optimize_profile(
     inputs = _build_optimize_inputs(profile, enriched.text)
     provider = app_settings.llm_provider()
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _optimize_profile_foundry(inputs, global_preferences)
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        return await _optimize_profile_foundry(inputs, global_preferences, provider)
 
     system_prompt = _OPTIMIZE_SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
@@ -414,13 +428,13 @@ Return only the improved text, nothing else.
 """
 
 
-async def _enhance_field_foundry_raw(content: str, field_purpose: str):
+async def _enhance_field_foundry_raw(content: str, field_purpose: str, provider: str = "foundry"):
     guard_free_text(content, "content")
     guard_free_text(field_purpose, "field_purpose")
-    model = app_settings.foundry_model()
+    model = _get_anthropic_model(provider)
     if not model:
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
-    client = _build_foundry_client()
+    client = _build_anthropic_messages_client(provider)
     user_content = _ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)
     message = await client.messages.create(
         model=model,
@@ -432,17 +446,17 @@ async def _enhance_field_foundry_raw(content: str, field_purpose: str):
     return _anthropic_text_content(message).strip(), message.usage
 
 
-async def _enhance_field_foundry(content: str, field_purpose: str) -> tuple[str, TokenUsage]:
-    result, raw_usage = await _enhance_field_foundry_raw(content, field_purpose)
-    model = app_settings.foundry_model() or ""
+async def _enhance_field_foundry(content: str, field_purpose: str, provider: str = "foundry") -> tuple[str, TokenUsage]:
+    result, raw_usage = await _enhance_field_foundry_raw(content, field_purpose, provider)
+    model = _get_anthropic_model(provider) or ""
     return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
 async def enhance_field(content: str, field_purpose: str) -> tuple[str, TokenUsage]:
     provider = app_settings.llm_provider()
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _enhance_field_foundry(content, field_purpose)
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        return await _enhance_field_foundry(content, field_purpose, provider)
 
     llm = _build_llm()
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -495,16 +509,16 @@ def _parse_extract_response_json(text: str) -> ExtractResponse:
         raise ValueError(f"Model did not return valid extract JSON: {exc}\n---\n{snippet}") from exc
 
 
-async def _extract_profile_foundry_raw(cv_text: str):
+async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
     guard_cv_text(cv_text)
-    model = app_settings.foundry_model()
+    model = _get_anthropic_model(provider)
     if not model:
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
-    client = _build_foundry_client()
+    client = _build_anthropic_messages_client(provider)
     user_content = _EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)
     message = await client.messages.create(
         model=model,
-        max_tokens=app_settings.foundry_max_tokens(),
+        max_tokens=app_settings.anthropic_max_tokens(),
         temperature=0,
         system=_EXTRACT_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
@@ -512,17 +526,17 @@ async def _extract_profile_foundry_raw(cv_text: str):
     return _parse_extract_response_json(_anthropic_text_content(message)), message.usage
 
 
-async def _extract_profile_foundry(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
-    result, raw_usage = await _extract_profile_foundry_raw(cv_text)
-    model = app_settings.foundry_model() or ""
+async def _extract_profile_foundry(cv_text: str, provider: str = "foundry") -> tuple[ExtractResponse, TokenUsage]:
+    result, raw_usage = await _extract_profile_foundry_raw(cv_text, provider)
+    model = _get_anthropic_model(provider) or ""
     return result, TokenUsage.from_anthropic(raw_usage, model)
 
 
 async def extract_profile(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
     provider = app_settings.llm_provider()
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        return await _extract_profile_foundry(cv_text)
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        return await _extract_profile_foundry(cv_text, provider)
 
     from langchain_core.messages import HumanMessage, SystemMessage
 

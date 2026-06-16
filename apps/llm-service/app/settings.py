@@ -1,4 +1,4 @@
-"""Runtime configuration for the LLM backend (Gemini, OpenAI-compatible, or Microsoft Foundry / Claude)."""
+"""Runtime configuration for the LLM backend (Gemini, OpenAI-compatible, Anthropic, or Microsoft Foundry / Claude)."""
 
 from __future__ import annotations
 
@@ -63,12 +63,24 @@ def foundry_model() -> str:
     return name
 
 
-def foundry_max_tokens() -> int:
-    raw = os.getenv("ANTHROPIC_FOUNDRY_MAX_TOKENS", "8192")
+def anthropic_api_key() -> str:
+    return (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+
+
+def anthropic_model() -> str:
+    return llm_model() or "claude-sonnet-4-6"
+
+
+def anthropic_max_tokens() -> int:
+    raw = os.getenv("ANTHROPIC_MAX_TOKENS") or os.getenv("ANTHROPIC_FOUNDRY_MAX_TOKENS", "8192")
     try:
         return max(256, int(raw))
     except ValueError:
         return 8192
+
+
+def foundry_max_tokens() -> int:
+    return anthropic_max_tokens()
 
 
 def azure_openai_api_version() -> str:

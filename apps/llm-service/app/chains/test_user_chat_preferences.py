@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.chains.usage import TokenUsage
 from app.chains.user_chat_chain import ChatMessage, ProfileSummary
+
+
+def _llm_ok(text: str):
+    return AsyncMock(return_value=(text, TokenUsage.empty()))
 
 
 @pytest.fixture()
@@ -32,9 +37,9 @@ async def test_user_chat_passes_preferences_in_context(basic_profile):
 
     with patch(
         "app.chains.user_chat_chain._llm_reply",
-        new=AsyncMock(return_value="Your preferences are: use formal tone."),
+        new=_llm_ok("Your preferences are: use formal tone."),
     ):
-        result = await user_chat_reply(
+        result, _ = await user_chat_reply(
             profiles=basic_profile,
             message="What are my current preferences?",
             history=[],
@@ -51,9 +56,9 @@ async def test_user_chat_empty_preferences_passes_through(basic_profile):
 
     with patch(
         "app.chains.user_chat_chain._llm_reply",
-        new=AsyncMock(return_value="You have no preferences set yet."),
+        new=_llm_ok("You have no preferences set yet."),
     ):
-        result = await user_chat_reply(
+        result, _ = await user_chat_reply(
             profiles=basic_profile,
             message="What are my preferences?",
             history=[],
@@ -79,9 +84,9 @@ async def test_user_chat_returns_preferences_update_action(basic_profile):
 
     with patch(
         "app.chains.user_chat_chain._llm_reply",
-        new=AsyncMock(return_value=llm_output),
+        new=_llm_ok(llm_output),
     ):
-        result = await user_chat_reply(
+        result, _ = await user_chat_reply(
             profiles=basic_profile,
             message="Please set my preferences to use bullet points and British English.",
             history=[],
@@ -100,9 +105,9 @@ async def test_user_chat_no_update_marker_gives_none(basic_profile):
 
     with patch(
         "app.chains.user_chat_chain._llm_reply",
-        new=AsyncMock(return_value="Sure, happy to help with your career!"),
+        new=_llm_ok("Sure, happy to help with your career!"),
     ):
-        result = await user_chat_reply(
+        result, _ = await user_chat_reply(
             profiles=basic_profile,
             message="Help me improve my CV.",
             history=[],

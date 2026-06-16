@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.guards import guard_chat_history, guard_chat_message
-from app.chains.cv_chain import _build_foundry_client, _build_llm, _llm_model_name
+from app.chains.cv_chain import _build_anthropic_messages_client, _get_anthropic_model, _build_llm, _llm_model_name
 
 
 class ChatMessage(BaseModel):
@@ -99,9 +99,9 @@ async def _llm_reply(
     provider: str,
 ) -> tuple[str, TokenUsage]:
     """Call the configured LLM and return the raw text reply with token usage."""
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        model = app_settings.foundry_model()
-        client = _build_foundry_client()
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        model = _get_anthropic_model(provider)
+        client = _build_anthropic_messages_client(provider)
         response = await client.messages.create(
             model=model,
             max_tokens=1024,

@@ -52,7 +52,7 @@ async def test_generate_cv_foundry_raw_injects_preferences_into_system_prompt(ba
     fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
     fake_msg = _make_fake_message(fake_json)
 
-    with patch("app.chains.cv_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=fake_msg)
@@ -73,7 +73,7 @@ async def test_generate_cv_foundry_raw_no_preferences_leaves_system_prompt_uncha
     fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
     fake_msg = _make_fake_message(fake_json)
 
-    with patch("app.chains.cv_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=fake_msg)
@@ -94,7 +94,7 @@ async def test_generate_cv_foundry_raw_whitespace_only_preferences_not_injected(
     fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
     fake_msg = _make_fake_message(fake_json)
 
-    with patch("app.chains.cv_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=fake_msg)
@@ -118,7 +118,7 @@ async def test_optimize_foundry_raw_injects_preferences_into_system_prompt(basic
     fake_json = '{"title":"T","overview":"O","workExperiences":[],"skills":[]}'
     fake_msg = _make_fake_message(fake_json)
 
-    with patch("app.chains.cv_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=fake_msg)
@@ -139,7 +139,7 @@ async def test_optimize_foundry_raw_no_preferences_leaves_system_prompt_unchange
     fake_json = '{"title":"T","overview":"O","workExperiences":[],"skills":[]}'
     fake_msg = _make_fake_message(fake_json)
 
-    with patch("app.chains.cv_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=fake_msg)
@@ -174,7 +174,7 @@ async def test_cover_letter_generate_with_llm_injects_preferences(basic_profile)
         global_preferences="Always write in British English.",
     )
 
-    with patch("app.chains.cover_letter_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cover_letter_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cover_letter_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"), \
          patch("app.chains.cover_letter_chain.app_settings.llm_provider", return_value="foundry"):
         mock_client = AsyncMock()
@@ -202,7 +202,7 @@ async def test_cover_letter_generate_with_llm_no_preferences_clean_system_prompt
         global_preferences="",
     )
 
-    with patch("app.chains.cover_letter_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cover_letter_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cover_letter_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"), \
          patch("app.chains.cover_letter_chain.app_settings.llm_provider", return_value="foundry"):
         mock_client = AsyncMock()
@@ -232,7 +232,7 @@ async def test_cover_letter_preferences_placed_before_system_prompt(basic_profil
         global_preferences="Use 5 sentences max.",
     )
 
-    with patch("app.chains.cover_letter_chain._build_foundry_client") as mock_client_fn, \
+    with patch("app.chains.cover_letter_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cover_letter_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"), \
          patch("app.chains.cover_letter_chain.app_settings.llm_provider", return_value="foundry"):
         mock_client = AsyncMock()
@@ -274,7 +274,7 @@ async def test_generate_cv_forwards_preferences_to_foundry(basic_profile):
     with patch("app.chains.cv_chain._generate_cv_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \
          patch("app.chains.cv_chain.app_settings.llm_provider", return_value="foundry"):
         await generate_cv(basic_profile, message=None, global_preferences="Use bullet points.")
-        _, called_prefs = mock_fn.call_args[0]
+        _, called_prefs, _ = mock_fn.call_args[0]
         assert called_prefs == "Use bullet points."
 
 
@@ -292,7 +292,7 @@ async def test_generate_cv_forwards_empty_preferences_to_foundry(basic_profile):
     with patch("app.chains.cv_chain._generate_cv_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \
          patch("app.chains.cv_chain.app_settings.llm_provider", return_value="foundry"):
         await generate_cv(basic_profile, message=None, global_preferences="")
-        _, called_prefs = mock_fn.call_args[0]
+        _, called_prefs, _ = mock_fn.call_args[0]
         assert called_prefs == ""
 
 
@@ -309,5 +309,5 @@ async def test_optimize_profile_forwards_preferences_to_foundry(basic_profile):
          patch("app.chains.cv_chain.app_settings.llm_provider", return_value="foundry"), \
          patch("app.preprocessing.link_enricher.enrich", new=AsyncMock(return_value=type("R", (), {"text": "improve"})())):
         await optimize_profile(basic_profile, message="improve", global_preferences="Active voice only.")
-        _, called_prefs = mock_fn.call_args[0]
+        _, called_prefs, _ = mock_fn.call_args[0]
         assert called_prefs == "Active voice only."

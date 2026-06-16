@@ -6,7 +6,8 @@ from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.chains.cv_chain import (
     _anthropic_text_content,
-    _build_foundry_client,
+    _build_anthropic_messages_client,
+    _get_anthropic_model,
     _build_llm,
     _llm_model_name,
     _format_educations,
@@ -118,11 +119,11 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, Tok
 
     provider = app_settings.llm_provider()
 
-    if provider in ("foundry", "anthropic_foundry", "azure_foundry"):
-        model = app_settings.foundry_model()
+    if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
+        model = _get_anthropic_model(provider)
         if not model:
             raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
-        client = _build_foundry_client()
+        client = _build_anthropic_messages_client(provider)
         message = await client.messages.create(
             model=model,
             max_tokens=1024,
