@@ -22,7 +22,7 @@
  * callers never need to check for support.
  */
 
-const CHANNEL_NAME = 'ai-cv-maker:auth';
+const CHANNEL_NAME = 'applysy:auth';
 
 type AuthEvent = { type: 'logout' };
 

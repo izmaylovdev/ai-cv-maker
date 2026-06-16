@@ -203,7 +203,7 @@ export function Popup() {
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: 14 }}>AI CV Maker</strong>
+        <strong style={{ fontSize: 14 }}>Applysy</strong>
         <button onClick={handleLogout} style={ghostBtn}>Log out</button>
       </header>
 
@@ -318,7 +318,7 @@ function LoginForm({
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-      <strong style={{ fontSize: 14, marginBottom: 4 }}>Sign in to AI CV Maker</strong>
+      <strong style={{ fontSize: 14, marginBottom: 4 }}>Sign in to Applysy</strong>
 
       <button
         type="button"

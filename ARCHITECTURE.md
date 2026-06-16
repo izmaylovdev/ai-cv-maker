@@ -33,7 +33,7 @@ Networking topology and service isolation decisions are recorded in [ADR-0001](d
 
 ## Shared Libraries
 
-### `libs/auth` — `@ai-cv-maker/auth`
+### `libs/auth` — `@applysy/auth`
 
 Framework-agnostic TypeScript library used by `ui-angular` and `chat-ui`.
 
@@ -46,7 +46,7 @@ Framework-agnostic TypeScript library used by `ui-angular` and `chat-ui`.
 | `api` | `loginApi()`, `registerApi()`, `googleLoginApi()` — plain `fetch` wrappers |
 | `broadcast` | `createAuthBroadcast()` — cross-tab logout sync via `BroadcastChannel` |
 
-Import path: `@ai-cv-maker/auth` (path alias registered in `tsconfig.base.json`, picked up automatically by `nxViteTsPaths()` in Vite apps and the Angular compiler via tsconfig extends).
+Import path: `@applysy/auth` (path alias registered in `tsconfig.base.json`, picked up automatically by `nxViteTsPaths()` in Vite apps and the Angular compiler via tsconfig extends).
 
 See [`libs/auth/README.md`](libs/auth/README.md) for usage examples and design rationale.
 
@@ -58,14 +58,14 @@ See [`libs/auth/README.md`](libs/auth/README.md) for usage examples and design r
 User submits credentials
         │
         ▼
-  loginApi() / registerApi() / googleLoginApi()   ← @ai-cv-maker/auth
+  loginApi() / registerApi() / googleLoginApi()   ← @applysy/auth
         │  POST /api/auth/{login|register|google}
         ▼
     cv-api validates → issues HS256 JWT (1-hour expiry)
                      → sets HttpOnly refresh token cookie (30-day, SHA-256 hashed in DB)
         │
         ▼
-  saveSession(token, email)   ← @ai-cv-maker/auth
+  saveSession(token, email)   ← @applysy/auth
   writes to localStorage['cv_token'] + ['cv_email']
         │
         └─ ui-angular: AuthService.isLoggedIn signal → authGuard allows routing
@@ -154,7 +154,7 @@ The widget has no auth of its own. `ChatPageComponent` passes the current JWT as
 </ai-chat-widget>
 ```
 
-`ChatApp` reads `authToken` from the attribute and adds it as an `Authorization: Bearer` header on every `POST /api/chat` request. The token is sourced from `AuthService.getToken()` in Angular — which in turn reads from `@ai-cv-maker/auth`'s `getToken()`.
+`ChatApp` reads `authToken` from the attribute and adds it as an `Authorization: Bearer` header on every `POST /api/chat` request. The token is sourced from `AuthService.getToken()` in Angular — which in turn reads from `@applysy/auth`'s `getToken()`.
 
 **API**
 
@@ -288,11 +288,11 @@ A separate admin panel for operating the product, isolated from the user-facing 
 
 ### `apps/chrome-extension` — Job Application Auto-Fill (Chrome MV3)
 
-A Manifest V3 extension ("AI CV Maker — Job Fill", TypeScript + Vite, React popup) that fills job-application forms using the user's profiles. It is a pure client of `cv-api` — no backend of its own.
+A Manifest V3 extension ("Applysy — Job Fill", TypeScript + Vite, React popup) that fills job-application forms using the user's profiles. It is a pure client of `cv-api` — no backend of its own.
 
 - `Alt+Shift+F` — content script heuristically detects cover-letter/free-text fields on the page and fills them via `POST /api/cover-letter` (the backend auto-selects the best profile)
 - `Alt+Shift+D` — generates and downloads an optimized CV PDF for the current job posting (`POST /api/cvs/generate-auto`, or `POST /api/job-profiles/:id/cvs` + PDF download when a profile is forced in the popup)
-- Auth: Google sign-in via `chrome.identity` → `POST /api/auth/google/token`, or email/password login; the JWT is stored in `chrome.storage.local` under the shared `TOKEN_KEY` constant from `@ai-cv-maker/auth`
+- Auth: Google sign-in via `chrome.identity` → `POST /api/auth/google/token`, or email/password login; the JWT is stored in `chrome.storage.local` under the shared `TOKEN_KEY` constant from `@applysy/auth`
 
 Domain docs: [`doc/chrome-extension/`](doc/chrome-extension/).
 

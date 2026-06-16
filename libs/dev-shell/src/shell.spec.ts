@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@ai-cv-maker/auth', () => ({
+vi.mock('@applysy/auth', () => ({
   getSession: vi.fn(() => ({ token: null, email: '' })),
   saveSession: vi.fn(),
   clearSession: vi.fn(),
@@ -8,14 +8,14 @@ vi.mock('@ai-cv-maker/auth', () => ({
   googleLoginApi: vi.fn(),
 }));
 
-vi.mock('@ai-cv-maker/theme', () => ({
+vi.mock('@applysy/theme', () => ({
   getTheme: vi.fn(() => 'light' as const),
   saveTheme: vi.fn(),
   applyTheme: vi.fn(),
 }));
 
-import * as auth from '@ai-cv-maker/auth';
-import * as theme from '@ai-cv-maker/theme';
+import * as auth from '@applysy/auth';
+import * as theme from '@applysy/theme';
 import { mountDevShell } from './shell';
 
 const flushPromises = () => new Promise<void>((r) => setTimeout(r, 0));

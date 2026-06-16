@@ -1,6 +1,6 @@
-# `@ai-cv-maker/auth`
+# `@applysy/auth`
 
-Shared authentication library for the AI CV Maker monorepo.
+Shared authentication library for the Applysy monorepo.
 
 Contains framework-agnostic TypeScript — no Angular, React, or Redux imports.  
 Each app wraps these primitives in its own DI/state layer.
@@ -29,7 +29,7 @@ import {
   loginApi, registerApi, googleLoginApi,
   saveSession, clearSession, getToken,
   createAuthBroadcast, isTokenExpired,
-} from '@ai-cv-maker/auth';
+} from '@applysy/auth';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService implements OnDestroy {
@@ -57,7 +57,7 @@ export class AuthService implements OnDestroy {
 ### Token expiry check
 
 ```ts
-import { isTokenExpired, getTokenExpiry } from '@ai-cv-maker/auth';
+import { isTokenExpired, getTokenExpiry } from '@applysy/auth';
 
 // Guard a route
 if (isTokenExpired(token)) navigate('/auth/login');

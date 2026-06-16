@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI CV Maker — Job Fill",
+  "name": "Applysy — Job Fill",
   "version": "0.1.0",
-  "description": "Automatically fill cover letter and application fields using your AI CV Maker profile.",
+  "description": "Automatically fill cover letter and application fields using your Applysy profile.",
   "permissions": ["storage", "activeTab", "scripting", "identity", "webNavigation", "downloads"],
   "host_permissions": ["<all_urls>"],
   "commands": {
@@ -27,7 +27,7 @@
   },
   "action": {
     "default_popup": "popup/index.html",
-    "default_title": "AI CV Maker — Job Fill"
+    "default_title": "Applysy — Job Fill"
   },
   "oauth2": {
     "client_id": "1055599278171-5hcpj39nu8hf1jg52554a2mt2hms4rlb.apps.googleusercontent.com",

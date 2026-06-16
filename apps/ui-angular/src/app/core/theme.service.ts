@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { applyTheme, getTheme, saveTheme } from '@ai-cv-maker/theme';
+import { applyTheme, getTheme, saveTheme } from '@applysy/theme';
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {

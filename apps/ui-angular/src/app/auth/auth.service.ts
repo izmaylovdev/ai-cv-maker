@@ -16,7 +16,7 @@ import {
   refreshApi,
   registerApi,
   saveSession,
-} from '@ai-cv-maker/auth';
+} from '@applysy/auth';
 import { environment } from '../../environments/environment';
 
 const API = environment.apiUrl;

@@ -1,6 +1,6 @@
 # Deployment Guide
 
-End-to-end instructions for deploying AI CV Maker to GCP Cloud Run from scratch.
+End-to-end instructions for deploying Applysy to GCP Cloud Run from scratch.
 
 ## Prerequisites
 

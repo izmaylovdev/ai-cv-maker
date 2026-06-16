@@ -1,4 +1,4 @@
-# Claude Instructions — AI CV Maker
+# Claude Instructions — Applysy
 
 ## Workflow: Spec First, Always
 
@@ -46,7 +46,7 @@ Nx monorepo. Key apps:
 | `apps/admin-api` | NestJS | Admin backend |
 | `apps/admin-ui` | Next.js | Admin frontend |
 
-Shared library: `libs/auth` (`@ai-cv-maker/auth`) — auth utilities shared by Angular and React.
+Shared library: `libs/auth` (`@applysy/auth`) — auth utilities shared by Angular and React.
 
 See `ARCHITECTURE.md` for full system design, data model, and API reference.
 
@@ -76,7 +76,7 @@ docker-compose up
 ## Key Conventions
 
 - Angular app uses standalone components (no NgModules)
-- Auth token stored in `localStorage` via `@ai-cv-maker/auth` constants — do not hardcode key names
+- Auth token stored in `localStorage` via `@applysy/auth` constants — do not hardcode key names
 - LLM provider is controlled by env vars (`LLM_PROVIDER`, `LLM_MODEL`, etc.) — no code changes needed to switch
 - EF Core migrations live in `apps/cv-api/Infrastructure/Persistence/Migrations/` — always generate a migration for schema changes
 - gRPC contract is the source of truth in `proto/llm_service.proto`

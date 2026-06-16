@@ -1,4 +1,4 @@
-import { mountDevShell } from '@ai-cv-maker/dev-shell';
+import { mountDevShell } from '@applysy/dev-shell';
 
 mountDevShell({
   widgetSelector: 'ai-chat-widget',

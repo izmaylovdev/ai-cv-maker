@@ -14,7 +14,7 @@
 | F-EXT-1.6 | If zero fields are detected the extension displays a browser notification: "No application fields detected on this page." |
 | F-EXT-1.7 | The user can review and edit generated text in-place before submitting the form; the extension makes no further DOM changes after insertion. |
 | F-EXT-1.8 | The extension popup (toolbar icon click) shows: login state, a "Fill this page" button, and — after generation — the name of the profile the API selected. An optional profile override dropdown allows the user to force a specific profile and re-generate. |
-| F-EXT-1.9 | On first install (or when no token is stored) the popup renders a login form that calls the existing `POST /api/auth/login` endpoint; on success the JWT is stored in `chrome.storage.local` under the same `TOKEN_KEY` constant from `@ai-cv-maker/auth`. |
+| F-EXT-1.9 | On first install (or when no token is stored) the popup renders a login form that calls the existing `POST /api/auth/login` endpoint; on success the JWT is stored in `chrome.storage.local` under the same `TOKEN_KEY` constant from `@applysy/auth`. |
 | F-EXT-1.10 | The extension sends `Authorization: Bearer <token>` on every API call; if the API returns 401 it clears the stored token and shows the login form. |
 | F-EXT-1.11 | Job description context passed to the API is extracted from the page: the text of the nearest `<h1>`, any element whose text contains "job description" or "about the role", and `document.title` — truncated to 2 000 characters. |
 | F-EXT-1.12 | The extension must function on LinkedIn, Greenhouse, Lever, Workday, and generic HTML forms without site-specific code (purely heuristic detection). |

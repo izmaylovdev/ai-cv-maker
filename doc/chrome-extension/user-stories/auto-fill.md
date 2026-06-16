@@ -2,7 +2,7 @@
 
 ### US-EXT-1 — Auto-fill cover letters and application form fields on job sites
 
-**As a** job seeker using the AI CV Maker Chrome extension,
+**As a** job seeker using the Applysy Chrome extension,
 **I want to** press a hotkey on any job application page and have the extension detect text fields (cover letter, application questions), generate tailored content from my profile and CV, and paste it into the correct fields,
 **so that** I can apply to jobs faster and with higher-quality, personalised content without manually copying and editing text.
 
@@ -15,11 +15,11 @@
 - If no suitable field is found, the extension shows a popup notification: "No application fields detected on this page."
 - The user can review and manually edit the generated text before submitting the form.
 - The extension works on at least: LinkedIn, Greenhouse, Lever, Workday, and generic HTML forms.
-- Authentication with the AI CV Maker backend uses the same JWT token stored via `@ai-cv-maker/auth` (token is passed from a companion settings page or login flow within the extension).
+- Authentication with the Applysy backend uses the same JWT token stored via `@applysy/auth` (token is passed from a companion settings page or login flow within the extension).
 
 ### US-EXT-2 — Sign in to the extension with Google
 
-**As a** job seeker who uses Google to sign in to AI CV Maker,
+**As a** job seeker who uses Google to sign in to Applysy,
 **I want to** click "Sign in with Google" in the extension popup,
 **so that** I can authenticate without typing a password and use the same account I already have on the web app.
 
@@ -32,7 +32,7 @@
 
 ### US-EXT-3 — Download a job-optimised CV from any job posting page
 
-**As a** job seeker using the AI CV Maker Chrome extension,
+**As a** job seeker using the Applysy Chrome extension,
 **I want to** click a button (or press a hotkey) while viewing a job posting and receive a PDF of my CV rewritten to match that job,
 **so that** I can submit a tailored, ATS-optimised CV for each application without manually editing my profile each time.
 

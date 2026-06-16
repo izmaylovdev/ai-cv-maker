@@ -44,7 +44,7 @@ export interface CoverLetterResponse {
   selectedProfileName: string;
 }
 
-const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE ?? "https://ai-cv-maker.example.com";
+const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE ?? "https://applysy.example.com";
 
 export async function getApiBase(): Promise<string> {
   const result = await chrome.storage.local.get("api_base");

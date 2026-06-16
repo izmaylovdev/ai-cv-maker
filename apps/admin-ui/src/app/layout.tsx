@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Admin Panel',
-  description: 'AI CV Maker Admin Panel',
+  description: 'Applysy Admin Panel',
 };
 
 export default function RootLayout({
@@ -116,7 +116,7 @@ export default function RootLayout({
             </nav>
 
             <div className="p-3 border-t border-gray-100 shrink-0">
-              <span className="px-3 py-2 text-xs text-gray-400">AI CV Maker</span>
+              <span className="px-3 py-2 text-xs text-gray-400">Applysy</span>
             </div>
           </aside>
 

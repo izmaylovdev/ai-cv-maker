@@ -28,7 +28,7 @@ export default defineConfig(() => ({
       fileName: 'index',
       formats: ['es' as const],
     },
-    rollupOptions: { external: ['@ai-cv-maker/auth', '@ai-cv-maker/theme'] },
+    rollupOptions: { external: ['@applysy/auth', '@applysy/theme'] },
   },
   test: {
     name: 'dev-shell',

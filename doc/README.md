@@ -1,4 +1,4 @@
-# AI CV Maker — Documentation
+# Applysy — Documentation
 
 ```
 doc/

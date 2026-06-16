@@ -1,6 +1,6 @@
-import { clearSession, getSession, googleLoginApi, loginApi, saveSession } from '@ai-cv-maker/auth';
-import { applyTheme, getTheme, saveTheme } from '@ai-cv-maker/theme';
-import type { Theme } from '@ai-cv-maker/theme';
+import { clearSession, getSession, googleLoginApi, loginApi, saveSession } from '@applysy/auth';
+import { applyTheme, getTheme, saveTheme } from '@applysy/theme';
+import type { Theme } from '@applysy/theme';
 import { BAR_STYLES } from './styles';
 import type { DevShellConfig } from './types';
 
