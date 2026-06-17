@@ -1,14 +1,22 @@
 """Async target wrappers for each LLM operation.
 
-Each function matches the azure-ai-evaluation target contract:
-- accepts the JSONL row fields as keyword arguments
-- returns a dict with `response` (str) plus benchmark fields
+Each function is invoked by the Langfuse experiment task (ADR-0012) with the
+dataset item's ``input`` fields spread as keyword arguments, and returns a dict
+with ``response`` (str) plus benchmark fields (latency, token usage) that the
+evaluators and the runner read.
+
+The ``*_raw`` chain helpers return the model result together with raw token
+usage (the latency/cost the evals report) without the public wrappers' extra
+processing. They take a ``provider`` argument; we pass the configured
+``llm_provider()`` so evals exercise the same provider production serves
+(the raw helpers support the Anthropic-style providers: anthropic / foundry).
 """
 
 from __future__ import annotations
 
 import time
 
+from app import settings as app_settings
 from app.chains.chat_chain import ChatMessage, chat_reply
 from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
 from app.chains.cv_chain import (
@@ -22,10 +30,15 @@ from app.chains.cv_chain import (
 from app.schemas import ProfileInput
 
 
+def _provider() -> str:
+    """The configured LLM provider, used to route the raw chain helpers."""
+    return app_settings.llm_provider()
+
+
 async def generate_target(profile: dict, message: str | None = None, query: str = "") -> dict:
     inputs = _profile_to_prompt_vars(ProfileInput(**profile), message)
     t0 = time.perf_counter()
-    result, usage = await _generate_cv_foundry_raw(inputs)
+    result, usage = await _generate_cv_foundry_raw(inputs, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result.model_dump_json(),
@@ -43,7 +56,9 @@ async def generate_with_prefs_target(
 ) -> dict:
     inputs = _profile_to_prompt_vars(ProfileInput(**profile), message)
     t0 = time.perf_counter()
-    result, usage = await _generate_cv_foundry_raw(inputs, global_preferences=global_preferences)
+    result, usage = await _generate_cv_foundry_raw(
+        inputs, global_preferences=global_preferences, provider=_provider()
+    )
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result.model_dump_json(),
@@ -57,7 +72,7 @@ async def generate_with_prefs_target(
 async def optimize_target(profile: dict, message: str, query: str = "") -> dict:
     inputs = _build_optimize_inputs(ProfileInput(**profile), message)
     t0 = time.perf_counter()
-    result, usage = await _optimize_profile_foundry_raw(inputs)
+    result, usage = await _optimize_profile_foundry_raw(inputs, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result.model_dump_json(),
@@ -75,7 +90,9 @@ async def optimize_with_prefs_target(
 ) -> dict:
     inputs = _build_optimize_inputs(ProfileInput(**profile), message)
     t0 = time.perf_counter()
-    result, usage = await _optimize_profile_foundry_raw(inputs, global_preferences=global_preferences)
+    result, usage = await _optimize_profile_foundry_raw(
+        inputs, global_preferences=global_preferences, provider=_provider()
+    )
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result.model_dump_json(),
@@ -88,7 +105,7 @@ async def optimize_with_prefs_target(
 
 async def enhance_target(content: str, field_purpose: str, query: str = "") -> dict:
     t0 = time.perf_counter()
-    result, usage = await _enhance_field_foundry_raw(content, field_purpose)
+    result, usage = await _enhance_field_foundry_raw(content, field_purpose, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result,
@@ -100,7 +117,7 @@ async def enhance_target(content: str, field_purpose: str, query: str = "") -> d
 
 async def chat_target(profile: dict, message: str, history: list | None = None, query: str = "") -> dict:
     t0 = time.perf_counter()
-    result = await chat_reply(
+    result, usage = await chat_reply(
         ProfileInput(**profile),
         message,
         [ChatMessage(**m) for m in (history or [])],
@@ -110,6 +127,8 @@ async def chat_target(profile: dict, message: str, history: list | None = None, 
         "response": result.reply,
         "has_proposal": result.proposal is not None,
         "latency_ms": latency_ms,
+        "input_tokens": usage.prompt_tokens,
+        "output_tokens": usage.completion_tokens,
     }
 
 
@@ -138,14 +157,14 @@ async def cover_letter_with_prefs_target(
         "response": result.text,
         "global_preferences": global_preferences,
         "latency_ms": latency_ms,
-        "input_tokens": usage.input_tokens,
-        "output_tokens": usage.output_tokens,
+        "input_tokens": usage.prompt_tokens,
+        "output_tokens": usage.completion_tokens,
     }
 
 
 async def extract_target(cv_text: str, query: str = "") -> dict:
     t0 = time.perf_counter()
-    result, usage = await _extract_profile_foundry_raw(cv_text)
+    result, usage = await _extract_profile_foundry_raw(cv_text, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return {
         "response": result.model_dump_json(),
