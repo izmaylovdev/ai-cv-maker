@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from app import observability
 from app import settings as app_settings
 from app.chains.cv_chain import (
     _anthropic_text_content,
@@ -100,7 +101,9 @@ async def select_best_profile(
         if not model:
             raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
         client = _build_anthropic_messages_client(provider)
-        message = await client.messages.create(
+        message = await observability.anthropic_create(
+            client,
+            name="select_profile",
             model=model,
             max_tokens=256,
             temperature=0,
@@ -115,7 +118,7 @@ async def select_best_profile(
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=user_content),
         ]
-        response = await llm.ainvoke(messages)
+        response = await observability.lc_invoke(llm, messages, name="select_profile")
         raw = (str(response.content) if hasattr(response, "content") else str(response)).strip()
 
     profile_id = _parse_response(raw, valid_ids)

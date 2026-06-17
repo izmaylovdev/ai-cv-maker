@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app import observability
 from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.chains.cv_chain import (
@@ -124,7 +125,9 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, Tok
         if not model:
             raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
         client = _build_anthropic_messages_client(provider)
-        message = await client.messages.create(
+        message = await observability.anthropic_create(
+            client,
+            name="cover_letter",
             model=model,
             max_tokens=1024,
             temperature=app_settings.llm_temperature(),
@@ -140,7 +143,7 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, Tok
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_content),
         ]
-        response = await llm.ainvoke(messages)
+        response = await observability.lc_invoke(llm, messages, name="cover_letter")
         raw = str(response.content).strip()
         usage = TokenUsage.from_langchain_response(response, _llm_model_name())
 

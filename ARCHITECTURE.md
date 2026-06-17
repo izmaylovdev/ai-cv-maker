@@ -277,6 +277,19 @@ Controlled entirely by environment variables — no code changes required:
 | `openai` | `OPENAI_MODEL` | Any OpenAI-compatible endpoint; default points to LM Studio on localhost |
 | `foundry` | `FOUNDRY_DEPLOYMENT_NAME` / `LLM_MODEL` | Azure AI Foundry (e.g., Claude via Anthropic); requires `FOUNDRY_API_KEY` |
 
+**LLM observability — Langfuse ([ADR-0010](doc/adr/0010-langfuse-llm-observability.md))**
+All model calls in llm-service are traced to a self-hosted Langfuse when configured. Both invocation paths are instrumented through `app/observability.py`: the LangChain path (google/openai/azure) via a `CallbackHandler`, and the direct Anthropic path (anthropic/foundry) via a generation span recording model + token usage. A gRPC server interceptor (`app/grpc/trace_interceptor.py`) opens the root trace per RPC.
+
+Tracing is **opt-in and no-op when unconfigured** — it activates only when all three vars are set:
+
+| Env var | Notes |
+|---|---|
+| `LANGFUSE_PUBLIC_KEY` | `pk-...`; absence of any of the three disables tracing entirely |
+| `LANGFUSE_SECRET_KEY` | `sk-...` (Secret Manager in prod, [ADR-0002](doc/adr/0002-secret-management.md)) |
+| `LANGFUSE_HOST` | Langfuse base URL (self-hosted). In prod, the internal IP of the Langfuse VM ([ADR-0011](doc/adr/0011-langfuse-prod-single-vm.md)) |
+
+cv-api propagates request correlation context to llm-service as gRPC metadata — `x-trace-id` (the cv-api `TraceContext.TraceId`) and `x-user-id` (authenticated user). llm-service maps the trace id deterministically (`Langfuse.create_trace_id(seed=...)`) and sets `user_id`, so each Langfuse trace links back to the cv-api `RequestSpan` rows for the same request. Locally, bring up Langfuse with the opt-in overlay: `docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up` (UI at `http://localhost:3030`).
+
 ---
 
 ### `apps/admin-api` + `apps/admin-ui` — Admin Plane
@@ -388,6 +401,8 @@ Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live 
 | `grafana` | — | All | `allUsers` | ALL_TRAFFIC |
 | `admin-api` | 0–2 | Internal only | — | ALL_TRAFFIC |
 | `admin-ui` | 0–2 | All | `allUsers` | ALL_TRAFFIC |
+
+**LLM observability — Langfuse VM ([ADR-0011](doc/adr/0011-langfuse-prod-single-vm.md)):** the self-hosted Langfuse stack (web + worker + ClickHouse + Redis + MinIO) is defined to run as a docker-compose deployment on a **single `e2-small` GCE VM** (`infra/langfuse.tf`), the cheapest hosting option. The whole stack is **gated behind `var.langfuse_enabled` (default `false`)** — committed and validated but not yet deployed; flip the flag to provision it. Its metadata DB reuses the Cloud SQL instance (a `langfuse` database); ClickHouse/MinIO state lives on a separate persistent disk that survives VM re-creation. The VM has **no inbound internet access** (firewall allows the Langfuse port only from the Cloud Run egress subnet, plus IAP for SSH); its ephemeral external IP is outbound-only, for image pulls. `llm-service` reaches it at a static internal IP via Direct VPC egress (`PRIVATE_RANGES_ONLY`, which keeps its direct path to external LLM providers). The UI is reached by an IAP SSH tunnel (`terraform output langfuse_ssh`).
 
 **Network privacy ([ADR-0001](doc/adr/0001-llm-service-network-privacy.md)):** llm-service and Cloud SQL are not reachable from the public internet. Cloud Run v2 treats CR-to-CR `.run.app` calls as external, so callers of internal-only services route egress through the project VPC (Direct VPC egress + Private Google Access). cv-api authenticates to llm-service with a Google-signed ID token (`LlmService__AuthMode=google`); IAM (`run.invoker`) enforces it at the edge. Cloud SQL has a private IP in the VPC; its public IP has no authorized networks and serves only Cloud SQL Auth Proxy admin access.
 

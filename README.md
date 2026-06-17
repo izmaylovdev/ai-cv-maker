@@ -101,6 +101,24 @@ Set `LLM_PROVIDER` in `.env` to switch backends:
 
 > **Tip:** Point `OPENAI_BASE_URL=http://host.docker.internal:1234/v1` to run against a local LM Studio instance.
 
+## LLM observability (Langfuse)
+
+LLM calls in `llm-service` are traced to a self-hosted [Langfuse](https://langfuse.com)
+when configured ([ADR-0010](doc/adr/0010-langfuse-llm-observability.md)). Tracing is
+**opt-in** — it activates only when `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and
+`LANGFUSE_HOST` are all set; otherwise it is a no-op with no behaviour change.
+
+Run Langfuse locally with the opt-in compose overlay (UI at http://localhost:3030,
+login `admin@local` / `changeme-langfuse`):
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up
+```
+
+The overlay auto-provisions dev API keys and injects them into `llm-service`, so traces
+appear with no extra setup. cv-api forwards its request correlation id and the user id as
+gRPC metadata, so each Langfuse trace links back to the cv-api request.
+
 ## Environment variables
 
 See `.env.example` for the full list. Key variables:
@@ -112,6 +130,9 @@ GOOGLE_CLIENT_ID          # Google OAuth
 LLM_PROVIDER              # google | openai | foundry
 LLM_MODEL                 # override default model name
 LLM_TEMPERATURE           # default 0.4
+LANGFUSE_PUBLIC_KEY       # optional — enables LLM tracing when set with the two below
+LANGFUSE_SECRET_KEY       # optional
+LANGFUSE_HOST             # optional — Langfuse base URL (self-hosted)
 ```
 
 ## Nx workspace

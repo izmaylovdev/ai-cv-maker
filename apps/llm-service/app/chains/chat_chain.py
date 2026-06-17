@@ -5,6 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app import observability
 from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.guards import guard_chat_history, guard_chat_message
@@ -141,7 +142,9 @@ async def _chat_with_llm(
     if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
         model = _get_anthropic_model(provider)
         client = _build_anthropic_messages_client(provider)
-        response = await client.messages.create(
+        response = await observability.anthropic_create(
+            client,
+            name="chat",
             model=model,
             max_tokens=1024,
             temperature=app_settings.llm_temperature(),
@@ -164,7 +167,7 @@ async def _chat_with_llm(
             lc_messages.append(AIMessage(content=h.content))
     lc_messages.append(HumanMessage(content=user_content))
 
-    response = await llm.ainvoke(lc_messages)
+    response = await observability.lc_invoke(llm, lc_messages, name="chat")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
     return _parse_response(str(response.content)), usage
 

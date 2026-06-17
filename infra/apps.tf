@@ -17,9 +17,22 @@ resource "google_cloud_run_v2_service" "llm_service" {
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    # No vpc_access here: llm-service calls external LLM providers
-    # (OpenAI/Foundry are non-Google) and must keep the direct internet path.
     service_account = google_service_account.llm_service.email
+
+    # Only when Langfuse is enabled (ADR-0011): PRIVATE_RANGES_ONLY (not
+    # ALL_TRAFFIC) so RFC1918 traffic — the Langfuse VM's private IP — routes
+    # through the VPC, while calls to external LLM providers (OpenAI/Foundry are
+    # non-Google) keep the direct internet path. Disabled → no vpc_access at all.
+    dynamic "vpc_access" {
+      for_each = var.langfuse_enabled ? [1] : []
+      content {
+        network_interfaces {
+          network    = local.vpc_egress_network
+          subnetwork = local.vpc_egress_subnetwork
+        }
+        egress = "PRIVATE_RANGES_ONLY"
+      }
+    }
 
     scaling {
       min_instance_count = 0
@@ -104,6 +117,41 @@ resource "google_cloud_run_v2_service" "llm_service" {
         value = var.anthropic_foundry_max_tokens
       }
 
+      # LLM observability (ADR-0010/0011), only when Langfuse is enabled. With
+      # these set, tracing activates; absent them it is a no-op. Host is the
+      # in-VPC Langfuse VM private IP.
+      dynamic "env" {
+        for_each = var.langfuse_enabled ? [1] : []
+        content {
+          name  = "LANGFUSE_HOST"
+          value = "http://${local.langfuse_internal_ip}:3000"
+        }
+      }
+      dynamic "env" {
+        for_each = var.langfuse_enabled ? [1] : []
+        content {
+          name = "LANGFUSE_PUBLIC_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.langfuse_public_key[0].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.langfuse_enabled ? [1] : []
+        content {
+          name = "LANGFUSE_SECRET_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.langfuse_secret_key[0].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
       startup_probe {
         grpc {
           port    = 8080
@@ -126,6 +174,10 @@ resource "google_cloud_run_v2_service" "llm_service" {
     google_secret_manager_secret_iam_member.google_api_key,
     google_secret_manager_secret_iam_member.openai_api_key,
     google_secret_manager_secret_iam_member.foundry_api_key,
+    google_secret_manager_secret_version.langfuse_public_key,
+    google_secret_manager_secret_version.langfuse_secret_key,
+    google_secret_manager_secret_iam_member.langfuse_public_key,
+    google_secret_manager_secret_iam_member.langfuse_secret_key,
   ]
 
   lifecycle {

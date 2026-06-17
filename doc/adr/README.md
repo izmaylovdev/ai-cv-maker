@@ -64,3 +64,5 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted |
 | [0008](0008-cloud-run-scale-to-zero.md) | Scale-to-zero and request-based billing for idle Cloud Run services | Accepted |
 | [0009](0009-smallest-db-tier.md) | Smallest Cloud SQL tier (db-f1-micro) for the idle platform | Accepted |
+| [0010](0010-langfuse-llm-observability.md) | Langfuse for LLM observability (self-hosted, opt-in) | Accepted |
+| [0011](0011-langfuse-prod-single-vm.md) | Langfuse production hosting on a single GCE VM | Accepted |

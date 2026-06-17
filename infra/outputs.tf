@@ -37,3 +37,26 @@ output "cv_api_url" {
   description = "Public URL of the CV API."
   value       = google_cloud_run_v2_service.cv_api.uri
 }
+
+# ── Langfuse (ADR-0011) — null until var.langfuse_enabled = true ──────────────
+
+output "langfuse_internal_url" {
+  description = "Internal URL llm-service uses to reach Langfuse (in-VPC only)."
+  value       = var.langfuse_enabled ? "http://${local.langfuse_internal_ip}:3000" : null
+}
+
+output "langfuse_ssh" {
+  description = "Open the Langfuse UI: SSH-tunnel via IAP, then browse http://localhost:3000."
+  value       = var.langfuse_enabled ? "gcloud compute ssh ${var.project_name}-langfuse --zone ${local.langfuse_zone} --tunnel-through-iap -- -L 3000:localhost:3000" : null
+}
+
+output "langfuse_admin_email" {
+  description = "Initial Langfuse UI admin login email."
+  value       = var.langfuse_enabled ? var.langfuse_admin_email : null
+}
+
+output "langfuse_admin_password" {
+  description = "Initial Langfuse UI admin password — rotate after first login."
+  value       = one(random_password.langfuse_admin[*].result)
+  sensitive   = true
+}

@@ -127,6 +127,9 @@ builder.Services.AddCors(opt =>
 
 // Tracing
 builder.Services.AddScoped<TraceContext>();
+// Needed by LlmService to read the authenticated user id for Langfuse trace
+// context propagated to llm-service (ADR-0010).
+builder.Services.AddHttpContextAccessor();
 
 // Services
 builder.Services.AddScoped<IAuthService, AuthService>();

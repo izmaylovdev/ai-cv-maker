@@ -140,3 +140,26 @@ variable "github_repository" {
   type    = string
   default = "izmaylovdev/ai-cv-maker"
 }
+
+# --- Langfuse self-hosted VM (ADR-0011) ---
+
+# Master switch for the prod Langfuse stack. Default false: the config is
+# committed and validated but provisions nothing, so it ships without deploying.
+# Set true (terraform.tfvars) to go live — this is the only change needed.
+variable "langfuse_enabled" {
+  type    = bool
+  default = false
+}
+
+# e2-small (2 GB) is the cheapest size that fits the whole stack. ClickHouse is
+# memory-hungry; bump to e2-medium (4 GB) if it OOMs under real load.
+variable "langfuse_vm_machine_type" {
+  type    = string
+  default = "e2-small"
+}
+
+# Email for the initial Langfuse UI admin user (auto-provisioned on first boot).
+variable "langfuse_admin_email" {
+  type    = string
+  default = "admin@applysy.works"
+}

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# VM startup script for the production Langfuse stack (ADR-0011).
+# Rendered by Terraform (infra/langfuse.tf) via templatefile(); runs on every
+# boot. All steps are idempotent so a reboot re-converges rather than breaking.
+set -euo pipefail
+
+LANGFUSE_DIR=/opt/langfuse
+DATA_DIR="${data_dir}"
+DATA_DEVICE=/dev/disk/by-id/google-langfuse-data
+
+# ── 1. Mount the persistent data disk (format only if blank) ──────────────────
+mkdir -p "$DATA_DIR"
+if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+  mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard "$DATA_DEVICE"
+fi
+grep -q "$DATA_DIR" /etc/fstab || \
+  echo "$DATA_DEVICE $DATA_DIR ext4 defaults,nofail 0 2" >> /etc/fstab
+mount -a
+mkdir -p "$DATA_DIR/clickhouse" "$DATA_DIR/minio"
+
+# ── 2. Install Docker Engine + compose plugin (idempotent) ────────────────────
+if ! command -v docker >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y ca-certificates curl gnupg
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  chmod a+r /etc/apt/keyrings/docker.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+    > /etc/apt/sources.list.d/docker.list
+  apt-get update
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  systemctl enable --now docker
+fi
+
+# ── 3. Render the compose file and the secret .env ────────────────────────────
+mkdir -p "$LANGFUSE_DIR"
+
+cat > "$LANGFUSE_DIR/docker-compose.prod.yml" <<'COMPOSE_EOF'
+${compose_yaml}
+COMPOSE_EOF
+
+# .env is root-only; it carries every runtime secret (ADR-0011).
+umask 077
+cat > "$LANGFUSE_DIR/.env" <<EOF
+LANGFUSE_DATA_DIR=$DATA_DIR
+POSTGRES_HOST=${postgres_host}
+POSTGRES_USER=${postgres_user}
+POSTGRES_PASSWORD=${postgres_password}
+LANGFUSE_PUBLIC_KEY=${langfuse_public_key}
+LANGFUSE_SECRET_KEY=${langfuse_secret_key}
+LANGFUSE_SALT=${langfuse_salt}
+LANGFUSE_ENCRYPTION_KEY=${langfuse_encryption_key}
+NEXTAUTH_SECRET=${nextauth_secret}
+LANGFUSE_NEXTAUTH_URL=${nextauth_url}
+CLICKHOUSE_PASSWORD=${clickhouse_password}
+REDIS_PASSWORD=${redis_password}
+MINIO_ROOT_PASSWORD=${minio_root_password}
+LANGFUSE_INIT_USER_EMAIL=${init_user_email}
+LANGFUSE_INIT_USER_PASSWORD=${init_user_password}
+EOF
+umask 022
+
+# ── 4. Bring the stack up (pulls images over the ephemeral egress IP) ──────────
+cd "$LANGFUSE_DIR"
+docker compose --env-file "$LANGFUSE_DIR/.env" -f docker-compose.prod.yml pull
+docker compose --env-file "$LANGFUSE_DIR/.env" -f docker-compose.prod.yml up -d

@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using CvApi.Domain.Entities;
 using CvApi.Grpc;
 using CvApi.Infrastructure.Services;
 using Grpc.Core;
+using Microsoft.AspNetCore.Http;
 using Polly;
 using Polly.Registry;
 
@@ -11,6 +13,7 @@ namespace CvApi.Infrastructure.ExternalServices.Llm;
 public class LlmService(
     CvApi.Grpc.LlmService.LlmServiceClient grpcClient,
     TraceContext trace,
+    IHttpContextAccessor httpContextAccessor,
     ResiliencePipelineProvider<string> pipelineProvider) : ILlmService
 {
     /// <summary>Key used to register the Polly resilience pipeline in DI.</summary>
@@ -20,8 +23,22 @@ public class LlmService(
 
     private ResiliencePipeline Pipeline => pipelineProvider.GetPipeline(ResiliencePipelineKey);
 
-    private static CallOptions DefaultCallOptions =>
-        new(deadline: DateTime.UtcNow.Add(CallDeadline));
+    /// <summary>
+    /// Per-call options carrying the deadline plus Langfuse trace-context headers
+    /// (ADR-0010): the cv-api request correlation id and the authenticated user id,
+    /// so the llm-service trace links back to this request's <see cref="RequestSpan"/> rows.
+    /// </summary>
+    private CallOptions DefaultCallOptions
+    {
+        get
+        {
+            var metadata = new Metadata { { "x-trace-id", trace.TraceId.ToString() } };
+            var userId = httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!string.IsNullOrEmpty(userId))
+                metadata.Add("x-user-id", userId);
+            return new CallOptions(headers: metadata, deadline: DateTime.UtcNow.Add(CallDeadline));
+        }
+    }
 
 
     private static LlmTokenUsage MapUsage(CvApi.Grpc.UsageMetadata? usage) =>

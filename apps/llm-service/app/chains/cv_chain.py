@@ -9,6 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
+from app import observability
 from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.guards import guard_cv_text, guard_free_text
@@ -173,7 +174,9 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: s
     system_prompt = _SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
         system_prompt = f"{_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
-    message = await client.messages.create(
+    message = await observability.anthropic_create(
+        client,
+        name="generate",
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
         temperature=app_settings.llm_temperature(),
@@ -257,7 +260,7 @@ async def _invoke_llm_for_generate(
         SystemMessage(content=system_prompt),
         HumanMessage(content=_HUMAN_PROMPT.format(**inputs)),
     ]
-    response = await llm.ainvoke(messages)
+    response = await observability.lc_invoke(llm, messages, name="generate")
     result = _parse_generate_response_json(str(response.content))
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
     return result, usage
@@ -350,7 +353,9 @@ async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferenc
     system_prompt = _OPTIMIZE_SYSTEM_PROMPT
     if global_preferences and global_preferences.strip():
         system_prompt = f"{_OPTIMIZE_SYSTEM_PROMPT}\n\nUser preferences (apply to all output):\n{global_preferences}"
-    message = await client.messages.create(
+    message = await observability.anthropic_create(
+        client,
+        name="optimize",
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
         temperature=app_settings.llm_temperature(),
@@ -378,7 +383,7 @@ async def _invoke_llm_for_optimize(
         SystemMessage(content=system_prompt),
         HumanMessage(content=_OPTIMIZE_HUMAN_PROMPT.format(**inputs)),
     ]
-    response = await llm.ainvoke(messages)
+    response = await observability.lc_invoke(llm, messages, name="optimize")
     result = _parse_optimize_response_json(str(response.content))
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
     return result, usage
@@ -436,7 +441,9 @@ async def _enhance_field_foundry_raw(content: str, field_purpose: str, provider:
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
     client = _build_anthropic_messages_client(provider)
     user_content = _ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)
-    message = await client.messages.create(
+    message = await observability.anthropic_create(
+        client,
+        name="enhance",
         model=model,
         max_tokens=1024,
         temperature=app_settings.llm_temperature(),
@@ -464,7 +471,7 @@ async def enhance_field(content: str, field_purpose: str) -> tuple[str, TokenUsa
         SystemMessage(content=_ENHANCE_SYSTEM_PROMPT),
         HumanMessage(content=_ENHANCE_HUMAN_PROMPT.format(content=content, field_purpose=field_purpose)),
     ]
-    response = await llm.ainvoke(messages)
+    response = await observability.lc_invoke(llm, messages, name="enhance")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
     return str(response.content).strip(), usage
 
@@ -516,7 +523,9 @@ async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
         raise ValueError("Set LLM_MODEL or ANTHROPIC_FOUNDRY_DEPLOYMENT to your Foundry deployment name.")
     client = _build_anthropic_messages_client(provider)
     user_content = _EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)
-    message = await client.messages.create(
+    message = await observability.anthropic_create(
+        client,
+        name="extract",
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
         temperature=0,
@@ -545,7 +554,7 @@ async def extract_profile(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
         SystemMessage(content=_EXTRACT_SYSTEM_PROMPT),
         HumanMessage(content=_EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)),
     ]
-    response = await llm.ainvoke(messages)
+    response = await observability.lc_invoke(llm, messages, name="extract")
     result = _parse_extract_response_json(str(response.content))
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
     return result, usage
