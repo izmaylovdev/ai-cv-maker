@@ -46,7 +46,47 @@ docker compose up --build
 | LLM service | http://localhost:8080 |
 | PostgreSQL | localhost:5433 |
 
-### Local frontend dev
+### One-line dev environment
+
+Run the whole app stack with hot reload in a single command. It starts the
+Postgres dependency in Docker, then runs every app's dev server concurrently
+with prefixed logs. Press `Ctrl-C` to tear it all down.
+
+```sh
+npm run dev                  # postgres + cv-api + llm-service + ui-angular + chat-ui
+npm run dev -- --with-admin  # also start admin-db + admin-api + admin-ui
+npm run dev -- --with-obs    # also start Langfuse and trace the host llm-service
+```
+
+Flags can be combined (`npm run dev -- --with-admin --with-obs`).
+
+Or via `make` (run `make help` for the list):
+
+```sh
+make dev        # same as npm run dev
+make dev-admin  # + admin stack
+make dev-obs    # + Langfuse tracing
+make dev-all    # + admin stack + tracing
+```
+
+| Server | Dev URL |
+|--------|---------|
+| ui-angular (`app`) | http://localhost:4200 |
+| chat-ui (`chat`) | http://localhost:4202 |
+| cv-api | http://localhost:5050 |
+| llm-service | gRPC :50051 |
+| Langfuse (`--with-obs`) | http://localhost:3030 |
+
+> cv-api on the host reads secrets from .NET User Secrets — run the loader once
+> (see [Run cv-api on the host](#run-cv-api-on-the-host-net-dev)).
+
+> `--with-obs` covers **LLM tracing** (Langfuse): it brings up the Langfuse
+> overlay and injects the local `LANGFUSE_*` keys into the host `llm-service` so
+> traces flow automatically. Metrics (Prometheus/Grafana) scrape the
+> *containerized* services and are not part of this host-reload workflow — use
+> the full `docker compose up` stack for those.
+
+### Local frontend dev only
 
 ```sh
 npx nx serve ui-angular
