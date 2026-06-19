@@ -125,7 +125,11 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    # >= 2025 release: accepts the AWS SDK v3 (>=3.729) flexible/CRC32 checksums on
+    # bulk DeleteObjects. The 2024-12-18 release required a legacy Content-MD5 header
+    # the newer SDK no longer sends, so score/trace/dataset deletion failed in the
+    # worker ("Failed to delete files from S3" → MinIO 400 MissingContentMD5).
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     # Pre-creating /data/langfuse makes the path-style "langfuse" bucket exist.
     entrypoint: sh

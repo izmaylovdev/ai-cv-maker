@@ -53,6 +53,19 @@
         "command": "python3 -m py_compile app/main.py app/schemas.py app/chains/cv_chain.py && echo 'Syntax OK'",
         "cwd": "apps/llm-service"
       }
+    },
+    "evals": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["install"],
+      "options": {
+        "command": ".venv/bin/python -m evals.run_evals",
+        "cwd": "apps/llm-service",
+        "env": {
+          "LANGFUSE_PUBLIC_KEY": "pk-lf-local-dev",
+          "LANGFUSE_SECRET_KEY": "sk-lf-local-dev",
+          "LANGFUSE_HOST": "http://localhost:3030"
+        }
+      }
     }
   }
 }
