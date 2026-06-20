@@ -73,6 +73,7 @@ make dev-all    # + admin stack + tracing
 |--------|---------|
 | ui-angular (`app`) | http://localhost:4200 |
 | chat-ui (`chat`) | http://localhost:4202 |
+| profile-builder-ui (experimental, `npm run serve:builder`) | http://localhost:4203 |
 | cv-api | http://localhost:5050 |
 | llm-service | gRPC :50051 |
 | Langfuse (`--with-obs`) | http://localhost:3030 |

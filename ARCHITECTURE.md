@@ -2,7 +2,7 @@
 
 ## Overview
 
-Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with nine apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
+Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with ten apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an experimental document-builder widget (`profile-builder-ui`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
 
 ```
 Browser ──────────────────────────────┐        Chrome extension (job auto-fill)
@@ -193,6 +193,39 @@ The widget is served from its own Nginx Docker container. Angular's Nginx proxie
 ```
 Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widget.js
 ```
+
+---
+
+### `apps/profile-builder-ui` — Document Builder Widget (React Web Component, experimental)
+
+A new **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. It is built and evaluated **in parallel** with the structured split-panel editor in `ui-angular` (it does not replace it).
+
+Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one document of general-purpose sections**, where each section can follow a predefined **template**: a blank free-form section, a **Timeline** (one generic dated-entries section — work experience, education, projects — entries with Title / Dates / Description, named via its heading), or a **List** section (a bulleted list of items, e.g. skills). The set of templates is an extensible registry.
+
+**Status:** UX-only phase. The widget operates on an in-memory `ProfileDocument` model (spec §7.2) that is deliberately **not** the persisted `Profile` shape — persistence, REST API, and CV-generation/AI wiring are intentionally deferred. See `doc/web-client/user-stories/profile-editing.md` (US-EDIT-8…12) and `doc/web-client/specs/profile-editing.md` §7.
+
+**Host-agnostic I/O** — no `fetch`, auth, or routing inside the widget:
+
+| Channel | Direction | Detail |
+|---|---|---|
+| `document` attribute (JSON) / `.document` property (object) | host → widget | Seed the document |
+| `documentchange` `CustomEvent` (`detail` = current `ProfileDocument`) | widget → host | Emitted on every edit |
+
+The `ProfileBuilder` React component also exposes a plain `{ document, onChange, templates? }` props interface for direct use in tests and the dev harness.
+
+**Build output**
+
+```
+dist/apps/profile-builder-ui/profile-builder.js   ← self-contained IIFE (~64 kB gzipped)
+```
+
+**Local development**
+
+```sh
+npm run serve:builder   # Vite dev server on port 4203 (wraps npx nx run profile-builder-ui:dev)
+```
+
+`apps/profile-builder-ui/index.html` mounts `<applysy-profile-builder>` seeded with a sample document — the primary surface for building and reviewing the UX. It uses the shared `@applysy/dev-shell` harness (`src/dev-shell.ts`) for the dev title bar and theme toggle, the same as `chat-ui` (the builder is host-agnostic and ignores the `auth-token` the shell sets). Embedding behind an experimental `ui-angular` route (reusing the chat-widget loader pattern) is deferred to a later step in this phase.
 
 ---
 

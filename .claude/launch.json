@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "profile-builder-ui",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["nx", "run", "profile-builder-ui:dev"],
+      "port": 4203,
+      "autoPort": false
+    }
+  ]
+}

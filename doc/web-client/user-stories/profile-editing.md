@@ -98,3 +98,76 @@ The profile editor is a split-panel screen: a form on the left and a live CV pre
 - A clear "Save" button is present in the editor.
 - A success notification confirms the save.
 - Unsaved changes are not lost on accidental navigation (the user is warned).
+
+---
+
+## Document Builder (experimental)
+
+A new editing experience that may eventually replace the structured split-panel
+editor above. It presents the profile as a **single editable document** built
+from **general-purpose sections**. Each section can be empty/free-form or follow
+a **predefined template** (e.g. a Timeline of dated entries — work experience,
+education, projects — each with Title, Dates, and Description; or a bulleted
+List). Delivered as a **standalone, reusable component** so it can be
+embedded and evaluated in parallel with the current editor. This phase is
+**UX-only**: stories below are scoped to the editing experience; persistence,
+API, and CV-generation wiring are deliberately out of scope and decided later.
+
+### US-EDIT-8 — Edit my profile as a single document
+
+**As a** user,
+**I want to** edit my profile as one continuous document made of stacked sections,
+**so that** building my profile feels like writing a document rather than filling separate forms.
+
+**Acceptance criteria:**
+- The builder renders as a single scrollable document composed of vertically stacked sections.
+- I can edit content directly in place; there is no separate "edit mode" toggle per field.
+- An empty document shows clear guidance on how to add my first section.
+
+### US-EDIT-9 — Add sections from a template palette
+
+**As a** user,
+**I want to** add a new section by choosing from a list of section templates (including a blank/general-purpose one),
+**so that** I get the right structure for the content I'm about to write without building it by hand.
+
+**Acceptance criteria:**
+- An "Add section" action presents a palette of available templates, including at least a general-purpose (blank) section and a Timeline (dated entries) section.
+- Each template shows a name and a short description of what it's for.
+- Choosing a template inserts a new section at the chosen position in the document.
+- Each template seeds the section with its predefined fields/placeholders.
+
+### US-EDIT-10 — Structured dated entries via the Timeline template
+
+**As a** user,
+**I want to** a single Timeline template that gives each entry a Title, a Dates field, and a Description, which I can name (via its heading) for work experience, education, projects, etc.,
+**so that** any dated history is captured with consistent structure without duplicate templates or me defining the fields.
+
+**Acceptance criteria:**
+- A Timeline section holds one or more entries, each with Title, a Dates field, and a Description.
+- The Dates field is a single free-text field I type the range into (e.g. "Jan 2022 – Present").
+- I can rename the section via its heading (e.g. "Work Experience", "Education").
+- I can add and remove entries within the section.
+- The template's field labels and placeholders make the expected content obvious.
+
+### US-EDIT-11 — General-purpose (free-form) sections
+
+**As a** user,
+**I want to** add a general-purpose section with a heading and free-form rich text,
+**so that** I can capture content that doesn't fit a predefined template.
+
+**Acceptance criteria:**
+- A general-purpose section has an editable heading and a free-form text body.
+- The section places no constraints on the body content beyond plain rich text.
+- A general-purpose section can be added, edited, and removed like any other.
+
+### US-EDIT-12 — Reorder and remove sections and items
+
+**As a** user,
+**I want to** reorder sections within the document and remove ones I don't need,
+**so that** I control the structure and flow of my profile document.
+
+**Acceptance criteria:**
+- Sections can be reordered within the document via drag-and-drop.
+- Any section can be removed, with confirmation when it contains content.
+- Items within a templated section (e.g. a Timeline) can likewise be reordered and removed.
+- The document's visual order reflects the order I set at all times.

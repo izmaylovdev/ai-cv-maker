@@ -1,0 +1,297 @@
+/* The builder is a single sheet of paper, edited in place — not a form.
+   Inputs are borderless and inherit document typography; affordances (drag,
+   reorder, remove) stay hidden until you hover the section/item. */
+
+.pb-root {
+  --pb-fg: #1f2430;
+  --pb-soft: #3a3f47;
+  --pb-muted: #8a909b;
+  --pb-rule: #e7e9ee;
+  --pb-hover: #f4f5f7;
+  --pb-focus: #eef0f4;
+  --pb-accent: #4f46e5;
+  --pb-danger: #dc2626;
+  --pb-paper: #ffffff;        /* the sheet */
+  --pb-panel: #ffffff;        /* floating tools / menus */
+  --pb-danger-bg: #fef2f2;
+  --pb-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 12px 40px rgba(16, 24, 40, 0.06);
+  --pb-paper-border: transparent;
+
+  box-sizing: border-box;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--pb-fg);
+  font-size: 15px;
+  line-height: 1.6;
+
+  max-width: 760px;
+  margin: 32px auto;
+  padding: 64px 72px 96px;
+  background: var(--pb-paper);
+  border: 1px solid var(--pb-paper-border);
+  border-radius: 6px;
+  box-shadow: var(--pb-shadow);
+}
+
+/* Dark theme — @applysy/theme toggles `.dark` on <html>. */
+.dark .pb-root {
+  --pb-fg: #e6e8ee;
+  --pb-soft: #c2c7d2;
+  --pb-muted: #8b93a3;
+  --pb-rule: #2b313c;
+  --pb-hover: #20242d;
+  --pb-focus: #272c37;
+  --pb-accent: #a5b4fc;
+  --pb-danger: #f87171;
+  --pb-paper: #16181d;
+  --pb-panel: #1f232b;
+  --pb-danger-bg: #3a1f1f;
+  --pb-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 16px 48px rgba(0, 0, 0, 0.45);
+  --pb-paper-border: #262b34;
+}
+
+.pb-root *,
+.pb-root *::before,
+.pb-root *::after { box-sizing: border-box; }
+
+/* Shared: borderless, document-styled editable text. */
+.pb-section__heading,
+.pb-item__title,
+.pb-item__dates,
+.pb-list__text,
+.pb-freeform__body,
+.pb-item__desc {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  transition: background 0.12s ease;
+}
+.pb-section__heading:hover,
+.pb-item__title:hover,
+.pb-item__dates:hover,
+.pb-freeform__body:hover,
+.pb-item__desc:hover { background: var(--pb-hover); }
+.pb-section__heading:focus,
+.pb-item__title:focus,
+.pb-item__dates:focus,
+.pb-freeform__body:focus,
+.pb-item__desc:focus { outline: none; background: var(--pb-focus); }
+/* List lines read as plain document text — no hover/focus box, just the caret. */
+.pb-list__text:focus { outline: none; }
+.pb-root ::placeholder { color: var(--pb-muted); }
+
+/* Empty state — still the paper, just quiet. */
+.pb-root--empty { padding-top: 96px; padding-bottom: 96px; }
+.pb-empty { text-align: center; color: var(--pb-muted); }
+.pb-empty__title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--pb-soft); }
+.pb-empty__hint { margin: 0 auto 22px; max-width: 380px; font-size: 14px; }
+
+/* Section */
+.pb-section { position: relative; margin-bottom: 30px; }
+.pb-section-wrap + .pb-section-wrap { margin-top: 0; }
+
+.pb-section__heading {
+  display: block;
+  width: calc(100% + 12px);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pb-muted);
+  padding-bottom: 7px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--pb-rule);
+  border-radius: 0;
+}
+.pb-section__heading:hover,
+.pb-section__heading:focus { background: transparent; color: var(--pb-soft); }
+.pb-section__body { display: block; }
+
+/* Drag handle — left gutter, on hover. */
+.pb-section__drag {
+  position: absolute;
+  left: -30px;
+  top: -2px;
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pb-section:hover .pb-section__drag { opacity: 0.7; }
+.pb-section__drag:active { cursor: grabbing; }
+
+/* Floating hover toolbar — top-right of the section. */
+.pb-section__tools {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pb-panel);
+  border: 1px solid var(--pb-rule);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+.pb-section:hover .pb-section__tools,
+.pb-section__tools:focus-within { opacity: 1; pointer-events: auto; }
+.pb-section__tools button,
+.pb-item__tools button {
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pb-section__tools button:hover:not(:disabled),
+.pb-item__tools button:hover:not(:disabled) { background: var(--pb-hover); color: var(--pb-fg); }
+.pb-section__tools button:disabled,
+.pb-item__tools button:disabled { opacity: 0.3; cursor: default; }
+.pb-tool-danger { color: var(--pb-danger) !important; }
+.pb-tool-danger:hover { background: var(--pb-danger-bg) !important; }
+
+/* Free-form body — reads as a paragraph. */
+.pb-freeform__body,
+.pb-item__desc {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  min-height: 1.6em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Work experience — résumé-style entries. */
+.pb-workexp { display: flex; flex-direction: column; gap: 18px; }
+.pb-item { position: relative; }
+.pb-item__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.pb-item__title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 15.5px;
+}
+.pb-item__dates {
+  flex-shrink: 0;
+  width: 180px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--pb-muted);
+}
+.pb-item__desc {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--pb-soft);
+}
+
+/* List section — a document bullet list. */
+.pb-list { list-style: none; margin: 0; padding: 0; }
+.pb-list__item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pb-list__bullet { color: var(--pb-muted); line-height: 1; }
+.pb-list__text { flex: 1; font-size: 14.5px; }
+
+/* Item controls — left gutter, on hover. */
+.pb-item__tools {
+  position: absolute;
+  left: -30px;
+  top: -2px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pb-item:hover .pb-item__tools,
+.pb-list__item:hover .pb-item__tools,
+.pb-item__tools:focus-within { opacity: 1; }
+.pb-item__tools button { padding: 2px 5px; font-size: 11px; }
+
+/* Quiet, link-like "add" affordances. */
+.pb-workexp__add,
+.pb-palette__trigger {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pb-workexp__add:hover,
+.pb-palette__trigger:hover { background: var(--pb-hover); color: var(--pb-accent); }
+
+.pb-add-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--pb-rule);
+}
+.pb-add-more .pb-palette__trigger { align-self: center; margin-left: 0; }
+.pb-empty .pb-palette { display: inline-block; }
+.pb-empty .pb-palette__trigger {
+  color: var(--pb-accent);
+  border: 1px solid var(--pb-rule);
+  padding: 8px 16px;
+  font-weight: 600;
+}
+
+/* Palette popover */
+.pb-palette { position: relative; }
+.pb-palette__menu {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  padding: 6px;
+  list-style: none;
+  min-width: 300px;
+  background: var(--pb-panel);
+  border: 1px solid var(--pb-rule);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.16);
+}
+.pb-palette__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--pb-fg);
+}
+.pb-palette__item:hover { background: var(--pb-hover); }
+.pb-palette__name { font-weight: 600; font-size: 14px; }
+.pb-palette__desc { font-size: 12px; color: var(--pb-muted); }

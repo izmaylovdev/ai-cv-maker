@@ -185,3 +185,183 @@ Both lists must support keyboard accessibility (arrow keys to move, Enter/Space 
 - Auto-save / draft mode
 - Undo/redo history
 - Collaborative editing
+
+---
+
+## 7. Document Builder (US-EDIT-8 – US-EDIT-12)
+
+> **Status:** Draft — **UX-only phase.** This section specifies a new editing
+> experience delivered as a standalone, reusable **React** component, packaged
+> as a self-contained web component and embedded in the Angular SPA — the same
+> pattern as the existing `apps/chat-ui` chat widget (Angular remains the sole
+> production SPA per CLAUDE.md; this is an embedded widget, not a second SPA).
+> It is built and evaluated in parallel with the structured editor in sections
+> 1–6; it does not replace it yet. Persistence, REST API, data-model changes,
+> and CV-generation/AI wiring are **explicitly deferred** (see §7.5). During
+> this phase the component operates on an **in-memory document model** supplied
+> and read back by the host via the web component's I/O.
+
+### 7.1 Functional Requirements
+
+#### Document canvas (US-EDIT-8)
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-8.1 | The builder renders as a single, vertically scrollable document composed of stacked sections. |
+| F-EDIT-8.2 | Content is edited in place — there is no per-field or per-section "edit mode" toggle. |
+| F-EDIT-8.3 | When the document has no sections, an empty state is shown with a primary "Add section" affordance and guidance text. |
+| F-EDIT-8.4 | The component reflects the supplied document model on load and emits the updated model on every change (UX phase: no persistence side effects). |
+
+#### Template palette (US-EDIT-9)
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-9.1 | An "Add section" action opens a palette listing the available section templates. |
+| F-EDIT-9.2 | The palette includes a **General-purpose (blank)** template, a **Timeline** (dated entries) template, and a **List** (bulleted) template. |
+| F-EDIT-9.3 | Each palette entry shows the template name and a one-line description of its purpose. |
+| F-EDIT-9.4 | Selecting a template inserts a new section at the requested position (end of document by default, or relative to the invoking insertion point). |
+| F-EDIT-9.5 | A newly inserted section is seeded from the template (heading text, placeholder fields, and — for item-based templates — one empty starter item). |
+| F-EDIT-9.6 | The set of templates is sourced from an extensible registry, so additional templates can be added later without changing the canvas. |
+
+#### Timeline template (US-EDIT-10)
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-10.1 | A Timeline is a single generic dated-entries section (suiting work experience, education, projects, …); it contains an ordered list of items, each with Title, a single free-text Dates field, and a Description. The user names the section via its editable heading. |
+| F-EDIT-10.2 | Users can add an item (appended to the section) and remove any item. |
+| F-EDIT-10.3 | The Dates field is free text the user types as a single range (e.g. "Jan 2022 – Present"); the builder does not parse or auto-derive it. |
+| F-EDIT-10.4 | Each field shows a descriptive label and placeholder that make the expected content obvious (e.g. Title → "Title — role, degree, or project", Dates → "Jan 2022 – Present"). |
+
+#### General-purpose section (US-EDIT-11)
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-11.1 | A general-purpose section has an editable heading and a free-form multi-line text body. |
+| F-EDIT-11.2 | The body imposes no structural constraints beyond plain (UX-phase) text; rich-text formatting is out of scope (§7.5). |
+| F-EDIT-11.3 | A general-purpose section supports the same add / edit / remove lifecycle as any other section. |
+
+#### Reorder & remove (US-EDIT-12)
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-12.1 | Sections can be reordered within the document via drag-and-drop, with an accessible keyboard/arrow-button fallback. |
+| F-EDIT-12.2 | Any section can be removed; removal of a non-empty section requires confirmation. |
+| F-EDIT-12.3 | Items within a **Timeline** section can be reordered and removed via hover controls. |
+| F-EDIT-12.4 | The rendered order always matches the model order; the emitted model reflects every reorder. |
+| F-EDIT-12.5 | **List** items are edited like a document — Enter starts a new bullet, Backspace at the start of a line removes/merges it, Arrow Up/Down move between lines — without per-item buttons. |
+
+### 7.2 Document Model (in-memory, UX phase)
+
+The widget is driven by a plain, serialisable (JSON-safe) model. It is **not** the
+persisted `Profile` shape (§3); mapping between the two is a later concern (§7.5).
+
+```ts
+type SectionTemplateId = 'free-form' | 'timeline' | 'list'; // extensible
+
+interface ProfileDocument {
+  sections: DocumentSection[];
+}
+
+type DocumentSection = FreeFormSection | EntrySection | ListSection;
+
+interface SectionBase {
+  id: string;            // client-generated (e.g. crypto.randomUUID())
+  template: SectionTemplateId;
+  heading: string;
+}
+
+interface FreeFormSection extends SectionBase {
+  template: 'free-form';
+  body: string;
+}
+
+// A "Timeline": one generic dated-entries section that suits work experience,
+// education, projects, etc. The user names it via the (editable) heading.
+interface EntrySection extends SectionBase {
+  template: 'timeline';
+  items: EntryItem[];
+}
+
+interface EntryItem {
+  id: string;
+  title: string;
+  dates: string;         // free-text range, e.g. "Jan 2022 – Present"
+  description: string;
+}
+
+interface ListSection extends SectionBase {
+  template: 'list';
+  items: ListItem[];     // a simple bulleted list (skills, tools, …)
+}
+
+interface ListItem {
+  id: string;
+  text: string;
+}
+```
+
+A **template registry** describes each available template and how to create a seeded section:
+
+```ts
+interface SectionTemplate {
+  id: SectionTemplateId;
+  name: string;          // shown in the palette
+  description: string;   // one-line purpose, shown in the palette
+  create(): DocumentSection;   // returns a seeded section with a fresh id
+}
+```
+
+### 7.3 Component / Library Design (React)
+
+#### Packaging
+
+- New Nx app `apps/profile-builder-ui` (React + Vite), mirroring `apps/chat-ui`: `project.json` with `build` (Vite IIFE lib), `dev`, and `test` (Vitest) targets; CSS bundled into the JS so the artifact is self-contained.
+- The build emits a single self-contained bundle (e.g. `profile-builder.js`) that registers a custom element **`<applysy-profile-builder>`** via `customElements.define`, exactly like `<ai-chat-widget>` in `apps/chat-ui/src/main.tsx`.
+- React internals are private; the public contract is the custom element's attributes/events plus the exported model types (§7.2).
+
+#### React component tree
+
+| Component | Responsibility |
+|---|---|
+| `ProfileBuilder` | Root. Holds document state (`useState<ProfileDocument>`), renders the canvas, the "Add section" palette trigger, the empty state, and section-level drag-and-drop. Emits changes upward. |
+| `SectionFrame` | Per-section chrome shared by all templates: drag handle, heading edit, remove action + confirmation, children slot. |
+| `EntrySection` | Renders/edits a Timeline section (one generic dated-entries type): item list, add/remove/reorder items. |
+| `EntryItem` | Single dated entry: Title, free-text Dates, Description. |
+| `ListSection` | Renders/edits a bulleted List section **like a document** (Word / Google Docs): Enter starts a new bullet (splitting at the caret), Backspace at the start of a line merges it into the previous one, Arrow Up/Down move between lines. No per-item buttons. |
+| `FreeFormSection` | Renders/edits a general-purpose section: heading + free-form body. |
+| `AddSectionPalette` | Lists templates from the registry; calls back with the chosen template + insert position. |
+
+- Drag-and-drop via a lightweight React DnD approach (HTML5 drag events or a small library), with an accessible arrow-button fallback (F-EDIT-12.1). No Angular CDK.
+
+#### Web-component I/O (UX phase)
+
+The custom element is the host-agnostic boundary — no `fetch`, no auth, no routing inside it:
+
+| Channel | Direction | Detail |
+|---|---|---|
+| `document` attribute/property | host → widget | Initial `ProfileDocument` as a JSON string (attribute) or object (property), mirroring chat-ui's `auth-token` / `api-base` attribute style. |
+| `documentchange` `CustomEvent` | widget → host | Dispatched on every edit; `event.detail` carries the current `ProfileDocument`. |
+
+- The `ProfileBuilder` React component also has a plain props interface (`document`, `onChange`) so it can be used directly in React contexts (tests, Storybook-style harness) without the custom-element wrapper.
+
+#### Theming
+
+- Light and dark themes are driven entirely by CSS custom properties on `.pb-root`. Dark values are applied under `.dark .pb-root`, matching `@applysy/theme`'s convention of toggling a `dark` class on `<html>` — so the widget follows the host's theme (and the dev-shell toggle) with no JS.
+
+#### Template extensibility
+
+- A default registry (`DEFAULT_SECTION_TEMPLATES`) ships with `free-form`, `timeline`, and `list`.
+- The registry is passed in (prop) with the default applied when absent, so a host can supply additional templates without modifying the widget.
+
+### 7.4 Demo / Harness
+
+- **Standalone dev harness:** `apps/profile-builder-ui` runs on its own Vite dev server (own port, mirroring chat-ui's 4202) with an `index.html` that mounts the widget seeded with an in-memory sample document — the primary surface for building and reviewing the UX. No backend calls.
+- **Angular embedding (optional, later in this phase):** load the bundle via a script loader and render `<applysy-profile-builder>` behind an experimental route in `apps/ui-angular` (e.g. `/profiles/:id/document`), reusing the chat-widget loader pattern (`chat-loader.service.ts`, `chatWidgetUrl` env entry).
+
+### 7.5 Out of Scope (this phase)
+
+- Persistence, REST API, and DB/data-model changes (deferred — decided after UX is settled).
+- Mapping the document model to/from the structured `Profile` (§3) and wiring CV generation, PDF export, AI optimize, and chat.
+- Rich-text formatting, auto-save, undo/redo, collaborative editing (consistent with §6).
+- Date pickers / validation on Timeline entry dates (free-text in UX phase).
+- Additional templates beyond General-purpose, Timeline, and List (registry-ready, but not built now).
