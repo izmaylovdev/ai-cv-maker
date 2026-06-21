@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createEditor } from 'lexical';
-import { WIDGET_NODES } from './lexical/widget-nodes';
+import { $getRoot, createEditor } from 'lexical';
+import { WIDGET_NODES, $isSectionNode } from './lexical/widget-nodes';
 import { loadDocument, readDocument } from './serialize';
 import {
   chipsNode,
@@ -94,5 +94,46 @@ describe('serialize round-trip (ADR-0014 §9.4 — hard requirement)', () => {
     loadDocument(editor, rootNode([sectionNode('Keep')]));
     const out = readDocument(editor, 'root-id');
     expect(out.children.every((c) => c.type === 'section')).toBe(true);
+  });
+});
+
+describe('section reorder primitive (F-EDIT-14.3)', () => {
+  // The exact node operations the move-up / move-down rail controls perform; the
+  // rail UI itself is verified in-browser (jsdom does not render the editor's
+  // laid-out content the rail positions against).
+  const order = (body: RootNode) => body.children.map((s) => s.attrs?.['heading']);
+
+  it('moves a section up (before its previous sibling), content and all', () => {
+    const editor = makeEditor();
+    const summary = sectionNode('A');
+    summary.children = [paragraphNode('a-body')];
+    const body = rootNode([summary, sectionNode('B'), sectionNode('C')]);
+    loadDocument(editor, body);
+    editor.update(
+      () => {
+        const sections = $getRoot().getChildren().filter($isSectionNode);
+        sections[1].getPreviousSibling()?.insertBefore(sections[1]); // move B up
+      },
+      { discrete: true },
+    );
+    const out = readDocument(editor, body.id);
+    expect(order(out)).toEqual(['B', 'A', 'C']);
+    // A still carries its body content after the move.
+    const a = out.children.find((s) => s.attrs?.['heading'] === 'A');
+    expect(a?.children?.[0]?.children?.[0]?.attrs?.['text']).toBe('a-body');
+  });
+
+  it('moves a section down (after its next sibling)', () => {
+    const editor = makeEditor();
+    const body = rootNode([sectionNode('A'), sectionNode('B'), sectionNode('C')]);
+    loadDocument(editor, body);
+    editor.update(
+      () => {
+        const sections = $getRoot().getChildren().filter($isSectionNode);
+        sections[0].getNextSibling()?.insertAfter(sections[0]); // move A down
+      },
+      { discrete: true },
+    );
+    expect(order(readDocument(editor, body.id))).toEqual(['B', 'A', 'C']);
   });
 });

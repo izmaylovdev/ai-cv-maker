@@ -52,6 +52,13 @@ describe('ProfileBuilder — single Lexical document (US-EDIT-14)', () => {
   it.todo('inserts a chips widget into the current section (browser-verified)');
   it.todo('inserts a timeline widget into the current section (browser-verified)');
 
+  // The move-up/down + drag reorder rail (F-EDIT-14.3) renders an overlay
+  // positioned against the editor's laid-out sections, which jsdom does not
+  // provide. The reorder is verified end-to-end in the browser (a single click =
+  // a single move, correct order); the node operations it performs are covered
+  // deterministically by the "section reorder primitive" tests in serialize.test.
+  it.todo('reorders sections via the move-up/down + drag rail (browser-verified)');
+
   it('does not emit a no-op change when the host echoes the same body back', () => {
     const onChange = vi.fn();
     const doc = docWithOneSection();

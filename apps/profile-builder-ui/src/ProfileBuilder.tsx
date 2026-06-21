@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './ProfileBuilder.css';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
@@ -9,6 +9,7 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $isRangeSelection,
@@ -94,6 +95,7 @@ export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
             }
             ErrorBoundary={LexicalErrorBoundary}
           />
+          <SectionControls />
         </div>
         <HistoryPlugin />
         <ListPlugin />
@@ -201,4 +203,131 @@ function currentSection(): ElementNode | null {
     .getChildren()
     .filter((n): n is ElementNode => $isSectionNode(n));
   return sections.length ? sections[sections.length - 1] : null;
+}
+
+interface SectionHandle {
+  key: string;
+  top: number;
+  first: boolean;
+  last: boolean;
+}
+
+/**
+ * Section reorder controls (F-EDIT-14.3). Sections are `SectionNode`s at the root
+ * of the one editor; reordering is moving a node among root's children. Rendered
+ * as an overlay rail in the left gutter (outside the contentEditable, so it does
+ * not interfere with editing): a move-up / move-down pair plus a drag handle per
+ * section. Positions track the live DOM via the editor's update listener.
+ */
+function SectionControls() {
+  const [editor] = useLexicalComposerContext();
+  const [handles, setHandles] = useState<SectionHandle[]>([]);
+  const dragKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const recompute = () => {
+      const root = editor.getRootElement();
+      const base = root ? root.getBoundingClientRect().top : 0;
+      const next: SectionHandle[] = [];
+      // Derive the controls from editor STATE (section nodes + order); the DOM
+      // rect only supplies vertical position, so a control still renders before
+      // layout (and in jsdom, where rects are 0).
+      editor.getEditorState().read(() => {
+        const sections = $getRoot()
+          .getChildren()
+          .filter((n): n is ElementNode => $isSectionNode(n));
+        sections.forEach((node, i) => {
+          const el = editor.getElementByKey(node.getKey());
+          next.push({
+            key: node.getKey(),
+            top: el ? el.getBoundingClientRect().top - base : 0,
+            first: i === 0,
+            last: i === sections.length - 1,
+          });
+        });
+      });
+      setHandles(next);
+    };
+    recompute();
+    const unregister = editor.registerUpdateListener(recompute);
+    window.addEventListener('resize', recompute);
+    return () => {
+      unregister();
+      window.removeEventListener('resize', recompute);
+    };
+  }, [editor]);
+
+  const moveSection = (key: string, dir: -1 | 1) =>
+    editor.update(() => {
+      const node = $getNodeByKey(key);
+      if (!$isSectionNode(node)) return;
+      if (dir < 0) node.getPreviousSibling()?.insertBefore(node);
+      else node.getNextSibling()?.insertAfter(node);
+    });
+
+  const dropOn = (targetKey: string) => {
+    const sourceKey = dragKey.current;
+    dragKey.current = null;
+    if (!sourceKey || sourceKey === targetKey) return;
+    editor.update(() => {
+      const source = $getNodeByKey(sourceKey);
+      const target = $getNodeByKey(targetKey);
+      if (!$isSectionNode(source) || !$isSectionNode(target)) return;
+      if (source.getIndexWithinParent() < target.getIndexWithinParent()) {
+        target.insertAfter(source);
+      } else {
+        target.insertBefore(source);
+      }
+    });
+  };
+
+  if (handles.length === 0) return null;
+
+  return (
+    <div className="pb-section-rail" aria-label="Reorder sections">
+      {handles.map((h) => (
+        <div
+          key={h.key}
+          className="pb-section-rail__group"
+          style={{ top: h.top }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => dropOn(h.key)}
+        >
+          <button
+            type="button"
+            className="pb-rail-btn pb-rail-handle"
+            aria-label="Drag to reorder section"
+            title="Drag to reorder"
+            draggable
+            onDragStart={() => {
+              dragKey.current = h.key;
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            ⠿
+          </button>
+          <button
+            type="button"
+            className="pb-rail-btn"
+            aria-label="Move section up"
+            disabled={h.first}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => moveSection(h.key, -1)}
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            className="pb-rail-btn"
+            aria-label="Move section down"
+            disabled={h.last}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => moveSection(h.key, 1)}
+          >
+            ▼
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 }

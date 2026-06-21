@@ -462,3 +462,39 @@
 /* Chip input hugs its text. */
 .pb-chip__field { display: inline-flex; }
 .pb-chip__text { min-width: 2ch; }
+
+/* Section reorder rail — overlay in the left gutter (F-EDIT-14.3). */
+.pb-doc { position: relative; }
+.pb-section-rail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pb-section-rail__group {
+  position: absolute;
+  left: -38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pb-doc:hover .pb-section-rail__group { opacity: 0.45; }
+.pb-section-rail__group:hover,
+.pb-section-rail__group:focus-within { opacity: 1; }
+.pb-rail-btn {
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pb-rail-btn:hover:not(:disabled) { background: var(--pb-hover); color: var(--pb-fg); }
+.pb-rail-btn:disabled { opacity: 0.3; cursor: default; }
+.pb-rail-handle { cursor: grab; font-size: 11px; }
+.pb-rail-handle:active { cursor: grabbing; }
