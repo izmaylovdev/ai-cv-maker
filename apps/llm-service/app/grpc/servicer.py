@@ -15,17 +15,31 @@ from app.preprocessing.link_enricher import LinkFetchError
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
 from app.guards import InputTooLongError, InvalidInputError
 from app.schemas import (
-    DocumentSection,
+    BlockNode,
     ProfileDocument,
     ProfileHeader,
-    SectionItem,
 )
 
 _INVALID_ARG_EXCEPTIONS = (ValidationError, InputTooLongError, InvalidInputError, LinkFetchError)
 
 
+def _proto_node_to_block(node) -> BlockNode:
+    # Recursively map a proto ProfileNode into a BlockNode (ADR-0014 §9.2).
+    return BlockNode(
+        type=node.type,
+        id=node.id,
+        attrs=dict(node.attrs),
+        children=[_proto_node_to_block(c) for c in node.children],
+    )
+
+
 def _proto_to_document(proto) -> ProfileDocument:
     header = proto.header
+    body = (
+        _proto_node_to_block(proto.body)
+        if proto.HasField("body")
+        else BlockNode(type="root")
+    )
     return ProfileDocument(
         id=proto.id or None,
         header=ProfileHeader(
@@ -35,25 +49,16 @@ def _proto_to_document(proto) -> ProfileDocument:
             phone=header.phone,
             location=header.location,
         ),
-        sections=[
-            DocumentSection(
-                id=s.id,
-                template=s.template or "free-form",
-                heading=s.heading,
-                body=s.body or None,
-                items=[
-                    SectionItem(
-                        id=i.id,
-                        title=i.title or None,
-                        dates=i.dates or None,
-                        description=i.description or None,
-                        text=i.text or None,
-                    )
-                    for i in s.items
-                ] or None,
-            )
-            for s in proto.sections
-        ],
+        body=body,
+    )
+
+
+def _block_to_proto_node(node: BlockNode):
+    return llm_service_pb2.ProfileNode(
+        type=node.type,
+        id=node.id,
+        attrs=dict(node.attrs),
+        children=[_block_to_proto_node(c) for c in node.children],
     )
 
 
@@ -67,25 +72,7 @@ def _document_to_proto(doc: ProfileDocument):
             phone=doc.header.phone,
             location=doc.header.location,
         ),
-        sections=[
-            llm_service_pb2.DocumentSectionProto(
-                id=s.id,
-                template=s.template,
-                heading=s.heading,
-                body=s.body or "",
-                items=[
-                    llm_service_pb2.SectionItemProto(
-                        id=i.id,
-                        title=i.title or "",
-                        dates=i.dates or "",
-                        description=i.description or "",
-                        text=i.text or "",
-                    )
-                    for i in (s.items or [])
-                ],
-            )
-            for s in doc.sections
-        ],
+        body=_block_to_proto_node(doc.body),
     )
 
 

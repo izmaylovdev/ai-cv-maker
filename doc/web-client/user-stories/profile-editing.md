@@ -193,3 +193,49 @@ PDF rendering all speak it.
 - I can add and remove individual chips; adding a chip and confirming an edit work via the keyboard.
 - The chosen order of chips is preserved and respected in the generated PDF.
 - The generated CV renders the section's items as chips/tags, not as a bulleted list.
+
+---
+
+## Block-based sections (supersedes template-per-section — ADR-0014)
+
+> **Supersedes US-EDIT-9 – US-EDIT-13.** US-EDIT-14 replaces the section model:
+> sections are no longer bound to a single template by type. The profile becomes
+> a **structured rich-text document** edited in one versatile editor, built from
+> a **closed set of predefined widgets** — **text** (a paragraph), **chips** (tag
+> cloud), **list** (bullets), and **timeline** (dated entries). Crucially the
+> document is a **tree**: widgets can nest inside other widgets (e.g. a list
+> inside a text block, or a list inside a timeline entry's description). The
+> "Add section" template palette is retired; the user composes content inline by
+> typing and inserting widgets anywhere. US-EDIT-9 – US-EDIT-13 are kept for
+> history; do not implement against them.
+
+### US-EDIT-14 — Compose the profile in a versatile widget editor
+
+**As a** user,
+**I want to** write my profile in a single rich-text editor where I can type
+text and insert predefined widgets (chips, lists, timelines) anywhere — including
+nested inside one another,
+**so that** I can shape my profile freely with structured content instead of
+being locked into fixed per-section templates.
+
+**Acceptance criteria:**
+- The whole profile body is one continuous rich-text document (a single editor
+  instance), not a stack of separate per-section editors; I add a section by
+  giving it a heading, with no up-front template choice.
+- Sections are structural blocks within that one document and I can reorder them
+  easily (drag handle / move up-down) without leaving the editor; reordering a
+  section moves all of its content with it.
+- I can insert any predefined widget — text, chips, list, or timeline — at the
+  caret, and only those predefined widgets are available (no arbitrary HTML).
+- Widgets can nest inside the rich-text content of other widgets where it makes
+  sense — e.g. a list inside a text block, or a list inside a timeline entry's
+  description — to the depth the editor allows.
+- Each widget keeps its editing affordances: text is free-form rich text; chips
+  are short tag items; list is bulleted items (each item itself rich content);
+  timeline holds dated entries with Title, Dates, and a rich-content Description.
+- I can reorder and remove individual widgets and sections; the document's
+  visual order always reflects the order I set.
+- An empty section/document shows guidance prompting me to start typing or insert
+  my first widget.
+- The generated CV and live rendering reflect each widget in its type, nesting,
+  and order.

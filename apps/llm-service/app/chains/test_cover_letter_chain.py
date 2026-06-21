@@ -3,49 +3,42 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.chains.usage import TokenUsage
-from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
+from app.schemas import ProfileDocument, ProfileHeader
+
+from .conftest import (
+    entry_node,
+    free_form_section,
+    list_section,
+    profile_document,
+    timeline_section,
+)
 
 _EMPTY_USAGE = TokenUsage.empty()
 
 
 @pytest.fixture()
 def senior_backend_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         header=ProfileHeader(fullName="Jane Doe", title="Senior Backend Engineer", location="Berlin"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="8 years building distributed systems in Python and Go.",
+            free_form_section("Summary", "8 years building distributed systems in Python and Go."),
+            timeline_section(
+                "Work Experience",
+                [entry_node("Backend Engineer · Acme Corp", "2018 – 2023",
+                            "Led migration of monolith to microservices.")],
             ),
-            DocumentSection(
-                id="work", template="timeline", heading="Work Experience",
-                items=[SectionItem(
-                    id="w1", title="Backend Engineer · Acme Corp", dates="2018 – 2023",
-                    description="Led migration of monolith to microservices.",
-                )],
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="Python"), SectionItem(id="s2", text="Go"),
-                       SectionItem(id="s3", text="Kubernetes")],
-            ),
+            list_section("Skills", ["Python", "Go", "Kubernetes"]),
         ],
     )
 
 
 @pytest.fixture()
 def junior_frontend_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         header=ProfileHeader(fullName="Bob Smith", title="Junior Frontend Developer", location="London"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="2 years building React apps.",
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="React"), SectionItem(id="s2", text="TypeScript")],
-            ),
+            free_form_section("Summary", "2 years building React apps."),
+            list_section("Skills", ["React", "TypeScript"]),
         ],
     )
 

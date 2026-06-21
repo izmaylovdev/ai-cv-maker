@@ -14,37 +14,90 @@ from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.guards import guard_cv_text, guard_free_text
 from app.schemas import (
-    DocumentSection,
+    BlockNode,
     ExtractResponse,
     GenerateResponse,
     OptimizeResponse,
     ProfileDocument,
-    SectionItem,
 )
 
-# The document JSON contract the model must read and emit. Sections are generic:
-# the user names them via `heading` and there is no fixed set — Projects,
-# Publications, Volunteering etc. all flow through unchanged.
+# The document JSON contract the model must read and emit (ADR-0014 §9.2/§9.3).
+# The body is a single block tree of generic nodes from a CLOSED vocabulary; the
+# user names sections via `heading` and there is no fixed set — Projects,
+# Publications, Volunteering etc. all flow through as `section` nodes.
 _DOCUMENT_SCHEMA = """\
 A ProfileDocument is JSON shaped:
 {
   "header": { "fullName": str, "title": str, "email": str, "phone": str, "location": str },
-  "sections": [ Section, ... ]
+  "body": <root node>
 }
-A Section is one of:
-- free-form: { "id": str, "template": "free-form", "heading": str, "body": str }
-- timeline:  { "id": str, "template": "timeline", "heading": str,
-               "items": [ { "id": str, "title": str, "dates": str, "description": str }, ... ] }
-- list:      { "id": str, "template": "list", "heading": str,
-               "items": [ { "id": str, "text": str }, ... ] }
-- chip-list:  { "id": str, "template": "chip-list", "heading": str,
-               "items": [ { "id": str, "text": str }, ... ] }
-Notes:
-- `chip-list` is like `list` but renders as chips/tags (skills, tools, languages); same item shape.
-- `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present", "2019 – 2023".
-- A timeline `title` carries the role/degree and organisation, e.g. "Senior Engineer · Acme Corp".
-- Keep every section's `id` unchanged when you receive one; mint a short unique id for new items.
+The body is a single tree of BlockNodes. Every node is:
+  { "type": str, "id": str, "attrs": { ... }, "children": [ <node>, ... ] }
+`type` is from a CLOSED set; `attrs` holds leaf data; `children` is ordered
+(array order IS document order). No other types and no raw HTML are allowed.
+
+Node vocabulary and the children each may contain (the nesting matrix):
+- root      → children: section*                         (top level is sections only)
+- section   attrs:{heading}  → children: paragraph | list | chips | timeline
+- paragraph → children: text*                            (a text block / one run)
+- text      attrs:{text}     → leaf (no children); plain string
+- list      → children: listItem*                        (bulleted list)
+- listItem  → children: paragraph | list | chips         (rich item; nested lists ok)
+- chips     → children: chip*                            (tag cloud: skills, tools)
+- chip      attrs:{text}     → leaf (no children); short string
+- timeline  → children: entry*                           (dated entries)
+- entry     attrs:{title,dates} → children: paragraph | list   (rich description)
+
+Rules:
+- Do NOT nest a timeline inside chips/chip/listItem/entry; no chips inside a chip;
+  nothing inside text/chip; only sections directly under root. Max nesting ~4 levels.
+- `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present".
+- A timeline entry `title` carries the role/degree and organisation,
+  e.g. "Senior Engineer · Acme Corp".
+- Use `chips` (not a list) for skills/tools/languages tag clouds.
+- Keep every node's `id` unchanged when you receive one; mint a short unique id for
+  new nodes.
 """
+
+
+def _format_node(node: BlockNode, indent: int, lines: list[str]) -> None:
+    """Recursively render a BlockNode subtree as readable indented text."""
+    pad = "  " * indent
+    if node.type == "section":
+        lines.append(f"\n{pad}Section — {node.attrs.get('heading', '')}")
+    elif node.type == "paragraph":
+        text = "".join(c.attrs.get("text", "") for c in node.children if c.type == "text")
+        if text:
+            lines.append(f"{pad}{text}")
+        return
+    elif node.type == "list":
+        for item in node.children:
+            if item.type != "listItem":
+                continue
+            lines.append(f"{pad}-")
+            for child in item.children:
+                _format_node(child, indent + 1, lines)
+        return
+    elif node.type == "chips":
+        labels = [c.attrs.get("text", "") for c in node.children if c.type == "chip"]
+        labels = [t for t in labels if t]
+        if labels:
+            lines.append(f"{pad}{', '.join(labels)}")
+        return
+    elif node.type == "timeline":
+        for entry in node.children:
+            if entry.type != "entry":
+                continue
+            title = entry.attrs.get("title", "")
+            dates = entry.attrs.get("dates", "")
+            head = " ".join(p for p in [title, f"({dates})" if dates else ""] if p)
+            lines.append(f"{pad}- {head}")
+            for child in entry.children:
+                _format_node(child, indent + 1, lines)
+        return
+
+    for child in node.children:
+        _format_node(child, indent, lines)
 
 
 def _format_document(doc: ProfileDocument) -> str:
@@ -58,24 +111,13 @@ def _format_document(doc: ProfileDocument) -> str:
     if h.phone:
         lines.append(f"  Phone: {h.phone}")
 
-    if not doc.sections:
+    sections = [c for c in doc.body.children if c.type == "section"]
+    if not sections:
         lines.append("\nSections: (none)")
         return "\n".join(lines)
 
-    for section in doc.sections:
-        lines.append(f"\nSection [{section.template}] — {section.heading}")
-        if section.template == "free-form":
-            lines.append(f"  {section.body or ''}")
-        else:
-            for item in section.items or []:
-                if section.template == "timeline":
-                    head = " ".join(p for p in [item.title or "", f"({item.dates})" if item.dates else ""] if p)
-                    lines.append(f"  - {head}")
-                    if item.description:
-                        lines.append(f"    {item.description}")
-                else:  # list
-                    if item.text:
-                        lines.append(f"  - {item.text}")
+    for section in sections:
+        _format_node(section, 0, lines)
     return "\n".join(lines)
 
 

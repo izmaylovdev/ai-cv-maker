@@ -1,174 +1,199 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import './ProfileBuilder.css';
+import { LexicalComposer } from '@lexical/react/LexicalComposer';
+import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
+import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
+import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
+import { ListPlugin } from '@lexical/react/LexicalListPlugin';
+import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
-  DocumentSection,
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  ElementNode,
+  LexicalNode,
+} from 'lexical';
+import {
   ProfileDocument,
   ProfileHeader as ProfileHeaderModel,
-  SectionTemplate,
+  RootNode,
   emptyHeader,
-  FreeFormSection as FreeFormSectionModel,
-  EntrySection as EntrySectionModel,
-  ListSection as ListSectionModel,
-  ChipListSection as ChipListSectionModel,
 } from './model';
-import { DEFAULT_SECTION_TEMPLATES } from './templates';
-import { reorder, sectionHasContent } from './util';
+import { WIDGET_NODES, $isSectionNode } from './lexical/widget-nodes';
+import { $createLexicalNode, $readBody, loadDocument } from './serialize';
+import { WIDGETS, WidgetDescriptor, sectionNode } from './nodes';
 import { ProfileHeader } from './components/ProfileHeader';
-import { SectionFrame } from './components/SectionFrame';
-import { FreeFormSection } from './components/FreeFormSection';
-import { EntrySection } from './components/EntrySection';
-import { EntryPlaceholders } from './components/EntryItem';
-import { ListSection } from './components/ListSection';
-import { ChipListSection } from './components/ChipListSection';
-import { AddSectionPalette } from './components/AddSectionPalette';
 
-const ENTRY_PLACEHOLDERS: EntryPlaceholders = {
-  title: 'Title — role, degree, or project',
-  dates: 'Jan 2022 – Present',
-  description: 'What you did and the highlights…',
-};
-const ENTRY_ADD_LABEL = '+ Add entry';
+// Document builder root (spec §9 / ADR-0014). The whole profile body is ONE
+// Lexical editor over the neutral BlockNode tree; sections are reorderable
+// `section` nodes inside it. Host-agnostic: no fetch/auth/routing. The fixed
+// identity/contact `header` (letterhead) lives outside the editor and is edited
+// with plain inputs. Only the neutral tree crosses the boundary — never Lexical's
+// internal JSON.
 
 export interface ProfileBuilderProps {
   /** Initial document the builder is seeded with. */
   document: ProfileDocument;
   /** Called with the full document on every edit. */
   onChange?: (document: ProfileDocument) => void;
-  /** Override the default template registry (defaults applied when absent). */
-  templates?: SectionTemplate[];
 }
 
-// Root of the document builder (spec §7.3). Holds the document in local state,
-// edits it in place, and emits the whole document on every change. Host-agnostic:
-// no fetch, auth, or routing here.
-export function ProfileBuilder({
-  document,
-  onChange,
-  templates = DEFAULT_SECTION_TEMPLATES,
-}: ProfileBuilderProps) {
-  const [doc, setDoc] = useState<ProfileDocument>(document);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+const THEME = {
+  paragraph: 'pb-paragraph',
+  pbSection: 'pb-section',
+  pbChips: 'pb-chips',
+  pbChip: 'pb-chip',
+  pbTimeline: 'pb-timeline',
+  pbEntry: 'pb-entry',
+  list: { ul: 'pb-ul', listitem: 'pb-li', nested: { listitem: 'pb-li--nested' } },
+};
 
-  // Re-seed when the host supplies a new document (e.g. the web component's
-  // `document` property/attribute is set after the element upgrades). Local
-  // edits don't change the `document` prop, so they are preserved.
-  const seededRef = useRef(document);
-  if (document !== seededRef.current) {
-    seededRef.current = document;
-    setDoc(document);
-  }
+export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
+  const header = document.header ?? emptyHeader();
+  // The body tree the editor currently reflects, as JSON, so we can (a) skip
+  // re-seeding the editor when the host echoes back the same body, and (b) avoid
+  // emitting no-op changes — both of which would otherwise loop or reset the
+  // caret in a two-way-bound host.
+  const bodyJsonRef = useRef<string>(JSON.stringify(document.body));
+  const rootIdRef = useRef<string>(document.body.id);
+  rootIdRef.current = document.body.id;
 
-  const commit = (next: ProfileDocument) => {
-    setDoc(next);
-    onChange?.(next);
+  const emitHeader = (next: ProfileHeaderModel) =>
+    onChange?.({ header: next, body: parse(bodyJsonRef.current) });
+
+  const emitBody = (body: RootNode) => {
+    const json = JSON.stringify(body);
+    if (json === bodyJsonRef.current) return;
+    bodyJsonRef.current = json;
+    onChange?.({ header, body });
   };
 
-  const setSections = (sections: DocumentSection[]) => commit({ ...doc, sections });
-
-  // Guard documents that predate the header field (hosts may pass the old shape).
-  const header = doc.header ?? emptyHeader();
-  const updateHeader = (next: ProfileHeaderModel) => commit({ ...doc, header: next });
-
-  const updateSection = (id: string, next: DocumentSection) =>
-    setSections(doc.sections.map((s) => (s.id === id ? next : s)));
-
-  const removeSection = (id: string) =>
-    setSections(doc.sections.filter((s) => s.id !== id));
-
-  const moveSection = (index: number, dir: -1 | 1) =>
-    setSections(reorder(doc.sections, index, index + dir));
-
-  const insertSection = (template: SectionTemplate, atIndex: number) => {
-    const next = [...doc.sections];
-    next.splice(atIndex, 0, template.create());
-    setSections(next);
+  const initialConfig = {
+    namespace: 'profile-builder',
+    nodes: WIDGET_NODES,
+    theme: THEME,
+    onError: (error: Error) => console.error('[profile-builder]', error),
   };
-
-  const onDrop = (targetIndex: number) => {
-    if (dragIndex === null) return;
-    setSections(reorder(doc.sections, dragIndex, targetIndex));
-    setDragIndex(null);
-  };
-
-  if (doc.sections.length === 0) {
-    return (
-      <div className="pb-root">
-        <ProfileHeader header={header} onChange={updateHeader} />
-        <div className="pb-empty">
-          <h2 className="pb-empty__title">Add your first section</h2>
-          <p className="pb-empty__hint">
-            Build your profile as a document. Start with a Work Experience section
-            or a blank one and add more as you go.
-          </p>
-          <AddSectionPalette
-            templates={templates}
-            triggerLabel="Add section"
-            onSelect={(t) => insertSection(t, doc.sections.length)}
-          />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="pb-root">
-      <ProfileHeader header={header} onChange={updateHeader} />
-      {doc.sections.map((section, index) => (
-        <div
-          key={section.id}
-          className="pb-section-wrap"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => onDrop(index)}
-        >
-          <SectionFrame
-            heading={section.heading}
-            hasContent={sectionHasContent(section)}
-            isFirst={index === 0}
-            isLast={index === doc.sections.length - 1}
-            onHeadingChange={(heading) => updateSection(section.id, { ...section, heading })}
-            onMoveUp={() => moveSection(index, -1)}
-            onMoveDown={() => moveSection(index, 1)}
-            onRemove={() => removeSection(section.id)}
-            dragHandleProps={{
-              draggable: true,
-              onDragStart: () => setDragIndex(index),
-              onDragEnd: () => setDragIndex(null),
-            }}
-          >
-            {section.template === 'timeline' ? (
-              <EntrySection
-                section={section as EntrySectionModel}
-                placeholders={ENTRY_PLACEHOLDERS}
-                addLabel={ENTRY_ADD_LABEL}
-                onChange={(next) => updateSection(section.id, next)}
-              />
-            ) : section.template === 'list' ? (
-              <ListSection
-                section={section as ListSectionModel}
-                onChange={(next) => updateSection(section.id, next)}
-              />
-            ) : section.template === 'chip-list' ? (
-              <ChipListSection
-                section={section as ChipListSectionModel}
-                onChange={(next) => updateSection(section.id, next)}
-              />
-            ) : (
-              <FreeFormSection
-                section={section as FreeFormSectionModel}
-                onChange={(next) => updateSection(section.id, next)}
-              />
-            )}
-          </SectionFrame>
+      <ProfileHeader header={header} onChange={emitHeader} />
+      <LexicalComposer initialConfig={initialConfig}>
+        <InsertToolbar />
+        <div className="pb-doc">
+          <RichTextPlugin
+            contentEditable={<ContentEditable className="pb-content" />}
+            placeholder={
+              <div className="pb-placeholder">
+                Add a section, then type or insert a widget…
+              </div>
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+          />
         </div>
-      ))}
-
-      <div className="pb-add-more">
-        <AddSectionPalette
-          templates={templates}
-          triggerLabel="Add section"
-          onSelect={(t) => insertSection(t, doc.sections.length)}
+        <HistoryPlugin />
+        <ListPlugin />
+        <LoadBodyPlugin body={document.body} bodyJsonRef={bodyJsonRef} />
+        <OnChangePlugin
+          ignoreSelectionChange
+          onChange={(state) =>
+            emitBody(state.read(() => $readBody(rootIdRef.current)))
+          }
         />
-      </div>
+      </LexicalComposer>
     </div>
   );
+}
+
+function parse(json: string): RootNode {
+  return JSON.parse(json) as RootNode;
+}
+
+/**
+ * Seeds the editor from `body` and re-seeds only when the host supplies a body
+ * that genuinely differs from what the editor already reflects (compared via the
+ * shared `bodyJsonRef`). This preserves local edits and the caret when a
+ * two-way-bound host echoes the same document back.
+ */
+function LoadBodyPlugin({
+  body,
+  bodyJsonRef,
+}: {
+  body: RootNode;
+  bodyJsonRef: React.MutableRefObject<string>;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    const json = JSON.stringify(body);
+    if (json === bodyJsonRef.current && editor.getEditorState()._nodeMap.size > 1) {
+      return;
+    }
+    bodyJsonRef.current = json;
+    loadDocument(editor, body);
+  }, [editor, body, bodyJsonRef]);
+  return null;
+}
+
+/**
+ * Minimal insert affordances: add a section, and insert a widget into the
+ * section at the caret. Insertion is scoped to the §9.3 nesting matrix by only
+ * offering section-level widgets here. (Caret-precise nested insertion and a
+ * slash menu are tracked as follow-up UX.)
+ */
+function InsertToolbar() {
+  const [editor] = useLexicalComposerContext();
+
+  const addSection = () => {
+    editor.update(() => {
+      $getRoot().append($createLexicalNode(sectionNode()));
+    });
+  };
+
+  const insertWidget = (widget: WidgetDescriptor) => {
+    editor.update(() => {
+      const section = currentSection();
+      if (!section) return;
+      section.append($createLexicalNode(widget.make()));
+    });
+  };
+
+  return (
+    <div className="pb-toolbar" role="toolbar" aria-label="Insert">
+      <button type="button" className="pb-toolbar__btn" onClick={addSection}>
+        + Section
+      </button>
+      <span className="pb-toolbar__sep" aria-hidden="true" />
+      {WIDGETS.map((w) => (
+        <button
+          key={w.kind}
+          type="button"
+          className="pb-toolbar__btn"
+          title={w.description}
+          onClick={() => insertWidget(w)}
+        >
+          + {w.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The section node containing the current selection, or the last section in the
+ * document as a fallback (so a widget button works even when focus is outside
+ * the editor). Must be called inside an `editor.update`/`read`.
+ */
+function currentSection(): ElementNode | null {
+  const selection = $getSelection();
+  if ($isRangeSelection(selection)) {
+    let node: LexicalNode | null = selection.anchor.getNode();
+    while (node && !$isSectionNode(node)) node = node.getParent();
+    if (node) return node as ElementNode;
+  }
+  const sections = $getRoot()
+    .getChildren()
+    .filter((n): n is ElementNode => $isSectionNode(n));
+  return sections.length ? sections[sections.length - 1] : null;
 }

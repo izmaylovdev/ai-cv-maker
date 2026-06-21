@@ -3,35 +3,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
+from app.schemas import ProfileDocument, ProfileHeader
+
+from .conftest import (
+    entry_node,
+    free_form_section,
+    list_section,
+    profile_document,
+    timeline_section,
+)
 
 # Minimal valid ProfileDocument JSON, used as the fake model response across tests.
 _DOC_JSON = (
     '{"header":{"fullName":"Jane Doe","title":"Software Engineer","email":"","phone":"","location":"Berlin"},'
-    '"sections":[{"id":"sum","template":"free-form","heading":"Summary","body":"5 years building web apps."}]}'
+    '"body":{"type":"root","id":"root-1","children":['
+    '{"type":"section","id":"sum","attrs":{"heading":"Summary"},"children":['
+    '{"type":"paragraph","id":"p1","children":['
+    '{"type":"text","id":"t1","attrs":{"text":"5 years building web apps."}}]}]}]}}'
 )
 
 
 @pytest.fixture()
 def basic_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         header=ProfileHeader(fullName="Jane Doe", title="Software Engineer", location="Berlin"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="5 years building web apps.",
+            free_form_section("Summary", "5 years building web apps."),
+            timeline_section(
+                "Work Experience",
+                [entry_node("Engineer · Acme", "2019 – 2024", "Built stuff.")],
             ),
-            DocumentSection(
-                id="work", template="timeline", heading="Work Experience",
-                items=[SectionItem(
-                    id="w1", title="Engineer · Acme", dates="2019 – 2024",
-                    description="Built stuff.",
-                )],
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="Python")],
-            ),
+            list_section("Skills", ["Python"]),
         ],
     )
 

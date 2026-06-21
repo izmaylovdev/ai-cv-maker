@@ -491,3 +491,193 @@ change and no `npm run grpc:generate`**. (Verified against `proto/llm_service.pr
 - Per-chip metadata (color, level/proficiency, icons) — chips are plain text.
 - Auto-suggest / taxonomy of skills.
 - Migrating existing `list` sections to `chip-list` (users choose per section).
+
+---
+
+## 9. Versatile Widget Editor (US-EDIT-14 — ADR-0014)
+
+> **Status:** Canonical (ADR-0014, amends ADR-0013). **Supersedes §7 and §8.**
+> The profile body is no longer a flat `sections[]` array of single-template
+> sections; it is a **rich-text block tree** edited in **one Lexical editor**
+> over the whole document, built from a **closed set of predefined widgets**
+> (`text`, `chips`, `list`, `timeline`) that **nest** within sensible limits.
+> `ProfileDocument` changes from `{ header, sections[] }` to `{ header, body }`,
+> and `body` is the canonical persisted/contract shape end to end (cv-api jsonb,
+> gRPC, llm-service, PDF). The widget stays host-agnostic (no fetch/auth/routing);
+> the host seeds `document` and listens for `documentchange`, unchanged.
+
+### 9.1 Functional Requirements
+
+#### Single-document canvas & sections
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-14.1 | The profile body renders as **one continuous rich-text document** backed by a single editor instance — not a stack of independent per-section editors. The fixed `header` letterhead (§7.2) remains above it, outside the tree. |
+| F-EDIT-14.2 | A user adds a section by inserting a **section** block with an editable heading; no template/type is chosen up front. An empty document and an empty section each show guidance prompting the user to start typing or insert a widget. |
+| F-EDIT-14.3 | Sections are reorderable as whole blocks within the one document (drag handle + accessible move up/down fallback); reordering a section moves all of its descendant content with it. The rendered order always equals the tree order. |
+
+#### Widgets & insertion
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-14.4 | At the caret the user can insert any predefined widget — **text** (paragraph), **chips** (tag cloud), **list** (bullets), **timeline** (dated entries) — via an insertion affordance (e.g. a slash/"insert" menu). **Only** these widgets are available; there is no raw-HTML or arbitrary-node path. |
+| F-EDIT-14.5 | Each widget keeps its editing affordances: **text** is free-form inline text; **chips** are short tag items added/removed inline; **list** is bulleted items edited document-style (Enter = new bullet, Backspace-at-start merges, Arrow Up/Down move) where each item is itself rich content; **timeline** holds dated **entries**, each with Title, a single free-text Dates field, and a rich-content Description. |
+| F-EDIT-14.6 | Widgets **nest** inside the rich-content slots of other widgets per the nesting matrix (§9.3) — e.g. a list inside a section's text flow, a nested list inside a list item, a list inside a timeline entry's description. Nesting outside the matrix is not offered by the editor and is rejected on write. |
+| F-EDIT-14.7 | Any widget and any section can be reordered and removed within its parent; removing a non-empty section/widget requires confirmation. Every structural node has a stable `id`. |
+| F-EDIT-14.8 | The component reflects the supplied `body` tree on load and emits the updated tree on every change; live rendering and the generated CV reflect each node's type, nesting, and order. |
+
+### 9.2 Document Model — the block tree
+
+`ProfileDocument` becomes `{ header, body }`. `header` is unchanged (§7.2,
+fixed identity/contact letterhead). `body` is a **`BlockNode` tree** — a plain,
+JSON-safe, **editor-independent** shape (Lexical's own serialization is **not**
+persisted; §9.4). The TypeScript definition in
+`apps/profile-builder-ui/src/model.ts` is the reference; C# (`CvApi.Domain`) and
+Python (`app/schemas.py`) mirror it.
+
+```ts
+interface ProfileDocument {
+  header: ProfileHeader;   // unchanged fixed letterhead
+  body: RootNode;          // single rich-text block tree
+}
+
+// Closed set of node types — no other `type` is valid, no raw HTML.
+type NodeType =
+  | 'root' | 'section'
+  | 'paragraph' | 'text'
+  | 'list' | 'listItem'
+  | 'chips' | 'chip'
+  | 'timeline' | 'entry';
+
+interface BlockNode {
+  type: NodeType;
+  id: string;                 // stable, client-generated (reorder/diff/AI-patch key)
+  attrs?: Record<string, string>;  // type-specific leaf data (see §9.3)
+  children?: BlockNode[];     // ordered; array order IS document order
+}
+
+type RootNode      = BlockNode & { type: 'root';      children: SectionNode[] };
+type SectionNode   = BlockNode & { type: 'section';   attrs: { heading: string }; children: FlowNode[] };
+type FlowNode      = ParagraphNode | ListNode | ChipsNode | TimelineNode;
+type ParagraphNode = BlockNode & { type: 'paragraph'; children: TextNode[] };
+type TextNode      = BlockNode & { type: 'text';      attrs: { text: string } }; // marks deferred (§9.6)
+type ListNode      = BlockNode & { type: 'list';      children: ListItemNode[] };
+type ListItemNode  = BlockNode & { type: 'listItem';  children: (ParagraphNode | ListNode | ChipsNode)[] };
+type ChipsNode     = BlockNode & { type: 'chips';     children: ChipNode[] };
+type ChipNode      = BlockNode & { type: 'chip';      attrs: { text: string } };
+type TimelineNode  = BlockNode & { type: 'timeline';  children: EntryNode[] };
+type EntryNode     = BlockNode & { type: 'entry';     attrs: { title: string; dates: string };
+                                   children: (ParagraphNode | ListNode)[] };  // rich description
+```
+
+`emptyDocument()` returns `{ header: emptyHeader(), body: { type:'root', id, children: [] } }`.
+
+### 9.3 Node schema & nesting matrix (constrained, sensible)
+
+A schema validator enforces the allowed children of each node. The editor cannot
+author violations; cv-api rejects them on write; the PDF walk may assume them.
+
+| Node | `attrs` | Allowed children | Notes |
+|---|---|---|---|
+| `root` | — | `section`* | top level is sections only |
+| `section` | `heading` | `paragraph`, `list`, `chips`, `timeline` | a section is a flow of block widgets |
+| `paragraph` | — | `text`* | inline text run(s); a "text block" |
+| `text` | `text` | — | leaf; plain string (marks out of scope §9.6) |
+| `list` | — | `listItem`* | bulleted list |
+| `listItem` | — | `paragraph`, `list`, `chips` | rich item; **nested lists allowed**, no timeline inside a bullet |
+| `chips` | — | `chip`* | tag cloud |
+| `chip` | `text` | — | leaf; short string |
+| `timeline` | — | `entry`* | dated entries |
+| `entry` | `title`, `dates` | `paragraph`, `list` | Title + free-text Dates + rich Description; no timeline-in-entry |
+
+Rejected nestings (examples): `timeline` inside `chips`/`chip`/`listItem`/`entry`;
+`chips` inside `chip`; any node inside `text`/`chip`; non-`section` at `root`.
+Max nesting depth is bounded (config; default 4 flow levels) so the PDF walk and
+editor stay predictable.
+
+### 9.4 Editor (Lexical) & serialization
+
+- `apps/profile-builder-ui` is rebuilt on **Lexical** with custom nodes
+  (`SectionNode`, `ChipsNode`/`ChipNode`, `TimelineNode`/`EntryNode`; `list`,
+  `paragraph`, `text` reuse/extend Lexical built-ins) registered in a single
+  editor configured with a **constrained node allow-list** matching §9.3.
+- **One editor over the whole `body`.** Sections are Lexical block nodes with a
+  drag handle and move controls; there are no separate per-section editors.
+- A **serialization layer** maps Lexical `EditorState` ⇄ the neutral `BlockNode`
+  tree (§9.2). **Round-trip fidelity is a hard requirement** (test in §Phase 3).
+  Only the neutral tree crosses the web-component boundary
+  (`document` prop/attr in, `documentchange` out) and the network — never
+  Lexical's internal JSON.
+- Insertion uses a slash/insert menu listing the four widgets; nesting offers are
+  filtered to what the matrix permits at the caret.
+- Theming, packaging (`<applysy-profile-builder>` custom element), and host I/O
+  are unchanged from §7.3.
+
+### 9.5 Cross-service Technical Specification
+
+#### Data model (cv-api)
+
+- `Profile.Document` JSON column shape changes `{ header, sections[] }` →
+  `{ header, body }`. C# `ProfileDocument` gains `BlockNode body` (recursive
+  record: `Type`, `Id`, `Attrs`, `Children`), drops `Sections`.
+- **Validation on write:** the tree is checked against the §9.3 schema (closed
+  type set, allowed children, depth bound) before persist; invalid → 400.
+- **Migration (one-way, EF Core):** backfill each existing document —
+  each old `section` → a `section` node; `free-form.body` → `paragraph`/`text`
+  nodes; `list`/`chip-list.items` → `list`/`chips` nodes; `timeline.items` →
+  `timeline`/`entry` nodes (Title/Dates → `attrs`, Description →
+  `paragraph`). Rollback = restore from backup (ADR-0003).
+
+#### API
+
+`GET/PUT /api/job-profiles/:id` keep exchanging `{ id, name, document }`; only the
+`document` shape changes (above). No route changes.
+
+#### gRPC (`proto/llm_service.proto` — change + `npm run grpc:generate`)
+
+Replace the section messages with a **recursive node** message:
+
+```proto
+message ProfileNode {
+  string type = 1;
+  string id = 2;
+  map<string, string> attrs = 3;
+  repeated ProfileNode children = 4;
+}
+message ProfileDocument {
+  ProfileHeader header = 1;
+  ProfileNode body = 2;   // root node
+}
+```
+
+`Generate`, `Optimize`, `ExtractProfile`, `Chat`, `SelectBestProfile` exchange
+`ProfileDocument`. Chat proposals patch nodes by `id`.
+
+#### llm-service
+
+- `app/schemas.py` gains the `BlockNode`/`ProfileDocument` Pydantic models;
+  extract/optimize chains return a tree; chat patches nodes by `id`.
+- Prompts describe the **node vocabulary and nesting rules** instead of fixed
+  section templates.
+
+#### PDF (cv-api renderer)
+
+- Replace the per-template branch set with a **recursive tree walk**: one handler
+  per node `type` (`section`→heading + block flow, `paragraph`→text run,
+  `list`→bullets (indented for nesting), `chips`→tag row, `timeline`→entries).
+  Unknown/empty nodes are skipped; depth is bounded per §9.3.
+
+#### Angular host
+
+- `/job-profiles/:id` keeps embedding `<applysy-profile-builder>`; it passes the
+  new `document` shape through unchanged (host-agnostic boundary). No editor logic
+  in Angular.
+
+### 9.6 Out of Scope (this change)
+
+- Rich-text **marks** (bold/italic/links) inside `text`/`chip` — `text.attrs.text`
+  is plain for now; the node model leaves room to add marks later.
+- Undo/redo beyond Lexical's built-in history, collaborative editing, auto-save.
+- Tables, images, or any widget outside the four predefined types.
+- Loosening the nesting matrix (§9.3) or unbounded depth.
+- Date pickers/validation on `entry.dates` (free-text by design, per §7).

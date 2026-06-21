@@ -3,22 +3,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
+from app.schemas import ProfileDocument, ProfileHeader
+
+from .conftest import free_form_section, list_section, profile_document
 
 
 @pytest.fixture()
 def simple_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         header=ProfileHeader(fullName="Jane Doe", title="Software Engineer", location="Berlin"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="8 years building backend systems.",
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="Python"), SectionItem(id="s2", text="Go")],
-            ),
+            free_form_section("Summary", "8 years building backend systems."),
+            list_section("Skills", ["Python", "Go"]),
         ],
     )
 

@@ -3,59 +3,49 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.chains.usage import TokenUsage
-from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
+from app.schemas import ProfileDocument, ProfileHeader
+
+from .conftest import (
+    entry_node,
+    free_form_section,
+    list_section,
+    profile_document,
+    timeline_section,
+)
 
 _EMPTY_USAGE = TokenUsage.empty()
 
 
 @pytest.fixture()
 def backend_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         id="prof-backend",
         header=ProfileHeader(fullName="Jane Doe", title="Senior Backend Engineer", location="Berlin"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="8 years building distributed Python and Go services.",
+            free_form_section("Summary", "8 years building distributed Python and Go services."),
+            timeline_section(
+                "Work Experience",
+                [entry_node("Backend Engineer · Acme Corp", "2018 – 2023",
+                            "Led migration of monolith to microservices in Python.")],
             ),
-            DocumentSection(
-                id="work", template="timeline", heading="Work Experience",
-                items=[SectionItem(
-                    id="w1", title="Backend Engineer · Acme Corp", dates="2018 – 2023",
-                    description="Led migration of monolith to microservices in Python.",
-                )],
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="Python"), SectionItem(id="s2", text="Go"),
-                       SectionItem(id="s3", text="gRPC")],
-            ),
+            list_section("Skills", ["Python", "Go", "gRPC"]),
         ],
     )
 
 
 @pytest.fixture()
 def frontend_profile() -> ProfileDocument:
-    return ProfileDocument(
+    return profile_document(
         id="prof-frontend",
         header=ProfileHeader(fullName="Jane Doe", title="Frontend Developer", location="Berlin"),
         sections=[
-            DocumentSection(
-                id="sum", template="free-form", heading="Summary",
-                body="5 years building React and Angular SPAs.",
+            free_form_section("Summary", "5 years building React and Angular SPAs."),
+            timeline_section(
+                "Work Experience",
+                [entry_node("Frontend Developer · Startup Inc", "2019 – 2023",
+                            "Built customer-facing React dashboards.")],
             ),
-            DocumentSection(
-                id="work", template="timeline", heading="Work Experience",
-                items=[SectionItem(
-                    id="w1", title="Frontend Developer · Startup Inc", dates="2019 – 2023",
-                    description="Built customer-facing React dashboards.",
-                )],
-            ),
-            DocumentSection(
-                id="skills", template="list", heading="Skills",
-                items=[SectionItem(id="s1", text="React"), SectionItem(id="s2", text="TypeScript"),
-                       SectionItem(id="s3", text="Angular")],
-            ),
+            list_section("Skills", ["React", "TypeScript", "Angular"]),
         ],
     )
 

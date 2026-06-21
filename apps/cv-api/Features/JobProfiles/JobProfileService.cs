@@ -50,8 +50,13 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
         if (profile is null) return null;
 
+        var document = request.Document ?? ProfileDocument.Empty();
+        var validationError = ProfileDocumentSchema.Validate(document.Body);
+        if (validationError is not null)
+            throw new InvalidProfileDocumentException(validationError);
+
         if (!string.IsNullOrWhiteSpace(request.Name)) profile.Name = request.Name.Trim();
-        profile.Document = request.Document ?? ProfileDocument.Empty();
+        profile.Document = document;
 
         await db.SaveChangesAsync();
         return new ProfileDto(profile.Id, profile.Name, profile.Document);

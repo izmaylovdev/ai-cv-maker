@@ -33,7 +33,15 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ProfileDto>> Update(Guid id, UpdateProfileRequest request)
     {
-        var result = await jobProfileService.UpdateAsync(id, UserId, request);
+        ProfileDto? result;
+        try
+        {
+            result = await jobProfileService.UpdateAsync(id, UserId, request);
+        }
+        catch (InvalidProfileDocumentException ex)
+        {
+            return BadRequest(new { error = ex.Reason });
+        }
         return result is null ? NotFound() : Ok(result);
     }
 

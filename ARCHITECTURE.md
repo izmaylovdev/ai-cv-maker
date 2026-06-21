@@ -199,9 +199,9 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 
 The **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. Per ADR-0013 it is the **canonical profile editor**, embedded in `ui-angular` at `/job-profiles/:id` (it replaced the old structured split-panel editor).
 
-Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one document of general-purpose sections**, where each section can follow a predefined **template**: a blank free-form section, a **Timeline** (one generic dated-entries section — work experience, education, projects — entries with Title / Dates / Description, named via its heading), a **List** section (a bulleted list of items, e.g. skills), or a **Chip-list** section (the same text items rendered as chips/tags, e.g. skills, tools, languages). The set of templates is an extensible registry.
+Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one rich-text document** in a single Lexical editor built from a **closed set of predefined widgets** (ADR-0014, which superseded the earlier template-per-section model): **text** (paragraph), **chips** (tag cloud), **list** (bullets), and **timeline** (dated entries — work experience, education, projects — each with Title / Dates / Description). Widgets **nest** within sensible limits (e.g. a list inside a timeline entry's description); sections are reorderable structural blocks within the one document.
 
-**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), which is now the canonical persisted shape end to end (ADR-0013): `{ header, sections[] }`. The cv-api stores it as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
+**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a recursive **`BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/section/paragraph/text/list/listItem/chips/chip/timeline/entry — ADR-0014, amending ADR-0013). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree. The cv-api stores `{ header, body }` as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 
 **Host-agnostic I/O** — no `fetch`, auth, or routing inside the widget:
 
@@ -210,7 +210,7 @@ Instead of fixed personal-info/experience/education/skills forms, the profile is
 | `document` attribute (JSON) / `.document` property (object) | host → widget | Seed the document |
 | `documentchange` `CustomEvent` (`detail` = current `ProfileDocument`) | widget → host | Emitted on every edit |
 
-The `ProfileBuilder` React component also exposes a plain `{ document, onChange, templates? }` props interface for direct use in tests and the dev harness.
+The `ProfileBuilder` React component also exposes a plain `{ document, onChange }` props interface for direct use in tests and the dev harness.
 
 **Build output**
 
@@ -273,11 +273,11 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
 - `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
 - **Spending limit (US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches the effective limit; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }`. The limit is read from the `LlmUsageLimitUsd` row in `AppSettings`, falling back to `UsageLimit:MaxCostUsdPerUser` in config (default `$0.50`); admins change it via `PUT /api/admin/usage-limit`.
-- `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); iterates `header` + `sections` generically (ADR-0013)
+- `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); walks `header` + the `body` block tree generically (ADR-0014)
 - `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
 
 **PDF generation**  
-`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0013): the `header` (name, title, contacts) followed by each section in array order. Each section emits its heading plus template-specific body — free-form text, timeline entries (title / dates / description), a bulleted list, or a chip/tag cloud (chip-list) — so user-created sections (Projects, Publications, …) flow to the PDF without code changes; unknown or empty sections degrade gracefully. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
+`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0014): the `header` (name, title, contacts) followed by a **recursive walk of the `body` block tree** — one handler per node type (section → heading + flow, paragraph → text, list → bullets with indentation for nesting, chips → tag cloud, timeline → entries with title / dates / description). User-created sections (Projects, Publications, …) and nested widgets flow to the PDF without code changes; unknown or empty nodes degrade gracefully and depth is bounded. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
 
 ---
 
@@ -292,7 +292,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 |---|---|
 | `Generate` | Takes a profile document + optional notes → returns a tailored `ProfileDocument` (ADR-0013) |
 | `Optimize` | Takes a profile document + free-text instruction → returns a rewritten `ProfileDocument` |
-| `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + sections inferred from the CV) |
+| `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) |
 | `EnhanceField` | Takes one text field + its purpose → returns an improved version |
 | `Chat` | Profile-scoped conversational assistant |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |

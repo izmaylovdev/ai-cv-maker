@@ -335,7 +335,7 @@ public class LlmService(
 
     private static ProfileDocumentProto ToProto(ProfileDocument doc)
     {
-        var proto = new ProfileDocumentProto
+        return new ProfileDocumentProto
         {
             Header = new ProfileHeaderProto
             {
@@ -345,26 +345,16 @@ public class LlmService(
                 Phone = doc.Header.Phone,
                 Location = doc.Header.Location,
             },
+            Body = NodeToProto(doc.Body),
         };
-        proto.Sections.AddRange(doc.Sections.Select(s =>
-        {
-            var section = new DocumentSectionProto
-            {
-                Id = s.Id,
-                Template = s.Template,
-                Heading = s.Heading,
-                Body = s.Body ?? string.Empty,
-            };
-            section.Items.AddRange((s.Items ?? []).Select(i => new SectionItemProto
-            {
-                Id = i.Id,
-                Title = i.Title ?? string.Empty,
-                Dates = i.Dates ?? string.Empty,
-                Description = i.Description ?? string.Empty,
-                Text = i.Text ?? string.Empty,
-            }));
-            return section;
-        }));
+    }
+
+    private static ProfileNode NodeToProto(BlockNode node)
+    {
+        var proto = new ProfileNode { Type = node.Type, Id = node.Id };
+        foreach (var (key, value) in node.Attrs)
+            proto.Attrs[key] = value ?? string.Empty;
+        proto.Children.AddRange(node.Children.Select(NodeToProto));
         return proto;
     }
 
@@ -381,21 +371,18 @@ public class LlmService(
                 Phone = proto.Header?.Phone ?? string.Empty,
                 Location = proto.Header?.Location ?? string.Empty,
             },
-            Sections = proto.Sections.Select(s => new DocumentSection
-            {
-                Id = s.Id,
-                Template = string.IsNullOrEmpty(s.Template) ? "free-form" : s.Template,
-                Heading = s.Heading,
-                Body = string.IsNullOrEmpty(s.Body) ? null : s.Body,
-                Items = s.Items.Count == 0 ? null : s.Items.Select(i => new SectionItem
-                {
-                    Id = i.Id,
-                    Title = string.IsNullOrEmpty(i.Title) ? null : i.Title,
-                    Dates = string.IsNullOrEmpty(i.Dates) ? null : i.Dates,
-                    Description = string.IsNullOrEmpty(i.Description) ? null : i.Description,
-                    Text = string.IsNullOrEmpty(i.Text) ? null : i.Text,
-                }).ToList(),
-            }).ToList(),
+            Body = proto.Body is null ? BlockNode.Root() : NodeFromProto(proto.Body),
+        };
+    }
+
+    private static BlockNode NodeFromProto(ProfileNode proto)
+    {
+        return new BlockNode
+        {
+            Type = proto.Type,
+            Id = proto.Id,
+            Attrs = new Dictionary<string, string>(proto.Attrs),
+            Children = proto.Children.Select(NodeFromProto).ToList(),
         };
     }
 }

@@ -1,16 +1,48 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
-_SHORT = 200    # names, titles, headings
+_SHORT = 200    # names, titles, headings, chip labels
 _LONG = 5_000   # free-text bodies and descriptions
 
-# Canonical profile model (ADR-0013): a document of freely added/removed/reordered
-# sections plus a fixed identity/contact header. Mirrors the TypeScript
-# ProfileDocument in apps/profile-builder-ui/src/model.ts and the C#
-# CvApi.Domain.Entities.ProfileDocument — keep the three in sync.
+# Canonical profile model (ADR-0014, amends ADR-0013): a fixed identity/contact
+# `header` plus a `body` which is a recursive BlockNode tree. Mirrors the
+# TypeScript BlockNode/ProfileDocument in apps/profile-builder-ui/src/model.ts and
+# the C# CvApi.Domain.Entities.ProfileDocument / BlockNode — keep the three in
+# sync. The TS file is the reference. Node `type` is from a closed set; `attrs`
+# holds type-specific leaf data; `children` is ordered (array order IS document
+# order). No raw HTML, no other node types.
+
+# Allowed child types per node type (the §9.3 nesting matrix). An empty list means
+# "leaf" (no children). Single source of truth shared by validate_document.
+ALLOWED_CHILDREN: dict[str, list[str]] = {
+    "root": ["section"],
+    "section": ["paragraph", "list", "chips", "timeline"],
+    "paragraph": ["text"],
+    "text": [],
+    "list": ["listItem"],
+    "listItem": ["paragraph", "list", "chips"],
+    "chips": ["chip"],
+    "chip": [],
+    "timeline": ["entry"],
+    "entry": ["paragraph", "list"],
+}
+
+# Required `attrs` keys per node type (each value must be a string).
+REQUIRED_ATTRS: dict[str, list[str]] = {
+    "section": ["heading"],
+    "text": ["text"],
+    "chip": ["text"],
+    "entry": ["title", "dates"],
+}
+
+# Node types that introduce a new flow nesting level (matches the TS validator).
+_FLOW_CONTAINERS = {"section", "list", "listItem", "timeline", "entry"}
+
+# Default maximum flow nesting depth (§9.3).
+DEFAULT_MAX_DEPTH = 4
 
 
 class ProfileHeader(BaseModel):
@@ -21,31 +53,77 @@ class ProfileHeader(BaseModel):
     location: Annotated[str, Field(max_length=_SHORT)] = ""
 
 
-class SectionItem(BaseModel):
-    id: str = ""
-    # Timeline item fields.
-    title: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
-    dates: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
-    description: Optional[Annotated[str, Field(max_length=_LONG)]] = None
-    # List / chip-list item field.
-    text: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
+class BlockNode(BaseModel):
+    """One node of the block tree. `type` is from the closed set; `attrs` carries
+    type-specific leaf data (e.g. text→{text}, section→{heading},
+    entry→{title,dates}); `children` is ordered. Recursive."""
 
-
-class DocumentSection(BaseModel):
+    type: str
     id: str = ""
-    # "chip-list" shares the "list" item shape (text items); the discriminant
-    # drives chip/tag rendering on the client and PDF.
-    template: Literal["free-form", "timeline", "list", "chip-list"] = "free-form"
-    heading: Annotated[str, Field(max_length=_SHORT)] = ""
-    body: Optional[Annotated[str, Field(max_length=_LONG)]] = None
-    items: Optional[list[SectionItem]] = None
+    attrs: dict[str, Annotated[str, Field(max_length=_LONG)]] = Field(default_factory=dict)
+    children: list["BlockNode"] = Field(default_factory=list)
 
 
 class ProfileDocument(BaseModel):
     # Optional id, carried where a response must map back to a profile.
     id: Optional[str] = None
     header: ProfileHeader = Field(default_factory=ProfileHeader)
-    sections: list[DocumentSection] = Field(default_factory=list)
+    body: BlockNode = Field(default_factory=lambda: BlockNode(type="root"))
+
+
+# ---------------------------------------------------------------------------
+# Schema validation (§9.3) — mirrors validateDocument in the TS reference.
+# ---------------------------------------------------------------------------
+
+
+def validate_document(doc: ProfileDocument, max_depth: int = DEFAULT_MAX_DEPTH) -> list[str]:
+    """Validate the block tree against the §9.3 schema: closed type set, the
+    allowed-children matrix, required attrs, and bounded flow depth. Returns a
+    list of human-readable errors (empty == valid)."""
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+
+    body = doc.body
+    if body.type != "root":
+        errors.append(f'document.body must be a root node, got "{body.type}"')
+
+    def visit(node: BlockNode, parent: Optional[str], depth: int) -> None:
+        if node.type not in ALLOWED_CHILDREN:
+            errors.append(f'unknown node type "{node.type}"')
+            return
+        if not node.id:
+            errors.append(f'node of type "{node.type}" is missing a string id')
+        elif node.id in seen_ids:
+            errors.append(f'duplicate node id "{node.id}"')
+        else:
+            seen_ids.add(node.id)
+
+        for key in REQUIRED_ATTRS.get(node.type, []):
+            if not isinstance(node.attrs.get(key), str):
+                errors.append(f'node "{node.type}" ({node.id}) is missing required attr "{key}"')
+
+        if parent is not None and node.type not in ALLOWED_CHILDREN[parent]:
+            errors.append(f'"{node.type}" is not allowed inside "{parent}"')
+
+        allowed = ALLOWED_CHILDREN[node.type]
+        if not allowed and node.children:
+            errors.append(f'leaf node "{node.type}" ({node.id}) must not have children')
+
+        next_depth = depth + 1 if node.type in _FLOW_CONTAINERS else depth
+        if next_depth > max_depth:
+            errors.append(f'nesting depth exceeds max of {max_depth} at "{node.type}" ({node.id})')
+            return
+
+        for child in node.children:
+            visit(child, node.type, next_depth)
+
+    visit(body, None, 0)
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# Request / response envelopes (unchanged shapes, new document type).
+# ---------------------------------------------------------------------------
 
 
 class GenerateRequest(BaseModel):

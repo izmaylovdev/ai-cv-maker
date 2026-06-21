@@ -1,14 +1,16 @@
 namespace CvApi.Domain.Entities;
 
-// Canonical profile model (ADR-0013): a document of freely added/removed/reordered
-// sections plus a fixed identity/contact header. This mirrors the TypeScript
-// `ProfileDocument` in apps/profile-builder-ui/src/model.ts — that file is the
-// reference definition; the JSON shapes must stay in sync. Stored as a single
-// jsonb column on Profile.
+// Canonical profile model (ADR-0014, amends ADR-0013): a fixed identity/contact
+// header plus a `body` which is a recursive BlockNode tree. This mirrors the
+// TypeScript `BlockNode`/`ProfileDocument` in apps/profile-builder-ui/src/model.ts
+// — that file is the reference definition; the JSON shapes must stay in sync.
+// Stored as a single jsonb column on Profile.
 public class ProfileDocument
 {
     public ProfileHeader Header { get; set; } = new();
-    public List<DocumentSection> Sections { get; set; } = [];
+
+    /// <summary>Root of the block tree (always a node of type "root").</summary>
+    public BlockNode Body { get; set; } = BlockNode.Root();
 
     public static ProfileDocument Empty() => new();
 }
@@ -23,36 +25,16 @@ public class ProfileHeader
     public string Location { get; set; } = string.Empty;
 }
 
-// One generic section. `Template` discriminates the content: "free-form" uses
-// `Body`; "timeline", "list", and "chip-list" use `Items` (a union — timeline
-// items carry Title/Dates/Description, list/chip-list items carry Text).
-// "chip-list" shares the "list" item shape but renders as chips/tags. Modelled
-// as a single flexible type so the jsonb round-trips the builder's payload
-// without polymorphic metadata.
-public class DocumentSection
+// One node of the block tree (ADR-0014 §9.2). `Type` is from the closed set
+// (root, section, paragraph, text, list, listItem, chips, chip, timeline, entry).
+// `Attrs` carries type-specific leaf data (e.g. text→{text}, section→{heading},
+// entry→{title,dates}). `Children` is ordered; array order IS document order.
+public class BlockNode
 {
+    public string Type { get; set; } = string.Empty;
     public string Id { get; set; } = string.Empty;
-    /// <summary>"free-form" | "timeline" | "list" | "chip-list".</summary>
-    public string Template { get; set; } = "free-form";
-    public string Heading { get; set; } = string.Empty;
+    public Dictionary<string, string> Attrs { get; set; } = [];
+    public List<BlockNode> Children { get; set; } = [];
 
-    /// <summary>Free-form body (template = "free-form").</summary>
-    public string? Body { get; set; }
-
-    /// <summary>Entries (template = "timeline", "list", or "chip-list").</summary>
-    public List<SectionItem>? Items { get; set; }
-}
-
-public class SectionItem
-{
-    public string Id { get; set; } = string.Empty;
-
-    // Timeline item.
-    public string? Title { get; set; }
-    /// <summary>Free-text date range, e.g. "Jan 2022 – Present".</summary>
-    public string? Dates { get; set; }
-    public string? Description { get; set; }
-
-    // List item.
-    public string? Text { get; set; }
+    public static BlockNode Root() => new() { Type = "root", Id = Guid.NewGuid().ToString("n") };
 }

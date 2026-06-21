@@ -16,10 +16,11 @@ service LlmService {
   rpc SelectBestProfile (SelectBestProfileRequest) returns (SelectBestProfileResponse);
 }
 
-// Canonical profile model (ADR-0013): a document of freely added/removed/reordered
-// sections plus a fixed identity/contact header. Mirrors the TypeScript
-// ProfileDocument in apps/profile-builder-ui/src/model.ts and the C#
-// CvApi.Domain.Entities.ProfileDocument — keep the three in sync.
+// Canonical profile model (ADR-0014, amends ADR-0013): a fixed identity/contact
+// header plus a `body` which is a recursive BlockNode tree. Mirrors the
+// TypeScript BlockNode/ProfileDocument in apps/profile-builder-ui/src/model.ts
+// and the C# CvApi.Domain.Entities.ProfileDocument / BlockNode — keep the three
+// in sync.
 message ProfileHeaderProto {
   string full_name = 1;
   string title = 2;
@@ -28,23 +29,15 @@ message ProfileHeaderProto {
   string location = 5;
 }
 
-// One section item. `template` on the parent section discriminates which fields
-// carry meaning: "timeline" items use title/dates/description; "list" items use text.
-message SectionItemProto {
-  string id = 1;
-  string title = 2;
-  string dates = 3;
-  string description = 4;
-  string text = 5;
-}
-
-// One generic section. `template` ∈ "free-form" (body) | "timeline" (items) | "list" (items).
-message DocumentSectionProto {
-  string id = 1;
-  string template = 2;
-  string heading = 3;
-  string body = 4;
-  repeated SectionItemProto items = 5;
+// One node of the block tree. `type` is from the closed set (root, section,
+// paragraph, text, list, listItem, chips, chip, timeline, entry). `attrs` carries
+// type-specific leaf data (e.g. text.text, section.heading, entry.title/dates).
+// `children` is ordered; array order IS document order. Recursive.
+message ProfileNode {
+  string type = 1;
+  string id = 2;
+  map<string, string> attrs = 3;
+  repeated ProfileNode children = 4;
 }
 
 message ProfileDocumentProto {
@@ -52,7 +45,7 @@ message ProfileDocumentProto {
   // response back to a profile (cover letter / best-profile selection).
   string id = 1;
   ProfileHeaderProto header = 2;
-  repeated DocumentSectionProto sections = 3;
+  ProfileNode body = 3;   // root node of the block tree
 }
 
 message UsageMetadata {

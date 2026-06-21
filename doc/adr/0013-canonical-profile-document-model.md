@@ -1,6 +1,6 @@
 # ADR-0013: Section-based ProfileDocument as the canonical profile model
 
-- **Status:** Accepted
+- **Status:** Accepted — body representation amended by [ADR-0014](0014-lexical-block-tree-profile-model.md)
 - **Date:** 2026-06-20
 
 ## Context
