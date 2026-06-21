@@ -443,10 +443,21 @@
   opacity: 0.65;
 }
 
-/* Entry title/dates sit on one row. */
-.pb-content .pb-item { margin-bottom: 4px; }
-.pb-content .pb-item__title { display: inline-block; min-width: 4em; }
-.pb-content .pb-item__dates { display: block; }
+/* Entry: title (left) + dates (right) share the first row; the description
+   (paragraphs/lists) spans the full width below. Title/dates/description are
+   direct element children of .pb-item (no flex-row wrapper in the node tree),
+   so a 2-column grid places them. */
+.pb-content .pb-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: 12px;
+}
+.pb-content .pb-item__title { grid-column: 1; grid-row: 1; min-width: 0; }
+.pb-content .pb-item__dates { grid-column: 2; grid-row: 1; width: auto; white-space: nowrap; }
+.pb-content .pb-item > :not(.pb-item__title):not(.pb-item__dates) {
+  grid-column: 1 / -1;
+}
 
 /* Chip input hugs its text. */
 .pb-chip__field { display: inline-flex; }
