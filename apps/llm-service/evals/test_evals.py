@@ -91,12 +91,20 @@ def _values(scores: dict) -> dict:
     return {metric: s["value"] for metric, s in scores.items()}
 
 
+def _extract_doc(full_name: str, work: int, edu: int) -> dict:
+    """A ProfileDocument with `work`/`edu` timeline items (ADR-0013 extract shape)."""
+    sections = []
+    if work:
+        sections.append({"template": "timeline", "heading": "Work Experience",
+                         "items": [{} for _ in range(work)]})
+    if edu:
+        sections.append({"template": "timeline", "heading": "Education",
+                         "items": [{} for _ in range(edu)]})
+    return {"header": {"fullName": full_name}, "sections": sections}
+
+
 def test_extract_accuracy_all_match():
-    profile = {
-        "fullName": "Jane Q Public",
-        "workExperiences": [{}, {}],
-        "educations": [{}],
-    }
+    profile = _extract_doc("Jane Q Public", work=2, edu=1)
     scores = _score_extract_accuracy(
         json.dumps(profile),
         {"expected_name": "Jane Public", "expected_work_count": 2, "expected_edu_count": 1},
@@ -105,7 +113,7 @@ def test_extract_accuracy_all_match():
 
 
 def test_extract_accuracy_count_mismatch():
-    profile = {"fullName": "Jane Public", "workExperiences": [{}], "educations": []}
+    profile = _extract_doc("Jane Public", work=1, edu=0)
     scores = _score_extract_accuracy(
         json.dumps(profile),
         {"expected_name": "Jane Public", "expected_work_count": 2, "expected_edu_count": 1},
@@ -118,7 +126,7 @@ def test_extract_accuracy_count_mismatch():
 
 
 def test_extract_accuracy_missing_expectations_skip_to_one():
-    profile = {"fullName": "Anyone", "workExperiences": [], "educations": []}
+    profile = _extract_doc("Anyone", work=0, edu=0)
     scores = _score_extract_accuracy(json.dumps(profile), None)
     assert _values(scores) == {"name_match": 1, "work_count_match": 1, "edu_count_match": 1}
     assert "skipped" in scores["name_match"]["comment"]
@@ -131,7 +139,7 @@ def test_extract_accuracy_invalid_json_all_zero():
 
 
 def test_extract_accuracy_evaluator_returns_named_evaluations_with_comments_and_metadata():
-    profile = {"fullName": "Jane Public", "workExperiences": [{}], "educations": [{}]}
+    profile = _extract_doc("Jane Public", work=1, edu=1)
     evals_out = ExtractAccuracyEvaluator()(
         output={"response": json.dumps(profile)},
         expected_output={"expected_name": "Jane Public", "expected_work_count": 1, "expected_edu_count": 1},

@@ -41,7 +41,7 @@ Nx monorepo. Key apps:
 |---|---|---|
 | `apps/ui-angular` | Angular 21 | Primary SPA (main UI) |
 | `apps/chat-ui` | React Web Component | AI chat widget embedded in Angular |
-| `apps/profile-builder-ui` | React Web Component | Experimental document-style profile builder (`<applysy-profile-builder>`) |
+| `apps/profile-builder-ui` | React Web Component | Canonical document-style profile editor (`<applysy-profile-builder>`), embedded in Angular at `/job-profiles/:id` (ADR-0013) |
 | `apps/cv-api` | ASP.NET Core 8 | REST API, PDF generation, gRPC client |
 | `apps/llm-service` | Python / FastAPI + gRPC | LLM gateway |
 | `apps/admin-api` | NestJS | Admin backend |

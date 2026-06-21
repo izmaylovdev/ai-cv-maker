@@ -6,12 +6,14 @@ import { mockCvGenerateApi, mockCvGenerateFailApi, mockDefaultPdfApi, mockDraftP
 import { mockJobProfilesListApi } from './support/mocks/job-profiles.mock';
 import { mockProfilesList } from './support/fixtures/profiles-list.fixture';
 import { TEST_CV_ID, mockCvListItem } from './support/fixtures/cv.fixture';
+import { registerFakeProfileBuilder } from './support/mocks/builder.mock';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
 // US-CV-7 — PDF button on profile editor opens the current profile directly (no dialog, no AI)
 test.describe('Profile editor PDF button', () => {
   test.beforeEach(async ({ page }) => {
+    await registerFakeProfileBuilder(page);
     await setupAuth(page);
     await mockProfileApi(page);
     await mockDraftPdfApi(page);
@@ -45,14 +47,18 @@ test.describe('Profile editor PDF button', () => {
     expect(generateCalled).toBe(false);
   });
 
-  test('sends the current form state, including unsaved edits, to the draft-pdf endpoint', async ({ page }) => {
+  test('sends the current document, including unsaved edits, to the draft-pdf endpoint', async ({ page }) => {
     let capturedBody: Record<string, unknown> = {};
     await page.route(`${API_URL}/cvs/draft-pdf`, (route) => {
       capturedBody = JSON.parse(route.request().postData() || '{}');
       route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4') });
     });
 
-    await page.getByLabel('Full Name', { exact: true }).fill('Edited Name Unsaved');
+    // Wait for the loaded document to be seeded, then simulate an unsaved edit.
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-full-name', 'Jane Doe');
+    await page.locator('applysy-profile-builder').evaluate((el) =>
+      (el as unknown as { __edit(p: Record<string, unknown>): void }).__edit({ fullName: 'Edited Name Unsaved' }),
+    );
 
     const draftResponse = page.waitForResponse(
       (resp) => resp.url().includes('/cvs/draft-pdf') && resp.request().method() === 'POST'
@@ -60,7 +66,10 @@ test.describe('Profile editor PDF button', () => {
     await page.getByRole('button', { name: /PDF/ }).click();
     await draftResponse;
 
-    expect(capturedBody['fullName']).toBe('Edited Name Unsaved');
+    // The draft payload is the new `{ name, document }` envelope.
+    expect((capturedBody['document'] as { header: { fullName: string } }).header.fullName).toBe(
+      'Edited Name Unsaved',
+    );
   });
 });
 

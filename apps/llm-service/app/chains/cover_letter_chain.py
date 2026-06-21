@@ -11,16 +11,14 @@ from app.chains.cv_chain import (
     _get_anthropic_model,
     _build_llm,
     _llm_model_name,
-    _format_educations,
-    _format_skills,
-    _format_work_experiences,
+    _format_document,
 )
-from app.schemas import ProfileInput
+from app.schemas import ProfileDocument
 
 
 @dataclass
 class CoverLetterRequest:
-    profiles: list[ProfileInput]
+    profiles: list[ProfileDocument]
     profile_ids: list[str]
     job_title: str
     job_description: str
@@ -63,17 +61,8 @@ Candidate profiles:
 """
 
 
-def _format_profile(profile: ProfileInput, index: int) -> str:
-    lines = [
-        f"--- Profile {index} ---",
-        f"Name: {profile.fullName}",
-        f"Title: {profile.title}",
-        f"Overview: {profile.overview}",
-        f"Skills: {_format_skills(profile.skills)}",
-        f"Work Experience:\n{_format_work_experiences(profile.workExperiences)}",
-        f"Education:\n{_format_educations(profile.educations)}",
-    ]
-    return "\n".join(lines)
+def _format_profile(profile: ProfileDocument, index: int) -> str:
+    return f"--- Profile {index} ---\n{_format_document(profile)}"
 
 
 def _parse_response(raw: str, profile_ids: list[str]) -> tuple[str, str]:

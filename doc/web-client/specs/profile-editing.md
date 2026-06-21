@@ -1,12 +1,23 @@
 # Spec: Profile Editing
 
-**Source user stories:** US-EDIT-1 – US-EDIT-7  
-**Feature area:** Editing personal info, experience, education, and skills  
-**Status:** Draft
+**Source user stories:** US-EDIT-1 – US-EDIT-7 (structured editor, superseded); US-EDIT-8 – US-EDIT-12 (document builder, now canonical)  
+**Feature area:** Editing the profile document (identity/contact header + freely added sections)  
+**Status:** Sections 1–6 superseded by ADR-0013; section 7 (Document Builder) is the canonical editor
+
+> **Superseded — read first (ADR-0013).** Sections 1–6 below describe the
+> original **structured** split-panel editor (fixed personal-info / experience /
+> education / skills forms over a `WorkExperience`/`Education`/`Skill` model).
+> That editor and that data model have been **retired**. The canonical profile
+> editor is now the **document builder** specified in **§7**, embedded in the
+> Angular SPA at `/job-profiles/:id` as `<applysy-profile-builder>`, operating on
+> the canonical `ProfileDocument { header, sections[] }` (ADR-0013). Sections 1–6
+> are kept for history; do not implement against them.
 
 ---
 
 ## 1. Overview
+
+> Historical (superseded by §7 / ADR-0013).
 
 The profile editor is a split-panel screen at `/profiles/:id`. The left panel contains a structured form; the right panel shows a live, styled CV preview that updates in near real-time as the user types. Users control which sections appear in the CV and their order. Changes are persisted explicitly via a "Save" action.
 
@@ -190,16 +201,18 @@ Both lists must support keyboard accessibility (arrow keys to move, Enter/Space 
 
 ## 7. Document Builder (US-EDIT-8 – US-EDIT-12)
 
-> **Status:** Draft — **UX-only phase.** This section specifies a new editing
+> **Status:** Canonical (ADR-0013). This section specifies the editing
 > experience delivered as a standalone, reusable **React** component, packaged
 > as a self-contained web component and embedded in the Angular SPA — the same
 > pattern as the existing `apps/chat-ui` chat widget (Angular remains the sole
 > production SPA per CLAUDE.md; this is an embedded widget, not a second SPA).
-> It is built and evaluated in parallel with the structured editor in sections
-> 1–6; it does not replace it yet. Persistence, REST API, data-model changes,
-> and CV-generation/AI wiring are **explicitly deferred** (see §7.5). During
-> this phase the component operates on an **in-memory document model** supplied
-> and read back by the host via the web component's I/O.
+> It has **replaced** the structured editor in sections 1–6. Persistence, the
+> REST API, the data model, and the CV-generation/AI/PDF wiring now all speak the
+> document model end to end (ADR-0013): cv-api stores it as a JSON column,
+> `GET/PUT /api/job-profiles/:id` exchange `{ id, name, document }`, optimize /
+> extract / chat operate on the document, and the PDF renders it. The widget
+> itself stays host-agnostic (no fetch/auth/routing): the host seeds the document
+> and listens for `documentchange`.
 
 ### 7.1 Functional Requirements
 
@@ -250,16 +263,30 @@ Both lists must support keyboard accessibility (arrow keys to move, Enter/Space 
 | F-EDIT-12.4 | The rendered order always matches the model order; the emitted model reflects every reorder. |
 | F-EDIT-12.5 | **List** items are edited like a document — Enter starts a new bullet, Backspace at the start of a line removes/merges it, Arrow Up/Down move between lines — without per-item buttons. |
 
-### 7.2 Document Model (in-memory, UX phase)
+### 7.2 Document Model
 
-The widget is driven by a plain, serialisable (JSON-safe) model. It is **not** the
-persisted `Profile` shape (§3); mapping between the two is a later concern (§7.5).
+The widget is driven by a plain, serialisable (JSON-safe) model. Per ADR-0013 it
+**is** the canonical persisted `Profile.Document` shape — cv-api stores it as a
+JSON column and the gRPC proto / llm-service / PDF mirror it. The TypeScript
+definition in `apps/profile-builder-ui/src/model.ts` is the reference. In
+addition to `sections`, the document carries a fixed identity/contact `header`
+(`fullName`, `title`, `email`, `phone`, `location`) — the letterhead every CV
+needs, not an addable/removable section.
 
 ```ts
 type SectionTemplateId = 'free-form' | 'timeline' | 'list'; // extensible
 
 interface ProfileDocument {
+  header: ProfileHeader;          // fixed identity/contact letterhead
   sections: DocumentSection[];
+}
+
+interface ProfileHeader {
+  fullName: string;
+  title: string;
+  email: string;
+  phone: string;
+  location: string;
 }
 
 type DocumentSection = FreeFormSection | EntrySection | ListSection;
@@ -358,10 +385,14 @@ The custom element is the host-agnostic boundary — no `fetch`, no auth, no rou
 - **Standalone dev harness:** `apps/profile-builder-ui` runs on its own Vite dev server (own port, mirroring chat-ui's 4202) with an `index.html` that mounts the widget seeded with an in-memory sample document — the primary surface for building and reviewing the UX. No backend calls.
 - **Angular embedding (optional, later in this phase):** load the bundle via a script loader and render `<applysy-profile-builder>` behind an experimental route in `apps/ui-angular` (e.g. `/profiles/:id/document`), reusing the chat-widget loader pattern (`chat-loader.service.ts`, `chatWidgetUrl` env entry).
 
-### 7.5 Out of Scope (this phase)
+### 7.5 Out of Scope
 
-- Persistence, REST API, and DB/data-model changes (deferred — decided after UX is settled).
-- Mapping the document model to/from the structured `Profile` (§3) and wiring CV generation, PDF export, AI optimize, and chat.
+> Persistence, the REST API, the data model, and CV-generation / PDF / AI-optimize
+> / chat wiring were listed as out of scope during the original UX-only phase.
+> They have since been **delivered** under ADR-0013 (the document model is now
+> canonical end to end); the items below are the remaining genuine out-of-scope
+> items.
+
 - Rich-text formatting, auto-save, undo/redo, collaborative editing (consistent with §6).
-- Date pickers / validation on Timeline entry dates (free-text in UX phase).
+- Date pickers / validation on Timeline entry dates (free-text by design).
 - Additional templates beyond General-purpose, Timeline, and List (registry-ready, but not built now).

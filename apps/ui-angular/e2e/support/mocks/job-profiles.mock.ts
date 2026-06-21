@@ -32,13 +32,19 @@ export async function mockEmptyProfilesListApi(page: Page) {
   await mockJobProfilesListApi(page, []);
 }
 
-export async function mockJobProfilesExtractApi(page: Page, profileId: string, extracted: object) {
+// `extracted` is the new `{ name, document }` shape returned by /extract.
+export async function mockJobProfilesExtractApi(
+  page: Page,
+  profileId: string,
+  extracted: { name: string; document: unknown },
+) {
   await page.route(`${API_URL}/job-profiles/${profileId}/extract`, (route) => {
     route.fulfill({ json: extracted });
   });
   await page.route(`${API_URL}/job-profiles/${profileId}`, (route) => {
     if (route.request().method() === 'PUT') {
-      route.fulfill({ json: { id: profileId, ...extracted } });
+      const body = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({ json: { id: profileId, name: body.name, document: extracted.document } });
     } else {
       route.continue();
     }

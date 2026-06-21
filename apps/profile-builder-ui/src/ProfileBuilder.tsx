@@ -3,13 +3,16 @@ import './ProfileBuilder.css';
 import {
   DocumentSection,
   ProfileDocument,
+  ProfileHeader as ProfileHeaderModel,
   SectionTemplate,
+  emptyHeader,
   FreeFormSection as FreeFormSectionModel,
   EntrySection as EntrySectionModel,
   ListSection as ListSectionModel,
 } from './model';
 import { DEFAULT_SECTION_TEMPLATES } from './templates';
 import { reorder, sectionHasContent } from './util';
+import { ProfileHeader } from './components/ProfileHeader';
 import { SectionFrame } from './components/SectionFrame';
 import { FreeFormSection } from './components/FreeFormSection';
 import { EntrySection } from './components/EntrySection';
@@ -60,6 +63,10 @@ export function ProfileBuilder({
 
   const setSections = (sections: DocumentSection[]) => commit({ ...doc, sections });
 
+  // Guard documents that predate the header field (hosts may pass the old shape).
+  const header = doc.header ?? emptyHeader();
+  const updateHeader = (next: ProfileHeaderModel) => commit({ ...doc, header: next });
+
   const updateSection = (id: string, next: DocumentSection) =>
     setSections(doc.sections.map((s) => (s.id === id ? next : s)));
 
@@ -83,7 +90,8 @@ export function ProfileBuilder({
 
   if (doc.sections.length === 0) {
     return (
-      <div className="pb-root pb-root--empty">
+      <div className="pb-root">
+        <ProfileHeader header={header} onChange={updateHeader} />
         <div className="pb-empty">
           <h2 className="pb-empty__title">Add your first section</h2>
           <p className="pb-empty__hint">
@@ -102,6 +110,7 @@ export function ProfileBuilder({
 
   return (
     <div className="pb-root">
+      <ProfileHeader header={header} onChange={updateHeader} />
       {doc.sections.map((section, index) => (
         <div
           key={section.id}

@@ -5,10 +5,12 @@ import {
   ProfileDocument,
   EntrySection,
   FreeFormSection,
+  emptyHeader,
 } from './model';
 
 function timelineDoc(): ProfileDocument {
   return {
+    header: emptyHeader(),
     sections: [
       {
         id: 's1',
@@ -33,7 +35,7 @@ function openPalette() {
 
 describe('Empty state (F-EDIT-8.3)', () => {
   it('shows guidance and an add-section affordance when there are no sections', () => {
-    render(<ProfileBuilder document={{ sections: [] }} onChange={vi.fn()} />);
+    render(<ProfileBuilder document={{ header: emptyHeader(), sections: [] }} onChange={vi.fn()} />);
     expect(screen.getByText(/add your first section/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /add section/i })).toBeTruthy();
   });
@@ -42,7 +44,7 @@ describe('Empty state (F-EDIT-8.3)', () => {
 describe('Template palette (F-EDIT-9.1, F-EDIT-9.3, F-EDIT-9.4, F-EDIT-9.5)', () => {
   it('lists templates with a name and description, and inserts a seeded section', () => {
     const onChange = vi.fn();
-    render(<ProfileBuilder document={{ sections: [] }} onChange={onChange} />);
+    render(<ProfileBuilder document={{ header: emptyHeader(), sections: [] }} onChange={onChange} />);
 
     openPalette();
     // Names + descriptions are visible in the palette.
@@ -85,7 +87,7 @@ describe('Timeline template (F-EDIT-10.1, F-EDIT-10.2)', () => {
 
 describe('List template (F-EDIT-9.2, F-EDIT-9.6)', () => {
   it('offers Timeline and List in the palette', () => {
-    render(<ProfileBuilder document={{ sections: [] }} onChange={vi.fn()} />);
+    render(<ProfileBuilder document={{ header: emptyHeader(), sections: [] }} onChange={vi.fn()} />);
     openPalette();
     expect(screen.getByRole('button', { name: /add timeline/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /add list/i })).toBeTruthy();
@@ -94,6 +96,7 @@ describe('List template (F-EDIT-9.2, F-EDIT-9.6)', () => {
   it('edits a List section like a document — Enter adds a bullet, Backspace removes it', () => {
     const onChange = vi.fn();
     const doc: ProfileDocument = {
+      header: emptyHeader(),
       sections: [
         {
           id: 'l1',
@@ -121,6 +124,7 @@ describe('List template (F-EDIT-9.2, F-EDIT-9.6)', () => {
 
   it('does not render per-item buttons in a List section', () => {
     const doc: ProfileDocument = {
+      header: emptyHeader(),
       sections: [
         { id: 'l1', template: 'list', heading: 'Skills', items: [{ id: 'li1', text: 'React' }] },
       ],
@@ -135,6 +139,7 @@ describe('General-purpose section (F-EDIT-11.1)', () => {
   it('edits the heading and free-form body', () => {
     const onChange = vi.fn();
     const doc: ProfileDocument = {
+      header: emptyHeader(),
       sections: [{ id: 's1', template: 'free-form', heading: 'About', body: '' }],
     };
     render(<ProfileBuilder document={doc} onChange={onChange} />);
@@ -152,9 +157,60 @@ describe('General-purpose section (F-EDIT-11.1)', () => {
   });
 });
 
+describe('Identity & contact header', () => {
+  function docWithHeader(sections: ProfileDocument['sections'] = []): ProfileDocument {
+    return {
+      header: {
+        fullName: 'Ada Lovelace',
+        title: 'Senior Engineer',
+        email: 'ada@example.com',
+        phone: '+1 555 0100',
+        location: 'London, UK',
+      },
+      sections,
+    };
+  }
+
+  it('renders the identity and contact fields populated from the document', () => {
+    render(<ProfileBuilder document={docWithHeader()} onChange={vi.fn()} />);
+    expect((screen.getByLabelText(/full name/i) as HTMLInputElement).value).toBe('Ada Lovelace');
+    expect((screen.getByLabelText(/job title/i) as HTMLInputElement).value).toBe('Senior Engineer');
+    expect((screen.getByLabelText(/email/i) as HTMLInputElement).value).toBe('ada@example.com');
+    expect((screen.getByLabelText(/phone/i) as HTMLInputElement).value).toBe('+1 555 0100');
+    expect((screen.getByLabelText(/location/i) as HTMLInputElement).value).toBe('London, UK');
+  });
+
+  it('emits header edits through onChange while preserving sections', () => {
+    const onChange = vi.fn();
+    render(
+      <ProfileBuilder
+        document={docWithHeader([
+          { id: 's1', template: 'free-form', heading: 'About', body: 'hi' },
+        ])}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/full name/i), {
+      target: { value: 'Grace Hopper' },
+    });
+
+    const last = onChange.mock.calls.at(-1)![0] as ProfileDocument;
+    expect(last.header.fullName).toBe('Grace Hopper');
+    expect(last.sections).toHaveLength(1);
+  });
+
+  it('shows the header even when there are no sections', () => {
+    render(<ProfileBuilder document={docWithHeader()} onChange={vi.fn()} />);
+    expect(screen.getByLabelText(/full name/i)).toBeTruthy();
+    expect(screen.getByText(/add your first section/i)).toBeTruthy();
+  });
+});
+
 describe('Reorder & remove sections (F-EDIT-12.1, F-EDIT-12.2)', () => {
   function twoSectionDoc(): ProfileDocument {
     return {
+      header: emptyHeader(),
       sections: [
         { id: 'a', template: 'free-form', heading: 'First', body: 'content' },
         { id: 'b', template: 'free-form', heading: 'Second', body: '' },

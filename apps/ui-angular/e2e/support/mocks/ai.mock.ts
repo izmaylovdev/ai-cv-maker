@@ -1,25 +1,17 @@
 import { Page } from '@playwright/test';
 import { API_URL } from '../constants';
-import { mockProfile } from '../fixtures/profile.fixture';
+import { mockOptimizedDocument } from '../fixtures/profile.fixture';
 
-export async function mockEnhanceFieldApi(page: Page, _profileId: string, enhanced: string) {
-  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
-    route.fulfill({ json: { enhanced } });
+// US-AI-2 — Full profile optimization. Returns a rewritten ProfileDocument.
+export async function mockOptimizeApi(page: Page, profileId: string) {
+  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
+    route.fulfill({ json: { document: mockOptimizedDocument } });
   });
 }
 
-export async function mockEnhanceFieldFailApi(page: Page, _profileId: string) {
-  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
-    route.fulfill({ status: 502, body: 'Enhancement failed' });
-  });
-}
-
-export async function mockEnhanceFieldLimitApi(page: Page, _profileId: string, message: string) {
-  await page.route(`${API_URL}/ai/enhance-field`, (route) => {
-    route.fulfill({
-      status: 402,
-      json: { code: 'usage_limit_exceeded', message, limitUsd: 0.5 },
-    });
+export async function mockOptimizeFailApi(page: Page, profileId: string) {
+  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
+    route.fulfill({ status: 502, body: 'Optimization failed' });
   });
 }
 
@@ -32,37 +24,13 @@ export async function mockOptimizeLimitApi(page: Page, profileId: string, messag
   });
 }
 
-export async function mockOptimizeApi(page: Page, profileId: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({
-      json: {
-        title: 'Senior TypeScript Engineer',
-        overview: 'Optimized overview targeting fintech.',
-        workExperiences: mockProfile.workExperiences.map((w) => ({
-          company: w.company,
-          role: w.role,
-          startDate: w.startDate,
-          endDate: w.endDate,
-          description: 'Optimized description for ' + w.company,
-        })),
-        skills: [{ name: 'TypeScript' }, { name: 'Go' }, { name: 'Kubernetes' }],
-      },
-    });
-  });
-}
-
-export async function mockOptimizeFailApi(page: Page, profileId: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({ status: 502, body: 'Optimization failed' });
-  });
-}
-
 export async function mockOptimizeUrlFetchErrorApi(page: Page, profileId: string, errorMessage: string) {
   await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
     route.fulfill({ status: 422, json: { error: errorMessage } });
   });
 }
 
+// US-AI-4 — Conversational profile chat (web component on the /chat page).
 export async function mockChatApi(
   page: Page,
   profileId: string,

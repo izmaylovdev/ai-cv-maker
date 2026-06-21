@@ -87,7 +87,8 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
         }
         this.profileService.extractFromCv(profile.id, file).subscribe({
           next: (extracted) => {
-            this.profileService.updateProfile(profile.id, { ...extracted, name }).pipe(
+            // Keep the user-entered name; persist the extracted document.
+            this.profileService.updateProfile(profile.id, { name, document: extracted.document }).pipe(
               finalize(() => this.saving.set(false))
             ).subscribe({
               next: () => this.router.navigate(['/job-profiles', profile.id]),

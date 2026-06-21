@@ -15,9 +15,6 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
         if (request.ProfileIdOverride.HasValue)
         {
             var profile = await db.Profiles
-                .Include(p => p.WorkExperiences)
-                .Include(p => p.Educations)
-                .Include(p => p.Skills)
                 .FirstOrDefaultAsync(p => p.Id == request.ProfileIdOverride.Value && p.UserId == userId);
 
             if (profile is null)
@@ -28,9 +25,6 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
         else
         {
             profiles = await db.Profiles
-                .Include(p => p.WorkExperiences)
-                .Include(p => p.Educations)
-                .Include(p => p.Skills)
                 .Where(p => p.UserId == userId)
                 .ToListAsync();
 
@@ -41,20 +35,7 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
 
         var llmRequest = new LlmCoverLetterRequest(
-            Profiles: profiles.Select(p => new LlmCoverLetterProfile(
-                Id: p.Id.ToString(),
-                FullName: p.FullName,
-                Title: p.Title,
-                Overview: p.Overview,
-                Location: p.Location,
-                WorkExperiences: p.WorkExperiences.Select(w => new LlmWorkInput(
-                    w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description
-                )).ToList(),
-                Educations: p.Educations.Select(e => new LlmEducationInput(
-                    e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear
-                )).ToList(),
-                Skills: p.Skills.Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
-            )).ToList(),
+            Profiles: profiles.Select(p => new LlmProfileWithId(p.Id.ToString(), p.Document)).ToList(),
             JobTitle: request.JobTitle,
             JobDescription: request.JobDescription,
             FieldContext: request.FieldContext,

@@ -1,4 +1,4 @@
-using CvApi.Infrastructure.ExternalServices.Llm;
+using CvApi.Domain.Entities;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -7,7 +7,7 @@ namespace CvApi.Infrastructure.ExternalServices.Pdf;
 
 public class PdfService : IPdfService
 {
-    public byte[] GenerateCv(LlmGenerateResponse cv, string fullName, string title, string? location = null, string? contactEmail = null, string? contactPhone = null, IList<string>? sectionOrder = null)
+    public byte[] GenerateFromDocument(ProfileDocument doc)
     {
         return Document.Create(container =>
         {
@@ -16,36 +16,30 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(40);
                 page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
-                page.Content().Column(col => BuildContent(col, cv, fullName, title, location, contactEmail, contactPhone, sectionOrder));
+                page.Content().Column(col => BuildDocumentContent(col, doc));
             });
         }).GeneratePdf();
     }
 
-    private static void BuildContent(
-        ColumnDescriptor col,
-        LlmGenerateResponse cv,
-        string fullName,
-        string title,
-        string? location,
-        string? contactEmail,
-        string? contactPhone,
-        IList<string>? sectionOrder)
+    private static void BuildDocumentContent(ColumnDescriptor col, ProfileDocument doc)
     {
         col.Spacing(16);
 
+        var header = doc.Header;
         col.Item().Row(row =>
         {
             row.RelativeItem().Column(nameCol =>
             {
-                nameCol.Item().Text(fullName).Bold().FontSize(24).FontColor(Colors.Blue.Darken3);
-                nameCol.Item().Text(title).FontSize(13).FontColor(Colors.Grey.Darken1);
-                if (!string.IsNullOrWhiteSpace(location))
-                    nameCol.Item().PaddingTop(2).Text(location).FontSize(10).FontColor(Colors.Grey.Darken2);
+                nameCol.Item().Text(header.FullName).Bold().FontSize(24).FontColor(Colors.Blue.Darken3);
+                if (!string.IsNullOrWhiteSpace(header.Title))
+                    nameCol.Item().Text(header.Title).FontSize(13).FontColor(Colors.Grey.Darken1);
+                if (!string.IsNullOrWhiteSpace(header.Location))
+                    nameCol.Item().PaddingTop(2).Text(header.Location).FontSize(10).FontColor(Colors.Grey.Darken2);
             });
 
             var contactParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(contactEmail)) contactParts.Add(contactEmail);
-            if (!string.IsNullOrWhiteSpace(contactPhone)) contactParts.Add(contactPhone);
+            if (!string.IsNullOrWhiteSpace(header.Email)) contactParts.Add(header.Email);
+            if (!string.IsNullOrWhiteSpace(header.Phone)) contactParts.Add(header.Phone);
             if (contactParts.Count > 0)
             {
                 row.AutoItem().AlignRight().AlignBottom().Column(contactCol =>
@@ -58,90 +52,73 @@ public class PdfService : IPdfService
 
         col.Item().LineHorizontal(1).LineColor(Colors.Blue.Darken3);
 
-        if (!string.IsNullOrWhiteSpace(cv.Summary))
-            col.Item().Column(s => BuildSummary(s, cv.Summary));
-
-        if (cv.Highlights.Count > 0)
-            col.Item().Column(h => BuildHighlights(h, cv.Highlights));
-
-        var order = sectionOrder ?? ["workExperiences", "educations", "skills"];
-        foreach (var section in order)
-        {
-            switch (section)
-            {
-                case "workExperiences" when cv.WorkExperiences.Count > 0:
-                    col.Item().Column(w => BuildWorkExperiences(w, cv.WorkExperiences));
-                    break;
-                case "educations" when cv.Educations.Count > 0:
-                    col.Item().Column(ed => BuildEducations(ed, cv.Educations));
-                    break;
-                case "skills" when cv.Skills.Count > 0:
-                    col.Item().Column(sk => BuildSkills(sk, cv.Skills));
-                    break;
-            }
-        }
+        foreach (var section in doc.Sections)
+            col.Item().Column(s => BuildSection(s, section));
     }
 
-    private static void BuildSummary(ColumnDescriptor col, string summary)
+    // One canonical section → heading + template-specific content. Empty sections
+    // are skipped; an unknown template renders heading only (graceful degradation).
+    private static void BuildSection(ColumnDescriptor col, DocumentSection section)
     {
-        col.Item().Text("Professional Summary").Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
-        col.Item().PaddingTop(4).Text(summary);
-    }
-
-    private static void BuildHighlights(ColumnDescriptor col, List<string> highlights)
-    {
-        col.Item().Text("Key Highlights").Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
-        foreach (var highlight in highlights)
+        switch (section.Template)
         {
-            col.Item().Row(r =>
-            {
-                r.ConstantItem(12).Text("•");
-                r.RelativeItem().Text(highlight);
-            });
-        }
-    }
+            case "free-form":
+                if (string.IsNullOrWhiteSpace(section.Body)) return;
+                SectionHeading(col, section.Heading);
+                col.Item().PaddingTop(4).Text(section.Body);
+                break;
 
-    private static void BuildWorkExperiences(ColumnDescriptor col, List<LlmWorkExperience> experiences)
-    {
-        col.Item().Text("Work Experience").Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
-        col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-        foreach (var exp in experiences)
-        {
-            col.Item().PaddingTop(6).Column(e =>
-            {
-                e.Item().Row(r =>
+            case "timeline":
+                var entries = (section.Items ?? [])
+                    .Where(i => !string.IsNullOrWhiteSpace(i.Title)
+                                || !string.IsNullOrWhiteSpace(i.Dates)
+                                || !string.IsNullOrWhiteSpace(i.Description))
+                    .ToList();
+                if (entries.Count == 0) return;
+                SectionHeading(col, section.Heading);
+                col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+                foreach (var item in entries)
                 {
-                    r.RelativeItem().Text(exp.Role).Bold();
-                    r.AutoItem().Text(exp.Period).FontColor(Colors.Grey.Darken1);
-                });
-                e.Item().Text(exp.Company).FontColor(Colors.Blue.Medium);
-                e.Item().PaddingTop(2).Text(exp.Description);
-            });
-        }
-    }
+                    col.Item().PaddingTop(6).Column(e =>
+                    {
+                        e.Item().Row(r =>
+                        {
+                            r.RelativeItem().Text(item.Title ?? string.Empty).Bold();
+                            if (!string.IsNullOrWhiteSpace(item.Dates))
+                                r.AutoItem().Text(item.Dates).FontColor(Colors.Grey.Darken1);
+                        });
+                        if (!string.IsNullOrWhiteSpace(item.Description))
+                            e.Item().PaddingTop(2).Text(item.Description);
+                    });
+                }
+                break;
 
-    private static void BuildEducations(ColumnDescriptor col, List<LlmEducation> educations)
-    {
-        col.Item().Text("Education").Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
-        col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-        foreach (var edu in educations)
-        {
-            col.Item().PaddingTop(6).Column(e =>
-            {
-                e.Item().Row(r =>
+            case "list":
+                var bullets = (section.Items ?? [])
+                    .Select(i => (i.Text ?? string.Empty).Trim())
+                    .Where(t => t.Length > 0)
+                    .ToList();
+                if (bullets.Count == 0) return;
+                SectionHeading(col, section.Heading);
+                col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+                foreach (var text in bullets)
                 {
-                    r.RelativeItem().Text($"{edu.Degree} in {edu.Field}").Bold();
-                    r.AutoItem().Text(edu.Period).FontColor(Colors.Grey.Darken1);
-                });
-                e.Item().Text(edu.Institution).FontColor(Colors.Blue.Medium);
-            });
+                    col.Item().PaddingTop(2).Row(r =>
+                    {
+                        r.ConstantItem(12).Text("•");
+                        r.RelativeItem().Text(text);
+                    });
+                }
+                break;
+
+            default:
+                // Unknown template: render the heading only, nothing else.
+                if (!string.IsNullOrWhiteSpace(section.Heading))
+                    SectionHeading(col, section.Heading);
+                break;
         }
     }
 
-    private static void BuildSkills(ColumnDescriptor col, List<string> skills)
-    {
-        col.Item().Text("Skills").Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
-        col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-        col.Item().PaddingTop(6).Text(string.Join("  •  ", skills));
-    }
+    private static void SectionHeading(ColumnDescriptor col, string heading) =>
+        col.Item().Text(heading).Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
 }

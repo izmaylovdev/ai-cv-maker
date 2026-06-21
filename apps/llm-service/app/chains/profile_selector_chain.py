@@ -11,11 +11,10 @@ from app.chains.cv_chain import (
     _get_anthropic_model,
     _build_llm,
     _llm_model_name,
-    _format_skills,
-    _format_work_experiences,
+    _format_document,
 )
 from app.chains.usage import TokenUsage
-from app.schemas import ProfileInput
+from app.schemas import ProfileDocument
 
 
 @dataclass
@@ -46,15 +45,8 @@ Candidate profiles:
 """
 
 
-def _format_profile(profile: ProfileInput) -> str:
-    return "\n".join([
-        f"ID: {profile.id}",
-        f"Name: {profile.fullName}",
-        f"Title: {profile.title}",
-        f"Overview: {profile.overview}",
-        f"Skills: {_format_skills(profile.skills)}",
-        f"Experience:\n{_format_work_experiences(profile.workExperiences)}",
-    ])
+def _format_profile(profile: ProfileDocument) -> str:
+    return f"ID: {profile.id}\n{_format_document(profile)}"
 
 
 def _parse_response(raw: str, valid_ids: set[str]) -> str:
@@ -78,7 +70,7 @@ def _parse_response(raw: str, valid_ids: set[str]) -> str:
 
 
 async def select_best_profile(
-    profiles: list[ProfileInput],
+    profiles: list[ProfileDocument],
     job_description: str,
 ) -> SelectBestProfileResult:
     if not profiles:

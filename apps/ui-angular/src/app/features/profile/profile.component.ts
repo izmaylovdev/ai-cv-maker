@@ -1,313 +1,93 @@
 import {
   Component,
-  AfterViewChecked,
+  CUSTOM_ELEMENTS_SCHEMA,
   ElementRef,
-  OnDestroy,
   OnInit,
-  ViewChild,
+  effect,
   inject,
   signal,
-  ChangeDetectorRef,
+  viewChild,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
-import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { finalize } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
+import { finalize } from 'rxjs';
 import { ProfileService } from './profile.service';
 import { AuthService } from '../../auth/auth.service';
-import { ThemeService } from '../../core/theme.service';
-import { DialogService } from '../../shared/services/dialog.service';
+import { BuilderLoaderService } from '../../core/builder-loader.service';
 import { NotifyService } from '../../shared/services/notify.service';
-import { Education, Profile, WorkExperience } from '../../shared/models/profile.model';
-import { PhoneMaskDirective } from '../../shared/directives/phone-mask.directive';
-import { ProfilePreviewComponent } from '../../shared/components/profile-preview/profile-preview.component';
-import { EnhancedTextareaComponent } from '../../shared/components/enhanced-textarea/enhanced-textarea.component';
-import { DropdownComponent } from '../../shared/components/dropdown/dropdown.component';
-import { DropdownItemDirective } from '../../shared/components/dropdown/dropdown-item.directive';
-import { DropdownTriggerDirective } from '../../shared/components/dropdown/dropdown-trigger.directive';
+import { isUsageLimitError, usageLimitMessage } from '../../core/usage-limit';
+import { ProfileDocument, emptyDocument } from '../../shared/models/profile.model';
+
+// Custom element exposed by the profile-builder web component.
+interface ProfileBuilderElement extends HTMLElement {
+  document: ProfileDocument;
+}
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [
-    ReactiveFormsModule,
-    PhoneMaskDirective,
-    DragDropModule,
-    ProfilePreviewComponent,
-    EnhancedTextareaComponent,
-    DropdownComponent,
-    DropdownItemDirective,
-    DropdownTriggerDirective,
-  ],
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
   templateUrl: './profile.component.html',
 })
-export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
-  private fb = inject(FormBuilder);
+export class ProfileComponent implements OnInit {
   private profileService = inject(ProfileService);
   private auth = inject(AuthService);
   private route = inject(ActivatedRoute);
-  private dialogs = inject(DialogService);
   private notify = inject(NotifyService);
-  private doc = inject(DOCUMENT);
-  private cdr = inject(ChangeDetectorRef);
+  private builderLoader = inject(BuilderLoaderService);
   readonly router = inject(Router);
-  readonly theme = inject(ThemeService);
+
+  // Signal query: resolves once the @if(widgetReady()) branch renders the element.
+  private readonly builderRef = viewChild<ElementRef<ProfileBuilderElement>>('builder');
 
   profileId = '';
-  form!: FormGroup;
   readonly loading = signal(false);
   readonly loadError = signal(false);
   readonly saving = signal(false);
   readonly optimizing = signal(false);
+  readonly extracting = signal(false);
+  readonly widgetReady = signal(false);
+  readonly widgetError = signal(false);
 
-  readonly sectionOrder = signal<string[]>([
-    'workExperiences',
-    'educations',
-    'skills',
-  ]);
+  readonly profileName = signal('Job Profile');
 
-  private readonly sectionLabels: Record<string, string> = {
-    workExperiences: 'Work Experience',
-    educations: 'Education',
-    skills: 'Skills',
-  };
+  // The document to push into the builder — the source of truth for save/PDF.
+  // Held as a signal so an effect can (re)seed the element whenever either the
+  // document (load/optimize/extract) or the element (lazy render) changes, in
+  // any order. User edits arrive via `documentchange` and update it in place.
+  private readonly documentToSeed = signal<ProfileDocument>(emptyDocument());
 
-  @ViewChild('leftPersonal') private leftPersonal?: ElementRef<HTMLElement>;
-  @ViewChild('leftWork') private leftWork?: ElementRef<HTMLElement>;
-  @ViewChild('leftEdu') private leftEdu?: ElementRef<HTMLElement>;
-  @ViewChild('leftSkills') private leftSkills?: ElementRef<HTMLElement>;
-  @ViewChild('previewContainer')
-  private previewContainer?: ElementRef<HTMLElement>;
-  @ViewChild(ProfilePreviewComponent)
-  private previewRef?: ProfilePreviewComponent;
+  // Latest document as edited in the builder. Diverges from documentToSeed once
+  // the user edits; converges again whenever we push a new document.
+  private currentDocument: ProfileDocument = emptyDocument();
 
-  private lastActiveSection = 'personal';
-  private scrollSyncReady = false;
-  private scrollUnsubscribe?: () => void;
+  constructor() {
+    // Seed the element whenever both it and a document are available.
+    effect(() => {
+      const el = this.builderRef()?.nativeElement;
+      const doc = this.documentToSeed();
+      if (el) el.document = doc;
+    });
+  }
 
   ngOnInit() {
     this.profileId = this.route.snapshot.paramMap.get('id') ?? '';
-    this.buildForm();
+    this.builderLoader
+      .load()
+      .then(() => this.widgetReady.set(true))
+      .catch(() => this.widgetError.set(true));
     this.loadProfile();
   }
 
-  ngAfterViewChecked() {
-    if (!this.scrollSyncReady && this.leftPersonal?.nativeElement) {
-      this.scrollSyncReady = true;
-      this.setupScrollSync();
-    }
+  // Pushes a document into the builder (via the seeding effect) and resets the
+  // edit baseline to it.
+  private setBuilderDocument(doc: ProfileDocument) {
+    this.currentDocument = doc;
+    this.documentToSeed.set(doc);
   }
 
-  ngOnDestroy() {
-    this.scrollUnsubscribe?.();
-  }
-
-  private setupScrollSync() {
-    const mainEl = this.doc.querySelector('main') as HTMLElement | null;
-    if (!mainEl) return;
-
-    const onScroll = () => {
-      const sections = [
-        { el: this.leftPersonal?.nativeElement, key: 'personal' },
-        { el: this.leftWork?.nativeElement, key: 'workExperiences' },
-        { el: this.leftEdu?.nativeElement, key: 'educations' },
-        { el: this.leftSkills?.nativeElement, key: 'skills' },
-      ].filter((s): s is { el: HTMLElement; key: string } => s.el != null);
-
-      const scrollTop = mainEl.scrollTop;
-
-      let activeKey = sections[0]?.key ?? this.lastActiveSection;
-      for (const { el, key } of sections) {
-        const elAbsTop = el.getBoundingClientRect().top + scrollTop;
-        if (scrollTop >= elAbsTop - 100) {
-          activeKey = key;
-        }
-      }
-
-      if (activeKey !== this.lastActiveSection) {
-        this.lastActiveSection = activeKey;
-        const previewEl = this.previewRef?.getSectionElement(activeKey);
-        const container = this.previewContainer?.nativeElement;
-        if (previewEl && container) {
-          const elTop = previewEl.getBoundingClientRect().top;
-          const containerTop = container.getBoundingClientRect().top;
-          container.scrollTo({
-            top: container.scrollTop + elTop - containerTop,
-            behavior: 'smooth',
-          });
-        }
-      }
-    };
-
-    mainEl.addEventListener('scroll', onScroll, { passive: true });
-    this.scrollUnsubscribe = () =>
-      mainEl.removeEventListener('scroll', onScroll);
-  }
-
-  get workExperiences() {
-    return this.form.get('workExperiences') as FormArray;
-  }
-
-  get educations() {
-    return this.form.get('educations') as FormArray;
-  }
-
-  get skills() {
-    return this.form.get('skills') as FormArray;
-  }
-
-  addWorkExperience() {
-    this.workExperiences.push(this.createWorkExperienceGroup());
-  }
-
-  removeWorkExperience(i: number) {
-    this.workExperiences.removeAt(i);
-  }
-
-  addEducation() {
-    this.educations.push(this.createEducationGroup());
-  }
-
-  removeEducation(i: number) {
-    this.educations.removeAt(i);
-  }
-
-  addSkill() {
-    this.skills.push(this.createSkillGroup());
-  }
-
-  removeSkill(i: number) {
-    this.skills.removeAt(i);
-  }
-
-  dropSkill(event: CdkDragDrop<string[]>) {
-    const control = this.skills.at(event.previousIndex);
-    this.skills.removeAt(event.previousIndex);
-    this.skills.insert(event.currentIndex, control);
-  }
-
-  workDescPurpose(index: number): string {
-    const exp = this.workExperiences.at(index);
-    const role = exp?.get('role')?.value || 'this position';
-    const company = exp?.get('company')?.value || 'this company';
-    return `Work Experience description for a CV — role: "${role}" at "${company}". Should describe 2-4 key responsibilities and achievements using strong action verbs. Quantify impact with metrics where possible. Write in past tense for previous roles, present tense for current.`;
-  }
-
-  openReorderDialog() {
-    this.dialogs.openReorder(this.sectionOrder()).subscribe((result) => {
-      if (result) this.sectionOrder.set(result);
-    });
-  }
-
-  openOptimizeDialog() {
-    this.dialogs.openOptimize(this.profileId).subscribe((result) => {
-      if (!result) return;
-      this.form.patchValue({ title: result.title, overview: result.overview });
-      this.workExperiences.clear();
-      result.workExperiences.forEach((w) =>
-        this.workExperiences.push(this.createWorkExperienceGroup(w)),
-      );
-      this.skills.clear();
-      result.skills.forEach((s) => this.skills.push(this.createSkillGroup(s)));
-      this.notify.success(
-        'Profile optimized! Review the changes and save when ready.',
-      );
-      this.cdr.detectChanges();
-    });
-  }
-
-  // Opens the current on-screen profile (including unsaved edits) as a PDF directly,
-  // with no optimization-notes dialog and no AI generation (US-CV-7). The PDF preview
-  // page renders the draft payload via the draft-pdf endpoint.
-  openPdf() {
-    const raw = this.form.value;
-    const fullName = (raw.fullName as string) ?? '';
-    const jobTitle = (raw.title as string) ?? '';
-    this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
-      state: {
-        draft: this.buildProfilePayload(),
-        title: `${fullName} — ${jobTitle}`,
-      },
-    });
-  }
-
-  // Maps the reactive-form value to the profile payload shape shared by save() and the
-  // draft PDF export (normalises blank optional fields to null).
-  private buildProfilePayload() {
-    const raw = this.form.value;
-    return {
-      ...raw,
-      location: (raw.location as string)?.trim() || null,
-      sectionOrder: this.sectionOrder(),
-      workExperiences: ((raw.workExperiences as WorkExperience[]) ?? []).map(
-        (w) => ({
-          ...w,
-          endDate: w.endDate || null,
-        }),
-      ),
-      educations: ((raw.educations as Education[]) ?? []).map((e) => ({
-        ...e,
-        endYear: e.endYear || null,
-      })),
-    };
-  }
-
-  save() {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
-    const payload = this.buildProfilePayload();
-    this.saving.set(true);
-    this.profileService.updateProfile(this.profileId, payload).subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.notify.success('Profile saved successfully!');
-      },
-      error: () => {
-        this.saving.set(false);
-        this.notify.error('Failed to save profile.');
-      },
-    });
-  }
-
-  retryLoad() {
-    this.workExperiences.clear();
-    this.educations.clear();
-    this.skills.clear();
-    this.loadProfile();
-  }
-
-  get profilePreview(): Profile | null {
-    if (!this.form) return null;
-    return {
-      id: '',
-      ...this.form.value,
-      sectionOrder: this.sectionOrder(),
-    } as Profile;
-  }
-
-  get profileName(): string {
-    return this.form?.get('name')?.value || 'Job Profile';
-  }
-
-  private buildForm() {
-    this.form = this.fb.group({
-      name: [''],
-      fullName: ['', Validators.required],
-      title: ['', Validators.required],
-      overview: ['', Validators.required],
-      location: [''],
-      contacts: this.fb.group({
-        email: ['', [Validators.email]],
-        phone: [''],
-      }),
-      workExperiences: this.fb.array([]),
-      educations: this.fb.array([]),
-      skills: this.fb.array([]),
-    });
+  onDocumentChange(event: Event) {
+    this.currentDocument = (event as CustomEvent<ProfileDocument>).detail;
   }
 
   private loadProfile() {
@@ -317,48 +97,11 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       .getProfile(this.profileId)
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
-        next: (profile: Profile) => {
-          this.form.patchValue({
-            name: profile.name ?? '',
-            fullName: profile.fullName,
-            title: profile.title,
-            overview: profile.overview,
-            location: profile.location ?? '',
-            contacts: {
-              email: profile.contacts?.email ?? '',
-              phone: profile.contacts?.phone ?? '',
-            },
-          });
-          const sortedWork = [...(profile.workExperiences ?? [])].sort(
-            (a, b) => {
-              const aEnd = a.endDate ? new Date(a.endDate).getTime() : Infinity;
-              const bEnd = b.endDate ? new Date(b.endDate).getTime() : Infinity;
-              if (bEnd !== aEnd) return bEnd - aEnd;
-              return (
-                new Date(b.startDate).getTime() -
-                new Date(a.startDate).getTime()
-              );
-            },
-          );
-          sortedWork.forEach((w) =>
-            this.workExperiences.push(this.createWorkExperienceGroup(w)),
-          );
-
-          const sortedEdu = [...(profile.educations ?? [])].sort((a, b) => {
-            const aEnd = a.endYear ?? Infinity;
-            const bEnd = b.endYear ?? Infinity;
-            if (bEnd !== aEnd) return bEnd - aEnd;
-            return b.startYear - a.startYear;
-          });
-          sortedEdu.forEach((e) =>
-            this.educations.push(this.createEducationGroup(e)),
-          );
-          profile.skills?.forEach((s) =>
-            this.skills.push(this.createSkillGroup(s)),
-          );
-          if (profile.sectionOrder?.length) {
-            this.sectionOrder.set(profile.sectionOrder);
-          }
+        next: (profile) => {
+          this.profileName.set(profile.name || 'Job Profile');
+          // The seeding effect pushes this into the builder once the element
+          // is available (it may not have rendered yet).
+          this.setBuilderDocument(profile.document ?? emptyDocument());
         },
         error: (err: HttpErrorResponse) => {
           if (err.status === 401) {
@@ -370,34 +113,84 @@ export class ProfileComponent implements OnInit, AfterViewChecked, OnDestroy {
       });
   }
 
-  private createWorkExperienceGroup(
-    data?: Partial<Profile['workExperiences'][0]>,
-  ) {
-    return this.fb.group({
-      company: [data?.company ?? '', Validators.required],
-      role: [data?.role ?? '', Validators.required],
-      startDate: [data?.startDate ?? '', Validators.required],
-      endDate: [data?.endDate ?? ''],
-      description: [data?.description ?? ''],
-    });
+  retryLoad() {
+    this.loadProfile();
   }
 
-  private createEducationGroup(data?: Partial<Profile['educations'][0]>) {
-    return this.fb.group({
-      institution: [data?.institution ?? '', Validators.required],
-      degree: [data?.degree ?? '', Validators.required],
-      field: [data?.field ?? '', Validators.required],
-      startYear: [
-        data?.startYear ?? '',
-        [Validators.required, Validators.min(1950), Validators.max(2100)],
-      ],
-      endYear: [data?.endYear ?? ''],
-    });
+  save() {
+    this.saving.set(true);
+    this.profileService
+      .updateProfile(this.profileId, { name: this.profileName(), document: this.currentDocument })
+      .pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: () => this.notify.success('Profile saved successfully!'),
+        error: () => this.notify.error('Failed to save profile.'),
+      });
   }
 
-  private createSkillGroup(data?: Partial<Profile['skills'][0]>) {
-    return this.fb.group({
-      name: [data?.name ?? '', Validators.required],
+  // Optimize: AI rewrites the whole document; we load the result into the
+  // builder for the user to review and save (no auto-save).
+  optimize() {
+    const message = window.prompt(
+      'Describe the role or goal to optimize for (or paste a job posting URL):',
+    );
+    if (message == null) return;
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    this.optimizing.set(true);
+    this.profileService
+      .optimizeProfile(this.profileId, trimmed)
+      .pipe(finalize(() => this.optimizing.set(false)))
+      .subscribe({
+        next: (result) => {
+          this.setBuilderDocument(result.document);
+          this.notify.success('Profile optimized! Review the changes and save when ready.');
+        },
+        error: (err: unknown) => {
+          if (isUsageLimitError(err)) {
+            this.notify.error(usageLimitMessage(err));
+            return;
+          }
+          const apiError =
+            err instanceof HttpErrorResponse
+              ? (err.error as { error?: string } | null)?.error
+              : null;
+          this.notify.error(apiError ?? 'Failed to optimize profile. Please try again.');
+        },
+      });
+  }
+
+  onExtractFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.extracting.set(true);
+    this.profileService
+      .extractFromCv(this.profileId, file)
+      .pipe(finalize(() => this.extracting.set(false)))
+      .subscribe({
+        next: (result) => {
+          if (result.name) this.profileName.set(result.name);
+          this.setBuilderDocument(result.document);
+          this.notify.success('CV imported! Review the changes and save when ready.');
+        },
+        error: () => this.notify.error('Failed to import CV. Please try again.'),
+      });
+  }
+
+  // Opens the current on-screen profile (including unsaved edits) as a PDF
+  // directly via the draft-pdf endpoint (US-CV-7) — no AI generation.
+  openPdf() {
+    const header = this.currentDocument.header;
+    const title = [header.fullName, header.title].filter(Boolean).join(' — ') || this.profileName();
+    this.router.navigate(['/job-profiles', this.profileId, 'pdf'], {
+      state: {
+        draft: { name: this.profileName(), document: this.currentDocument },
+        title,
+      },
     });
   }
 }

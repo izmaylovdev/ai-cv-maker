@@ -27,17 +27,14 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
 
         var profiles = await db.Profiles
-            .Include(p => p.Skills)
             .Where(p => p.UserId == UserId)
             .OrderBy(p => p.Name)
             .ToListAsync();
 
-        var summaries = profiles.Select(p => new LlmProfileSummary(
-            p.Name,
-            p.Title,
-            p.Overview,
-            p.Skills.Select(s => s.Name).ToList()
-        )).ToList();
+        // Summarise each document (ADR-0013) into the lightweight chat-agent shape.
+        var summaries = profiles
+            .Select(p => DocumentSummary.Summarise(p.Name, p.Document))
+            .ToList();
 
         const int maxHistoryMessages = 30;
         var history = (request.History ?? [])

@@ -27,7 +27,7 @@ from app.chains.cv_chain import (
     _optimize_profile_foundry_raw,
     _profile_to_prompt_vars,
 )
-from app.schemas import ProfileInput
+from app.schemas import ProfileDocument
 
 
 def _provider() -> str:
@@ -36,7 +36,7 @@ def _provider() -> str:
 
 
 async def generate_target(profile: dict, message: str | None = None, query: str = "") -> dict:
-    inputs = _profile_to_prompt_vars(ProfileInput(**profile), message)
+    inputs = _profile_to_prompt_vars(ProfileDocument(**profile), message)
     t0 = time.perf_counter()
     result, usage = await _generate_cv_foundry_raw(inputs, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
@@ -54,7 +54,7 @@ async def generate_with_prefs_target(
     message: str | None = None,
     query: str = "",
 ) -> dict:
-    inputs = _profile_to_prompt_vars(ProfileInput(**profile), message)
+    inputs = _profile_to_prompt_vars(ProfileDocument(**profile), message)
     t0 = time.perf_counter()
     result, usage = await _generate_cv_foundry_raw(
         inputs, global_preferences=global_preferences, provider=_provider()
@@ -70,7 +70,7 @@ async def generate_with_prefs_target(
 
 
 async def optimize_target(profile: dict, message: str, query: str = "") -> dict:
-    inputs = _build_optimize_inputs(ProfileInput(**profile), message)
+    inputs = _build_optimize_inputs(ProfileDocument(**profile), message)
     t0 = time.perf_counter()
     result, usage = await _optimize_profile_foundry_raw(inputs, provider=_provider())
     latency_ms = round((time.perf_counter() - t0) * 1000)
@@ -88,7 +88,7 @@ async def optimize_with_prefs_target(
     global_preferences: str,
     query: str = "",
 ) -> dict:
-    inputs = _build_optimize_inputs(ProfileInput(**profile), message)
+    inputs = _build_optimize_inputs(ProfileDocument(**profile), message)
     t0 = time.perf_counter()
     result, usage = await _optimize_profile_foundry_raw(
         inputs, global_preferences=global_preferences, provider=_provider()
@@ -118,7 +118,7 @@ async def enhance_target(content: str, field_purpose: str, query: str = "") -> d
 async def chat_target(profile: dict, message: str, history: list | None = None, query: str = "") -> dict:
     t0 = time.perf_counter()
     result, usage = await chat_reply(
-        ProfileInput(**profile),
+        ProfileDocument(**profile),
         message,
         [ChatMessage(**m) for m in (history or [])],
     )
@@ -141,9 +141,9 @@ async def cover_letter_with_prefs_target(
     global_preferences: str,
     query: str = "",
 ) -> dict:
-    from app.schemas import ProfileInput
+    from app.schemas import ProfileDocument
     request = CoverLetterRequest(
-        profiles=[ProfileInput(**p) for p in profiles],
+        profiles=[ProfileDocument(**p) for p in profiles],
         profile_ids=profile_ids,
         job_title=job_title,
         job_description=job_description,

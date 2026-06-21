@@ -15,46 +15,76 @@ from app.preprocessing.link_enricher import LinkFetchError
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
 from app.guards import InputTooLongError, InvalidInputError
 from app.schemas import (
-    EducationInput,
-    ProfileInput,
-    SkillInput,
-    WorkExperienceInput,
+    DocumentSection,
+    ProfileDocument,
+    ProfileHeader,
+    SectionItem,
 )
 
 _INVALID_ARG_EXCEPTIONS = (ValidationError, InputTooLongError, InvalidInputError, LinkFetchError)
 
 
-def _proto_to_profile(proto) -> ProfileInput:
-    return ProfileInput(
-        fullName=proto.full_name,
-        title=proto.title,
-        overview=proto.overview,
-        location=proto.location or None,
-        workExperiences=[
-            WorkExperienceInput(
-                id=w.id or None,
-                company=w.company,
-                role=w.role,
-                startDate=w.start_date,
-                endDate=w.end_date or None,
-                description=w.description,
+def _proto_to_document(proto) -> ProfileDocument:
+    header = proto.header
+    return ProfileDocument(
+        id=proto.id or None,
+        header=ProfileHeader(
+            fullName=header.full_name,
+            title=header.title,
+            email=header.email,
+            phone=header.phone,
+            location=header.location,
+        ),
+        sections=[
+            DocumentSection(
+                id=s.id,
+                template=s.template or "free-form",
+                heading=s.heading,
+                body=s.body or None,
+                items=[
+                    SectionItem(
+                        id=i.id,
+                        title=i.title or None,
+                        dates=i.dates or None,
+                        description=i.description or None,
+                        text=i.text or None,
+                    )
+                    for i in s.items
+                ] or None,
             )
-            for w in proto.work_experiences
+            for s in proto.sections
         ],
-        educations=[
-            EducationInput(
-                id=e.id or None,
-                institution=e.institution,
-                degree=e.degree,
-                field=e.field,
-                startYear=e.start_year,
-                endYear=e.end_year or None,
+    )
+
+
+def _document_to_proto(doc: ProfileDocument):
+    return llm_service_pb2.ProfileDocumentProto(
+        id=doc.id or "",
+        header=llm_service_pb2.ProfileHeaderProto(
+            full_name=doc.header.fullName,
+            title=doc.header.title,
+            email=doc.header.email,
+            phone=doc.header.phone,
+            location=doc.header.location,
+        ),
+        sections=[
+            llm_service_pb2.DocumentSectionProto(
+                id=s.id,
+                template=s.template,
+                heading=s.heading,
+                body=s.body or "",
+                items=[
+                    llm_service_pb2.SectionItemProto(
+                        id=i.id,
+                        title=i.title or "",
+                        dates=i.dates or "",
+                        description=i.description or "",
+                        text=i.text or "",
+                    )
+                    for i in (s.items or [])
+                ],
             )
-            for e in proto.educations
-        ],
-        skills=[
-            SkillInput(id=s.id or None, name=s.name, level=s.level or None)
-            for s in proto.skills
+            for s in doc.sections
         ],
     )
 
@@ -70,30 +100,12 @@ def _usage_proto(usage: TokenUsage):
 class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
     async def Generate(self, request, context):
         try:
-            profile = _proto_to_profile(request.profile)
-            result, usage = await generate_cv(profile, request.message or None, getattr(request, "global_preferences", "") or "")
+            profile = _proto_to_document(request.profile)
+            result, usage = await generate_cv(
+                profile, request.message or None, getattr(request, "global_preferences", "") or ""
+            )
             return llm_service_pb2.GenerateResponse(
-                summary=result.summary,
-                work_experiences=[
-                    llm_service_pb2.WorkExperienceOutput(
-                        company=w.company,
-                        role=w.role,
-                        period=w.period,
-                        description=w.description,
-                    )
-                    for w in result.workExperiences
-                ],
-                educations=[
-                    llm_service_pb2.EducationOutput(
-                        institution=e.institution,
-                        degree=e.degree,
-                        field=e.field,
-                        period=e.period,
-                    )
-                    for e in result.educations
-                ],
-                skills=result.skills,
-                highlights=result.highlights,
+                document=_document_to_proto(result.document),
                 usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
@@ -103,25 +115,12 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def Optimize(self, request, context):
         try:
-            profile = _proto_to_profile(request.profile)
-            result, usage = await optimize_profile(profile, request.message, getattr(request, "global_preferences", "") or "")
+            profile = _proto_to_document(request.profile)
+            result, usage = await optimize_profile(
+                profile, request.message, getattr(request, "global_preferences", "") or ""
+            )
             return llm_service_pb2.OptimizeResponse(
-                title=result.title,
-                overview=result.overview,
-                work_experiences=[
-                    llm_service_pb2.OptimizeWorkExperienceOutput(
-                        company=w.company,
-                        role=w.role,
-                        start_date=w.startDate,
-                        end_date=w.endDate or "",
-                        description=w.description,
-                    )
-                    for w in result.workExperiences
-                ],
-                skills=[
-                    llm_service_pb2.OptimizeSkillOutput(name=s.name)
-                    for s in result.skills
-                ],
+                document=_document_to_proto(result.document),
                 usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
@@ -133,36 +132,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
         try:
             result, usage = await extract_profile(request.cv_text)
             return llm_service_pb2.ExtractProfileResponse(
-                full_name=result.fullName,
-                title=result.title,
-                overview=result.overview,
-                location=result.location or "",
-                contact_email=result.contactEmail or "",
-                contact_phone=result.contactPhone or "",
-                work_experiences=[
-                    llm_service_pb2.ExtractWorkExperience(
-                        company=w.company,
-                        role=w.role,
-                        start_date=w.startDate,
-                        end_date=w.endDate or "",
-                        description=w.description,
-                    )
-                    for w in result.workExperiences
-                ],
-                educations=[
-                    llm_service_pb2.ExtractEducation(
-                        institution=e.institution,
-                        degree=e.degree,
-                        field=e.field,
-                        start_year=e.startYear,
-                        end_year=e.endYear or 0,
-                    )
-                    for e in result.educations
-                ],
-                skills=[
-                    llm_service_pb2.ExtractSkill(name=s.name)
-                    for s in result.skills
-                ],
+                document=_document_to_proto(result.document),
                 usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
@@ -181,7 +151,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def Chat(self, request, context):
         try:
-            profile = _proto_to_profile(request.profile)
+            profile = _proto_to_document(request.profile)
             history = [ChatMessage(role=m.role, content=m.content) for m in request.history]
             result, usage = await chat_reply(profile, request.message, history)
             proposal = llm_service_pb2.ChatProposal(
@@ -225,10 +195,10 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def GenerateCoverLetter(self, request, context):
         try:
-            profiles = [_proto_to_profile(p) for p in request.profiles]
+            profiles = [_proto_to_document(p) for p in request.profiles]
             result, usage = await generate_cover_letter(CoverLetterRequest(
                 profiles=profiles,
-                profile_ids=list(request.profile_ids),
+                profile_ids=[p.id or "" for p in profiles],
                 job_title=request.job_title,
                 job_description=request.job_description,
                 field_context=request.field_context,
@@ -246,9 +216,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
 
     async def SelectBestProfile(self, request, context):
         try:
-            profiles = [_proto_to_profile(p) for p in request.profiles]
-            for profile, profile_id in zip(profiles, request.profile_ids):
-                profile.id = profile_id
+            profiles = [_proto_to_document(p) for p in request.profiles]
             result = await select_best_profile(
                 profiles=profiles,
                 job_description=request.job_description,

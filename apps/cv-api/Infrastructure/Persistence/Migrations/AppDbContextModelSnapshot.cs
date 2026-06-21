@@ -41,43 +41,6 @@ namespace cv_api.Migrations
                     b.ToTable("AppSettings");
                 });
 
-            modelBuilder.Entity("CvApi.Domain.Entities.Education", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Degree")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int?>("EndYear")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Field")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Institution")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("StartYear")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProfileId");
-
-                    b.ToTable("Educations");
-                });
-
             modelBuilder.Entity("CvApi.Domain.Entities.GeneratedCv", b =>
                 {
                     b.Property<Guid>("Id")
@@ -169,22 +132,9 @@ namespace cv_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ContactEmail")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("ContactPhone")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("FullName")
+                    b.Property<string>("Document")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Location")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -192,22 +142,6 @@ namespace cv_api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasDefaultValue("My Profile");
-
-                    b.Property<string>("Overview")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SectionOrder")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasDefaultValue("workExperiences,educations,skills");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -299,30 +233,6 @@ namespace cv_api.Migrations
                     b.ToTable("RequestSpans");
                 });
 
-            modelBuilder.Entity("CvApi.Domain.Entities.Skill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProfileId");
-
-                    b.ToTable("Skills");
-                });
-
             modelBuilder.Entity("CvApi.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -359,53 +269,6 @@ namespace cv_api.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("CvApi.Domain.Entities.WorkExperience", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Company")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateOnly?>("EndDate")
-                        .HasColumnType("date");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProfileId");
-
-                    b.ToTable("WorkExperiences");
-                });
-
-            modelBuilder.Entity("CvApi.Domain.Entities.Education", b =>
-                {
-                    b.HasOne("CvApi.Domain.Entities.Profile", "Profile")
-                        .WithMany("Educations")
-                        .HasForeignKey("ProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Profile");
-                });
-
             modelBuilder.Entity("CvApi.Domain.Entities.GeneratedCv", b =>
                 {
                     b.HasOne("CvApi.Domain.Entities.Profile", "Profile")
@@ -439,37 +302,9 @@ namespace cv_api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("CvApi.Domain.Entities.Skill", b =>
-                {
-                    b.HasOne("CvApi.Domain.Entities.Profile", "Profile")
-                        .WithMany("Skills")
-                        .HasForeignKey("ProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Profile");
-                });
-
-            modelBuilder.Entity("CvApi.Domain.Entities.WorkExperience", b =>
-                {
-                    b.HasOne("CvApi.Domain.Entities.Profile", "Profile")
-                        .WithMany("WorkExperiences")
-                        .HasForeignKey("ProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Profile");
-                });
-
             modelBuilder.Entity("CvApi.Domain.Entities.Profile", b =>
                 {
-                    b.Navigation("Educations");
-
                     b.Navigation("GeneratedCvs");
-
-                    b.Navigation("Skills");
-
-                    b.Navigation("WorkExperiences");
                 });
 
             modelBuilder.Entity("CvApi.Domain.Entities.User", b =>

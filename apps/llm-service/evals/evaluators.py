@@ -154,6 +154,18 @@ class CVQualityEvaluator(_JudgeBase):
         ]
 
 
+def _timeline_item_count(document: dict, heading_keywords: tuple[str, ...]) -> int:
+    """Total items across timeline sections whose heading matches a keyword."""
+    total = 0
+    for section in document.get("sections", []) or []:
+        if section.get("template") != "timeline":
+            continue
+        heading = (section.get("heading") or "").lower()
+        if any(k in heading for k in heading_keywords):
+            total += len(section.get("items", []) or [])
+    return total
+
+
 def _score_extract_accuracy(response: str, expected: dict | None) -> dict[str, dict]:
     """Deterministic extraction-accuracy scoring (pure; no I/O).
 
@@ -172,7 +184,10 @@ def _score_extract_accuracy(response: str, expected: dict | None) -> dict[str, d
         invalid = {"value": 0, "comment": "response was not valid JSON"}
         return {"name_match": dict(invalid), "work_count_match": dict(invalid), "edu_count_match": dict(invalid)}
 
-    extracted_name = (data.get("fullName") or "").strip()
+    # Extract response is a ProfileDocument (ADR-0013): name lives in the header,
+    # and work/education are timeline sections discriminated by heading.
+    header = data.get("header") or {}
+    extracted_name = (header.get("fullName") or "").strip()
     if expected_name:
         expected_words = set(expected_name.strip().lower().split())
         extracted_words = set(extracted_name.lower().split())
@@ -181,14 +196,14 @@ def _score_extract_accuracy(response: str, expected: dict | None) -> dict[str, d
     else:
         name_value, name_comment = 1, "no expected_name; skipped"
 
-    work_count = len(data.get("workExperiences", []))
+    work_count = _timeline_item_count(data, ("work", "experience", "employment"))
     if expected_work_count >= 0:
         work_value = int(work_count == expected_work_count)
         work_comment = f"expected {expected_work_count} work experiences, extracted {work_count}"
     else:
         work_value, work_comment = 1, "no expected_work_count; skipped"
 
-    edu_count = len(data.get("educations", []))
+    edu_count = _timeline_item_count(data, ("education", "academic", "qualification"))
     if expected_edu_count >= 0:
         edu_value = int(edu_count == expected_edu_count)
         edu_comment = f"expected {expected_edu_count} educations, extracted {edu_count}"

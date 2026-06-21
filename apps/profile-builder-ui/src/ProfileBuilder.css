@@ -84,9 +84,55 @@
 .pb-list__text:focus { outline: none; }
 .pb-root ::placeholder { color: var(--pb-muted); }
 
+/* Letterhead — fixed identity/contact block above the sections. */
+.pb-header { margin-bottom: 36px; }
+.pb-header__name,
+.pb-header__title,
+.pb-header__contact {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  transition: background 0.12s ease;
+}
+.pb-header__name:hover,
+.pb-header__title:hover,
+.pb-header__contact:hover { background: var(--pb-hover); }
+.pb-header__name:focus,
+.pb-header__title:focus,
+.pb-header__contact:focus { outline: none; background: var(--pb-focus); }
+.pb-header__name {
+  display: block;
+  width: calc(100% + 12px);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+.pb-header__title {
+  display: block;
+  width: calc(100% + 12px);
+  font-size: 16px;
+  color: var(--pb-soft);
+  margin-bottom: 12px;
+}
+.pb-header__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+.pb-header__contact {
+  flex: 1 1 150px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--pb-muted);
+}
+
 /* Empty state — still the paper, just quiet. */
-.pb-root--empty { padding-top: 96px; padding-bottom: 96px; }
-.pb-empty { text-align: center; color: var(--pb-muted); }
+.pb-empty { text-align: center; color: var(--pb-muted); padding: 48px 0; }
 .pb-empty__title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--pb-soft); }
 .pb-empty__hint { margin: 0 auto 22px; max-width: 380px; font-size: 14px; }
 

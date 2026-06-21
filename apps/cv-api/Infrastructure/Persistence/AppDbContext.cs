@@ -1,5 +1,7 @@
+using System.Text.Json;
 using CvApi.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace CvApi.Infrastructure.Persistence;
 
@@ -7,9 +9,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Profile> Profiles => Set<Profile>();
-    public DbSet<WorkExperience> WorkExperiences => Set<WorkExperience>();
-    public DbSet<Education> Educations => Set<Education>();
-    public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<GeneratedCv> GeneratedCvs => Set<GeneratedCv>();
     public DbSet<RequestSpan> RequestSpans => Set<RequestSpan>();
     public DbSet<LlmUsage> LlmUsages => Set<LlmUsage>();
@@ -31,49 +30,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // Profile.Document is stored as a jsonb column (ADR-0013). A value
+        // comparer keyed on the serialized JSON lets EF detect edits to the
+        // mutable document graph.
+        var docComparer = new ValueComparer<ProfileDocument>(
+            (a, b) => JsonSerializer.Serialize(a, ProfileDocumentJson.Options)
+                      == JsonSerializer.Serialize(b, ProfileDocumentJson.Options),
+            v => JsonSerializer.Serialize(v, ProfileDocumentJson.Options).GetHashCode(),
+            v => JsonSerializer.Deserialize<ProfileDocument>(
+                     JsonSerializer.Serialize(v, ProfileDocumentJson.Options),
+                     ProfileDocumentJson.Options)!);
+
         modelBuilder.Entity<Profile>(e =>
         {
             e.HasKey(p => p.Id);
             e.Property(p => p.Name).HasMaxLength(200).HasDefaultValue("My Profile");
-            e.Property(p => p.SectionOrder).HasMaxLength(200).HasDefaultValue("workExperiences,educations,skills");
-            e.Property(p => p.FullName).HasMaxLength(200);
-            e.Property(p => p.Title).HasMaxLength(200);
-            e.Property(p => p.Location).HasMaxLength(200);
-            e.Property(p => p.ContactEmail).HasMaxLength(256);
-            e.Property(p => p.ContactPhone).HasMaxLength(50);
-            e.HasMany(p => p.WorkExperiences)
-                .WithOne(w => w.Profile)
-                .HasForeignKey(w => w.ProfileId)
-                .OnDelete(DeleteBehavior.Cascade);
-            e.HasMany(p => p.Educations)
-                .WithOne(ed => ed.Profile)
-                .HasForeignKey(ed => ed.ProfileId)
-                .OnDelete(DeleteBehavior.Cascade);
-            e.HasMany(p => p.Skills)
-                .WithOne(s => s.Profile)
-                .HasForeignKey(s => s.ProfileId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<WorkExperience>(e =>
-        {
-            e.HasKey(w => w.Id);
-            e.Property(w => w.Company).HasMaxLength(200);
-            e.Property(w => w.Role).HasMaxLength(200);
-        });
-
-        modelBuilder.Entity<Education>(e =>
-        {
-            e.HasKey(ed => ed.Id);
-            e.Property(ed => ed.Institution).HasMaxLength(200);
-            e.Property(ed => ed.Degree).HasMaxLength(200);
-            e.Property(ed => ed.Field).HasMaxLength(200);
-        });
-
-        modelBuilder.Entity<Skill>(e =>
-        {
-            e.HasKey(s => s.Id);
-            e.Property(s => s.Name).HasMaxLength(100);
+            e.Property(p => p.Document)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, ProfileDocumentJson.Options),
+                    v => JsonSerializer.Deserialize<ProfileDocument>(v, ProfileDocumentJson.Options)
+                         ?? ProfileDocument.Empty())
+                .Metadata.SetValueComparer(docComparer);
         });
 
         modelBuilder.Entity<GeneratedCv>(e =>

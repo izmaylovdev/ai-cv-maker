@@ -14,92 +14,100 @@ from app import settings as app_settings
 from app.chains.usage import TokenUsage
 from app.guards import guard_cv_text, guard_free_text
 from app.schemas import (
+    DocumentSection,
     ExtractResponse,
     GenerateResponse,
     OptimizeResponse,
-    ProfileInput,
+    ProfileDocument,
+    SectionItem,
 )
 
+# The document JSON contract the model must read and emit. Sections are generic:
+# the user names them via `heading` and there is no fixed set — Projects,
+# Publications, Volunteering etc. all flow through unchanged.
+_DOCUMENT_SCHEMA = """\
+A ProfileDocument is JSON shaped:
+{
+  "header": { "fullName": str, "title": str, "email": str, "phone": str, "location": str },
+  "sections": [ Section, ... ]
+}
+A Section is one of:
+- free-form: { "id": str, "template": "free-form", "heading": str, "body": str }
+- timeline:  { "id": str, "template": "timeline", "heading": str,
+               "items": [ { "id": str, "title": str, "dates": str, "description": str }, ... ] }
+- list:      { "id": str, "template": "list", "heading": str,
+               "items": [ { "id": str, "text": str }, ... ] }
+Notes:
+- `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present", "2019 – 2023".
+- A timeline `title` carries the role/degree and organisation, e.g. "Senior Engineer · Acme Corp".
+- Keep every section's `id` unchanged when you receive one; mint a short unique id for new items.
+"""
+
+
+def _format_document(doc: ProfileDocument) -> str:
+    """Render a document as readable text for the prompt context."""
+    h = doc.header
+    lines: list[str] = ["Header:", f"  Name: {h.fullName}", f"  Title: {h.title}"]
+    if h.location:
+        lines.append(f"  Location: {h.location}")
+    if h.email:
+        lines.append(f"  Email: {h.email}")
+    if h.phone:
+        lines.append(f"  Phone: {h.phone}")
+
+    if not doc.sections:
+        lines.append("\nSections: (none)")
+        return "\n".join(lines)
+
+    for section in doc.sections:
+        lines.append(f"\nSection [{section.template}] — {section.heading}")
+        if section.template == "free-form":
+            lines.append(f"  {section.body or ''}")
+        else:
+            for item in section.items or []:
+                if section.template == "timeline":
+                    head = " ".join(p for p in [item.title or "", f"({item.dates})" if item.dates else ""] if p)
+                    lines.append(f"  - {head}")
+                    if item.description:
+                        lines.append(f"    {item.description}")
+                else:  # list
+                    if item.text:
+                        lines.append(f"  - {item.text}")
+    return "\n".join(lines)
+
+
 _SYSTEM_PROMPT = """\
-You are an expert CV writer and career coach. Your task is to transform a user's raw \
-profile information into polished, professional CV.
+You are an expert CV writer and career coach. You receive a candidate's profile as a \
+ProfileDocument (a header plus freely structured sections) and rewrite it into a polished, \
+professional CV — returned as a ProfileDocument with the SAME structure.
 
 Rules:
-- Write in first person, present tense for current roles and past tense for previous roles.
-- Be concise yet impactful — use action verbs and quantify achievements where possible.
-- Ensure the summary is 2–4 sentences capturing the candidate's value proposition.
-- Each work experience description should be 2–4 bullet-style sentences highlighting impact.
-- Highlights should be 3–5 top career achievements or differentiators.
-- Skills should be normalised names (e.g. "TypeScript" not "typescript").
-- Return ONLY valid JSON matching the required schema. No markdown, no extra text.
-"""
+- Preserve the section structure the user authored: keep the same headings, templates, and \
+order, and the same number of timeline/list items. Improve the wording, do not restructure.
+- Write impactful, concise prose. Use action verbs and quantify achievements where possible.
+- For free-form sections (e.g. a summary), tighten the body to 2–4 strong sentences.
+- For timeline items, rewrite `description` into 2–4 impact-focused sentences; keep `title` and \
+the free-text `dates` exactly as given.
+- For list items (e.g. skills), normalise names (e.g. "TypeScript" not "typescript").
+- Never invent facts (companies, dates, institutions). Keep header contact fields unchanged.
+- Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
+
+{schema}
+""".format(schema=_DOCUMENT_SCHEMA)
 
 _HUMAN_PROMPT = """\
-Transform the following profile into a polished CV.{message_context} Return a JSON object with:
-- summary: string (professional summary, 2–4 sentences)
-- workExperiences: array of {{ company, role, period, description }}
-- educations: array of {{ institution, degree, field, period }}
-- skills: array of skill name strings
-- highlights: array of 3–5 achievement strings
+Rewrite the following profile into a polished CV.{message_context} Return the ProfileDocument JSON.
 
-Profile:
-Name: {full_name}
-Title: {title}
-Location: {location}
-Overview: {overview}
-
-Work Experience:
-{work_experiences}
-
-Education:
-{educations}
-
-Skills:
-{skills}
+Current profile:
+{document}
 """
 
 
-def _format_work_experiences(experiences: list) -> str:
-    if not experiences:
-        return "No work experience provided."
-    lines = []
-    for w in experiences:
-        end = w.endDate or "Present"
-        lines.append(
-            f"- {w.role} at {w.company} ({w.startDate} – {end})\n  {w.description}"
-        )
-    return "\n".join(lines)
-
-
-def _format_educations(educations: list) -> str:
-    if not educations:
-        return "No education provided."
-    lines = []
-    for e in educations:
-        end = str(e.endYear) if e.endYear else "Present"
-        lines.append(
-            f"- {e.degree} in {e.field} at {e.institution} ({e.startYear}–{end})"
-        )
-    return "\n".join(lines)
-
-
-def _format_skills(skills: list) -> str:
-    if not skills:
-        return "No skills provided."
-    return ", ".join(s.name if not s.level else f"{s.name} ({s.level})" for s in skills)
-
-
-def _profile_to_prompt_vars(profile: ProfileInput, message: str | None = None) -> dict[str, str]:
+def _profile_to_prompt_vars(profile: ProfileDocument, message: str | None = None) -> dict[str, str]:
     message_context = f" The candidate is targeting: {message}." if message and message.strip() else ""
     return {
         "message_context": message_context,
-        "full_name": profile.fullName,
-        "title": profile.title,
-        "location": profile.location.strip() if profile.location and profile.location.strip() else "Not specified",
-        "overview": profile.overview,
-        "work_experiences": _format_work_experiences(profile.workExperiences),
-        "educations": _format_educations(profile.educations),
-        "skills": _format_skills(profile.skills),
+        "document": _format_document(profile),
     }
 
 
@@ -112,13 +120,13 @@ def _strip_optional_json_fence(raw: str) -> str:
     return text.strip()
 
 
-def _parse_generate_response_json(text: str) -> GenerateResponse:
+def _parse_document_json(text: str, *, kind: str) -> ProfileDocument:
     cleaned = _strip_optional_json_fence(text)
     try:
-        return GenerateResponse.model_validate_json(cleaned)
+        return ProfileDocument.model_validate_json(cleaned)
     except (ValidationError, ValueError) as exc:
         snippet = text[:2000] + ("…" if len(text) > 2000 else "")
-        raise ValueError(f"Model did not return valid CV JSON: {exc}\n---\n{snippet}") from exc
+        raise ValueError(f"Model did not return valid {kind} document JSON: {exc}\n---\n{snippet}") from exc
 
 
 def _anthropic_text_content(message) -> str:
@@ -183,7 +191,8 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: s
         system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_generate_response_json(_anthropic_text_content(message)), message.usage
+    document = _parse_document_json(_anthropic_text_content(message), kind="CV")
+    return GenerateResponse(document=document), message.usage
 
 
 async def _generate_cv_foundry(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry") -> tuple[GenerateResponse, TokenUsage]:
@@ -261,13 +270,13 @@ async def _invoke_llm_for_generate(
         HumanMessage(content=_HUMAN_PROMPT.format(**inputs)),
     ]
     response = await observability.lc_invoke(llm, messages, name="generate")
-    result = _parse_generate_response_json(str(response.content))
+    document = _parse_document_json(str(response.content), kind="CV")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
-    return result, usage
+    return GenerateResponse(document=document), usage
 
 
 async def generate_cv(
-    profile: ProfileInput,
+    profile: ProfileDocument,
     message: str | None = None,
     global_preferences: str = "",
 ) -> tuple[GenerateResponse, TokenUsage]:
@@ -285,61 +294,39 @@ async def generate_cv(
 
 
 _OPTIMIZE_SYSTEM_PROMPT = """\
-You are an expert career coach and CV writer. Your task is to optimize a user's profile \
-to best match a specific job, role, or goal described in their message.
+You are an expert career coach and CV writer. You receive a candidate's profile as a \
+ProfileDocument and optimize it to best match a specific job, role, or goal described in \
+their message — returned as a ProfileDocument with the SAME structure.
 
 Rules:
-- Refine the professional title to better reflect the target role if appropriate.
-- Rewrite the overview to highlight the most relevant skills and achievements for the target.
-- Improve each work experience description to emphasize impact and achievements most relevant to the target role.
-- Use action verbs and quantify achievements where possible.
-- Normalize skill names (e.g. "TypeScript" not "typescript") and prioritize skills relevant to the target role.
-- Keep all factual data unchanged: company names, job roles, startDate, endDate values, institutions.
-- Return ONLY valid JSON matching the required schema. No markdown, no extra text.
-"""
+- Refine the header `title` to better reflect the target role if appropriate.
+- Rewrite free-form sections (e.g. a summary) to highlight the most relevant skills and \
+achievements for the target.
+- Improve each timeline item's `description` to emphasize impact relevant to the target role; \
+keep its `title` and free-text `dates` exactly as given.
+- Normalize and reprioritise list items (e.g. skills) by relevance to the target.
+- Preserve the section structure: same headings, templates, order, and item counts.
+- Keep all factual data unchanged: organisations, dates, institutions.
+- Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
+
+{schema}
+""".format(schema=_DOCUMENT_SCHEMA)
 
 _OPTIMIZE_HUMAN_PROMPT = """\
 Optimize the following profile for this goal: {message}
 
-Return a JSON object with:
-- title: string (refined professional title)
-- overview: string (optimized professional summary, 2–4 sentences tailored to the goal)
-- workExperiences: array of {{ company, role, startDate, endDate, description }}
-  (keep company/role/startDate/endDate exactly as given; only improve description)
-- skills: array of {{ name }}
-  (normalize names; order by relevance to the goal)
+Return the optimized ProfileDocument JSON, preserving the section structure.
 
-Current Profile:
-Name: {full_name}
-Title: {title}
-Overview: {overview}
-
-Work Experience:
-{work_experiences}
-
-Skills:
-{skills}
+Current profile:
+{document}
 """
 
 
-def _build_optimize_inputs(profile: ProfileInput, message: str) -> dict[str, str]:
+def _build_optimize_inputs(profile: ProfileDocument, message: str) -> dict[str, str]:
     return {
         "message": message,
-        "full_name": profile.fullName,
-        "title": profile.title,
-        "overview": profile.overview,
-        "work_experiences": _format_work_experiences(profile.workExperiences),
-        "skills": _format_skills(profile.skills),
+        "document": _format_document(profile),
     }
-
-
-def _parse_optimize_response_json(text: str) -> OptimizeResponse:
-    cleaned = _strip_optional_json_fence(text)
-    try:
-        return OptimizeResponse.model_validate_json(cleaned)
-    except (ValidationError, ValueError) as exc:
-        snippet = text[:2000] + ("…" if len(text) > 2000 else "")
-        raise ValueError(f"Model did not return valid optimize JSON: {exc}\n---\n{snippet}") from exc
 
 
 async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry"):
@@ -362,7 +349,8 @@ async def _optimize_profile_foundry_raw(inputs: dict[str, str], global_preferenc
         system=system_prompt,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_optimize_response_json(_anthropic_text_content(message)), message.usage
+    document = _parse_document_json(_anthropic_text_content(message), kind="optimize")
+    return OptimizeResponse(document=document), message.usage
 
 
 async def _optimize_profile_foundry(inputs: dict[str, str], global_preferences: str = "", provider: str = "foundry") -> tuple[OptimizeResponse, TokenUsage]:
@@ -384,13 +372,13 @@ async def _invoke_llm_for_optimize(
         HumanMessage(content=_OPTIMIZE_HUMAN_PROMPT.format(**inputs)),
     ]
     response = await observability.lc_invoke(llm, messages, name="optimize")
-    result = _parse_optimize_response_json(str(response.content))
+    document = _parse_document_json(str(response.content), kind="optimize")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
-    return result, usage
+    return OptimizeResponse(document=document), usage
 
 
 async def optimize_profile(
-    profile: ProfileInput,
+    profile: ProfileDocument,
     message: str,
     global_preferences: str = "",
 ) -> tuple[OptimizeResponse, TokenUsage]:
@@ -477,43 +465,33 @@ async def enhance_field(content: str, field_purpose: str) -> tuple[str, TokenUsa
 
 
 _EXTRACT_SYSTEM_PROMPT = """\
-You are an expert CV parser. Your task is to extract structured profile information \
-from raw CV/resume text.
+You are an expert CV parser. Your task is to extract a candidate's profile from raw CV/resume \
+text and return it as a ProfileDocument.
 
 Rules:
-- Extract all available information; use empty strings for missing text fields.
-- For dates: use ISO format YYYY-MM-DD for work experience dates, integer years for education.
-- If an end date is absent or says "present"/"current", omit it (null).
-- Normalize skill names (e.g. "TypeScript" not "typescript").
-- The overview should be the professional summary/objective if present, otherwise synthesize \
-  a 2-3 sentence summary from the experience.
-- Return ONLY valid JSON matching the required schema. No markdown, no extra text.
-"""
+- Put identity and contact details in the header (fullName, title, email, phone, location); use \
+empty strings for fields not present.
+- Create a free-form "Summary" section for the professional summary/objective if present; \
+otherwise synthesise a 2–3 sentence summary from the experience.
+- Create a "timeline" section (heading "Work Experience") for jobs; each item's `title` is \
+"<role> · <company>" and `dates` is the free-text range exactly as written, e.g. \
+"Jan 2019 – Present" (use "Present"/"Current" verbatim if the role is ongoing).
+- Create a "timeline" section (heading "Education") for studies; each item's `title` is \
+"<degree> in <field> · <institution>" and `dates` the year range.
+- Create a "list" section (heading "Skills") with one item per skill; normalise names \
+(e.g. "TypeScript" not "typescript").
+- Only include sections that have content. Mint a short unique id for each section and item.
+- Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
+
+{schema}
+""".format(schema=_DOCUMENT_SCHEMA)
 
 _EXTRACT_HUMAN_PROMPT = """\
-Extract the profile from the following CV text and return a JSON object with:
-- fullName: string
-- title: string (professional title/headline)
-- overview: string (professional summary, 2-3 sentences)
-- location: string or null
-- contactEmail: string or null
-- contactPhone: string or null
-- workExperiences: array of {{ company, role, startDate (YYYY-MM-DD), endDate (YYYY-MM-DD or null), description }}
-- educations: array of {{ institution, degree, field, startYear (int), endYear (int or null) }}
-- skills: array of {{ name }}
+Extract the profile from the following CV text and return the ProfileDocument JSON.
 
 CV Text:
 {cv_text}
 """
-
-
-def _parse_extract_response_json(text: str) -> ExtractResponse:
-    cleaned = _strip_optional_json_fence(text)
-    try:
-        return ExtractResponse.model_validate_json(cleaned)
-    except (ValidationError, ValueError) as exc:
-        snippet = text[:2000] + ("…" if len(text) > 2000 else "")
-        raise ValueError(f"Model did not return valid extract JSON: {exc}\n---\n{snippet}") from exc
 
 
 async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
@@ -532,7 +510,8 @@ async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
         system=_EXTRACT_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
-    return _parse_extract_response_json(_anthropic_text_content(message)), message.usage
+    document = _parse_document_json(_anthropic_text_content(message), kind="extract")
+    return ExtractResponse(document=document), message.usage
 
 
 async def _extract_profile_foundry(cv_text: str, provider: str = "foundry") -> tuple[ExtractResponse, TokenUsage]:
@@ -555,6 +534,6 @@ async def extract_profile(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
         HumanMessage(content=_EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)),
     ]
     response = await observability.lc_invoke(llm, messages, name="extract")
-    result = _parse_extract_response_json(str(response.content))
+    document = _parse_document_json(str(response.content), kind="extract")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
-    return result, usage
+    return ExtractResponse(document=document), usage

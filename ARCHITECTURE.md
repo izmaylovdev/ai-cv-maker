@@ -2,7 +2,7 @@
 
 ## Overview
 
-Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with ten apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), an experimental document-builder widget (`profile-builder-ui`), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
+Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with ten apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), the document-builder widget that is the canonical profile editor (`profile-builder-ui`, embedded in `ui-angular`; ADR-0013), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
 
 ```
 Browser ──────────────────────────────┐        Chrome extension (job auto-fill)
@@ -107,16 +107,15 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/auth/login` | `LoginComponent` | — |
 | `/auth/register` | `RegisterComponent` | — |
 | `/job-profiles` | `JobProfilesComponent` | `authGuard` |
-| `/job-profiles/:id` | `ProfileComponent` | `authGuard` |
+| `/job-profiles/:id` | `ProfileComponent` (hosts `<applysy-profile-builder>`) | `authGuard` |
 | `/job-profiles/:id/pdf` | `PdfPreviewPageComponent` | `authGuard` |
 | `/chat` | `ChatPageComponent` (hosts `<ai-chat-widget>`) | `authGuard` |
 | `/settings` | `SettingsComponent` (global AI preferences) | `authGuard` |
 | `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
 
 **Key features**
-- Reactive forms with drag-and-drop section ordering (`@angular/cdk/drag-drop`)
-- Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`)
-- Live profile preview (`ProfilePreviewComponent`)
+- Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Optimize / Import-from-CV / Open-PDF. The old reactive-form split-panel editor and its structured `Profile` model are removed.
+- Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`); the profile page posts the current `{ name, document }` to `/api/cvs/draft-pdf`
 - Theme service (dark/light)
 
 ---
@@ -196,13 +195,13 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 
 ---
 
-### `apps/profile-builder-ui` — Document Builder Widget (React Web Component, experimental)
+### `apps/profile-builder-ui` — Document Builder Widget (React Web Component)
 
-A new **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. It is built and evaluated **in parallel** with the structured split-panel editor in `ui-angular` (it does not replace it).
+The **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. Per ADR-0013 it is the **canonical profile editor**, embedded in `ui-angular` at `/job-profiles/:id` (it replaced the old structured split-panel editor).
 
 Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one document of general-purpose sections**, where each section can follow a predefined **template**: a blank free-form section, a **Timeline** (one generic dated-entries section — work experience, education, projects — entries with Title / Dates / Description, named via its heading), or a **List** section (a bulleted list of items, e.g. skills). The set of templates is an extensible registry.
 
-**Status:** UX-only phase. The widget operates on an in-memory `ProfileDocument` model (spec §7.2) that is deliberately **not** the persisted `Profile` shape — persistence, REST API, and CV-generation/AI wiring are intentionally deferred. See `doc/web-client/user-stories/profile-editing.md` (US-EDIT-8…12) and `doc/web-client/specs/profile-editing.md` §7.
+**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), which is now the canonical persisted shape end to end (ADR-0013): `{ header, sections[] }`. The cv-api stores it as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 
 **Host-agnostic I/O** — no `fetch`, auth, or routing inside the widget:
 
@@ -225,7 +224,7 @@ dist/apps/profile-builder-ui/profile-builder.js   ← self-contained IIFE (~64 k
 npm run serve:builder   # Vite dev server on port 4203 (wraps npx nx run profile-builder-ui:dev)
 ```
 
-`apps/profile-builder-ui/index.html` mounts `<applysy-profile-builder>` seeded with a sample document — the primary surface for building and reviewing the UX. It uses the shared `@applysy/dev-shell` harness (`src/dev-shell.ts`) for the dev title bar and theme toggle, the same as `chat-ui` (the builder is host-agnostic and ignores the `auth-token` the shell sets). Embedding behind an experimental `ui-angular` route (reusing the chat-widget loader pattern) is deferred to a later step in this phase.
+The dev server also serves the IIFE bundle at `GET /profile-builder.js` (an on-demand esbuild build, mirroring `chat-ui`'s `/chat-widget.js`), which is how `ui-angular` loads the widget in development (`environment.builderWidgetUrl` → `http://localhost:4203/profile-builder.js`; production serves it from `/profile-builder/profile-builder.js`). `apps/profile-builder-ui/index.html` separately mounts the widget seeded with a sample document for standalone UX work, using the shared `@applysy/dev-shell` harness (`src/dev-shell.ts`).
 
 ---
 
@@ -246,12 +245,12 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `POST /api/auth/logout` | `AuthController` | Revoke refresh token in DB + clear cookie |
 | `GET /api/job-profiles` | `JobProfileController` | List profiles for current user |
 | `POST /api/job-profiles` | `JobProfileController` | Create profile |
-| `GET /api/job-profiles/:id` | `JobProfileController` | Get full profile |
-| `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content |
+| `GET /api/job-profiles/:id` | `JobProfileController` | Get full profile → `{ id, name, document }` (ADR-0013) |
+| `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content (`{ name, document }`) |
 | `DELETE /api/job-profiles/:id` | `JobProfileController` | Delete profile |
-| `POST /api/job-profiles/:id/optimize` | `JobProfileController` | AI-rewrite profile via LLM |
-| `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat |
-| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) |
+| `POST /api/job-profiles/:id/optimize` | `JobProfileController` | AI-rewrite profile via LLM → `{ document }` |
+| `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat (reply + optional document patch proposal) |
+| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) → `{ name, document }` |
 | `GET /api/job-profiles/:id/cvs` | `CvController` | List generated CVs |
 | `POST /api/job-profiles/:id/cvs` | `CvController` | Generate new tailored CV via LLM |
 | `GET /api/job-profiles/:id/cvs/:cvId/pdf` | `CvController` | Download generated CV as PDF |
@@ -274,11 +273,11 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
 - `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
 - **Spending limit (US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches the effective limit; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }`. The limit is read from the `LlmUsageLimitUsd` row in `AppSettings`, falling back to `UsageLimit:MaxCostUsdPerUser` in config (default `$0.50`); admins change it via `PUT /api/admin/usage-limit`.
-- `PdfService` — renders CV to PDF using QuestPDF (A4, respects user-defined `SectionOrder`)
+- `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); iterates `header` + `sections` generically (ADR-0013)
 - `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
 
 **PDF generation**  
-`PdfService.GenerateCv` renders header, summary, highlights, then iterates `sectionOrder` (comma-separated string stored on `Profile`) to emit work experience, education, and skills sections in user-defined order.
+`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0013): the `header` (name, title, contacts) followed by each section in array order. Each section emits its heading plus template-specific body — free-form text, timeline entries (title / dates / description), or a bulleted list — so user-created sections (Projects, Publications, …) flow to the PDF without code changes; unknown or empty sections degrade gracefully. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
 
 ---
 
@@ -291,9 +290,9 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 **Operations** (implemented in `app/grpc/servicer.py`, prompt chains in `app/chains/`)
 | Operation | Description |
 |---|---|
-| `Generate` | Takes a full profile + optional notes → returns tailored CV content (summary, work, education, skills, highlights) |
-| `Optimize` | Takes a profile + free-text instruction → returns rewritten title, overview, work experiences, and skills |
-| `ExtractProfile` | Takes raw CV text → returns structured profile fields |
+| `Generate` | Takes a profile document + optional notes → returns a tailored `ProfileDocument` (ADR-0013) |
+| `Optimize` | Takes a profile document + free-text instruction → returns a rewritten `ProfileDocument` |
+| `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + sections inferred from the CV) |
 | `EnhanceField` | Takes one text field + its purpose → returns an improved version |
 | `Chat` | Profile-scoped conversational assistant |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
@@ -367,12 +366,10 @@ User
 Profile  (FK → User, cascade delete)
  ├── id, userId
  ├── name          — internal label (e.g. "Senior Dev Profile")
- ├── fullName, title, overview, location
- ├── contactEmail, contactPhone
- ├── sectionOrder  — comma-separated: "workExperiences,educations,skills"
- ├── WorkExperiences[]  (cascade delete)
- ├── Educations[]       (cascade delete)
- ├── Skills[]           (ordered by `Order`, cascade delete)
+ ├── document      — JSON column: the canonical ProfileDocument { header, sections[] } (ADR-0013).
+ │                   Replaces the former fullName/title/overview/location/contactEmail/contactPhone/
+ │                   sectionOrder columns and the WorkExperiences/Educations/Skills child tables,
+ │                   which were backfilled into the document and dropped.
  └── GeneratedCvs[]     (cascade delete)
 
 GeneratedCv  (FK → Profile, cascade delete)
@@ -419,6 +416,8 @@ Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persist
 Defined in `proto/llm_service.proto`. The C# stubs are generated at build time; the Python stubs are checked in under `apps/llm-service/app/grpc/`.
 
 Nine RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
+
+The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + repeated `DocumentSectionProto sections`, each with `SectionItemProto` entries) — the wire mirror of the canonical `ProfileDocument` (ADR-0013). `Generate`, `Optimize`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`Optimize`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
 
 ---
 

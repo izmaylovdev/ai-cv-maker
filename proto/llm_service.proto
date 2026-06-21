@@ -16,58 +16,43 @@ service LlmService {
   rpc SelectBestProfile (SelectBestProfileRequest) returns (SelectBestProfileResponse);
 }
 
-message WorkExperienceInput {
-  string id = 1;
-  string company = 2;
-  string role = 3;
-  string start_date = 4;
-  string end_date = 5;
-  string description = 6;
-}
-
-message EducationInput {
-  string id = 1;
-  string institution = 2;
-  string degree = 3;
-  string field = 4;
-  int32 start_year = 5;
-  int32 end_year = 6;
-}
-
-message SkillInput {
-  string id = 1;
-  string name = 2;
-  string level = 3;
-}
-
-message ProfileInput {
+// Canonical profile model (ADR-0013): a document of freely added/removed/reordered
+// sections plus a fixed identity/contact header. Mirrors the TypeScript
+// ProfileDocument in apps/profile-builder-ui/src/model.ts and the C#
+// CvApi.Domain.Entities.ProfileDocument — keep the three in sync.
+message ProfileHeaderProto {
   string full_name = 1;
   string title = 2;
-  string overview = 3;
-  string location = 4;
-  repeated WorkExperienceInput work_experiences = 5;
-  repeated EducationInput educations = 6;
-  repeated SkillInput skills = 7;
+  string email = 3;
+  string phone = 4;
+  string location = 5;
 }
 
-message GenerateRequest {
-  ProfileInput profile = 1;
-  string message = 2;
-  string global_preferences = 3;
-}
-
-message WorkExperienceOutput {
-  string company = 1;
-  string role = 2;
-  string period = 3;
+// One section item. `template` on the parent section discriminates which fields
+// carry meaning: "timeline" items use title/dates/description; "list" items use text.
+message SectionItemProto {
+  string id = 1;
+  string title = 2;
+  string dates = 3;
   string description = 4;
+  string text = 5;
 }
 
-message EducationOutput {
-  string institution = 1;
-  string degree = 2;
-  string field = 3;
-  string period = 4;
+// One generic section. `template` ∈ "free-form" (body) | "timeline" (items) | "list" (items).
+message DocumentSectionProto {
+  string id = 1;
+  string template = 2;
+  string heading = 3;
+  string body = 4;
+  repeated SectionItemProto items = 5;
+}
+
+message ProfileDocumentProto {
+  // Optional id, carried alongside the document where the caller needs to map a
+  // response back to a profile (cover letter / best-profile selection).
+  string id = 1;
+  ProfileHeaderProto header = 2;
+  repeated DocumentSectionProto sections = 3;
 }
 
 message UsageMetadata {
@@ -76,76 +61,35 @@ message UsageMetadata {
   string model_name        = 3;
 }
 
-message GenerateResponse {
-  string summary = 1;
-  repeated WorkExperienceOutput work_experiences = 2;
-  repeated EducationOutput educations = 3;
-  repeated string skills = 4;
-  repeated string highlights = 5;
-  UsageMetadata usage = 6;
-}
-
-message OptimizeRequest {
-  ProfileInput profile = 1;
+message GenerateRequest {
+  ProfileDocumentProto profile = 1;
   string message = 2;
   string global_preferences = 3;
 }
 
-message OptimizeWorkExperienceOutput {
-  string company = 1;
-  string role = 2;
-  string start_date = 3;
-  string end_date = 4;
-  string description = 5;
+message GenerateResponse {
+  ProfileDocumentProto document = 1;
+  UsageMetadata usage = 2;
 }
 
-message OptimizeSkillOutput {
-  string name = 1;
+message OptimizeRequest {
+  ProfileDocumentProto profile = 1;
+  string message = 2;
+  string global_preferences = 3;
 }
 
 message OptimizeResponse {
-  string title = 1;
-  string overview = 2;
-  repeated OptimizeWorkExperienceOutput work_experiences = 3;
-  repeated OptimizeSkillOutput skills = 4;
-  UsageMetadata usage = 5;
+  ProfileDocumentProto document = 1;
+  UsageMetadata usage = 2;
 }
 
 message ExtractProfileRequest {
   string cv_text = 1;
 }
 
-message ExtractWorkExperience {
-  string company = 1;
-  string role = 2;
-  string start_date = 3;
-  string end_date = 4;
-  string description = 5;
-}
-
-message ExtractEducation {
-  string institution = 1;
-  string degree = 2;
-  string field = 3;
-  int32 start_year = 4;
-  int32 end_year = 5;
-}
-
-message ExtractSkill {
-  string name = 1;
-}
-
 message ExtractProfileResponse {
-  string full_name = 1;
-  string title = 2;
-  string overview = 3;
-  string location = 4;
-  string contact_email = 5;
-  string contact_phone = 6;
-  repeated ExtractWorkExperience work_experiences = 7;
-  repeated ExtractEducation educations = 8;
-  repeated ExtractSkill skills = 9;
-  UsageMetadata usage = 10;
+  ProfileDocumentProto document = 1;
+  UsageMetadata usage = 2;
 }
 
 message EnhanceFieldRequest {
@@ -164,7 +108,7 @@ message ChatMessage {
 }
 
 message ChatRequest {
-  ProfileInput         profile = 1;
+  ProfileDocumentProto profile = 1;
   string               message = 2;
   repeated ChatMessage history = 3;
 }
@@ -172,6 +116,7 @@ message ChatRequest {
 message ChatProposal {
   string type        = 1;
   string description = 2;
+  // JSON string describing a document patch.
   string patch_json  = 3;
 }
 
@@ -208,12 +153,12 @@ message HealthResponse {
 }
 
 message CoverLetterRequest {
-  repeated ProfileInput profiles = 1;
-  repeated string profile_ids   = 2;
-  string job_title              = 3;
-  string job_description        = 4;
-  string field_context          = 5;
-  string global_preferences     = 6;
+  // Each profile carries its own id on the proto (ProfileDocumentProto.id).
+  repeated ProfileDocumentProto profiles = 1;
+  string job_title              = 2;
+  string job_description        = 3;
+  string field_context          = 4;
+  string global_preferences     = 5;
 }
 
 message CoverLetterResponse {
@@ -223,9 +168,8 @@ message CoverLetterResponse {
 }
 
 message SelectBestProfileRequest {
-  repeated ProfileInput profiles    = 1;
-  repeated string       profile_ids = 2;
-  string                job_description = 3;
+  repeated ProfileDocumentProto profiles = 1;
+  string                job_description  = 2;
 }
 
 message SelectBestProfileResponse {

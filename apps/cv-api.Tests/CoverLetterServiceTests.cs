@@ -29,10 +29,25 @@ public class CoverLetterServiceTests
             Id = Guid.NewGuid(),
             UserId = userId,
             Name = title,
-            FullName = "Jane Doe",
-            Title = title,
-            Overview = overview,
-            Skills = [new Skill { Name = "Python" }, new Skill { Name = "Go" }],
+            // ADR-0013: profile content lives in the canonical ProfileDocument.
+            Document = new ProfileDocument
+            {
+                Header = new ProfileHeader { FullName = "Jane Doe", Title = title },
+                Sections =
+                [
+                    new DocumentSection { Template = "free-form", Heading = "Summary", Body = overview },
+                    new DocumentSection
+                    {
+                        Template = "list",
+                        Heading = "Skills",
+                        Items =
+                        [
+                            new SectionItem { Text = "Python" },
+                            new SectionItem { Text = "Go" },
+                        ],
+                    },
+                ],
+            },
         };
 
     // -------------------------------------------------------------------------

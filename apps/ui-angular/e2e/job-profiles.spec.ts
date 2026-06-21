@@ -92,15 +92,18 @@ test.describe('Create profile from CV upload', () => {
 
     const extractedProfile = {
       name: 'My Profile',
-      fullName: 'Alex Smith',
-      title: 'Backend Developer',
-      overview: 'Experienced backend developer.',
-      location: 'Berlin',
-      contacts: { email: 'alex@example.com', phone: '' },
-      workExperiences: [],
-      educations: [],
-      skills: [],
-      sectionOrder: ['workExperiences', 'educations', 'skills'],
+      document: {
+        header: {
+          fullName: 'Alex Smith',
+          title: 'Backend Developer',
+          email: 'alex@example.com',
+          phone: '',
+          location: 'Berlin',
+        },
+        sections: [
+          { id: 's1', template: 'free-form', heading: 'Summary', body: 'Experienced backend developer.' },
+        ],
+      },
     };
     await mockJobProfilesExtractApi(page, 'new-profile-id', extractedProfile);
 

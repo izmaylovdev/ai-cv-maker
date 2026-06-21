@@ -1,10 +1,29 @@
-// In-memory document model for the profile builder (UX phase, spec §7.2).
-// Plain, JSON-safe shapes — deliberately NOT the persisted `Profile` shape.
+// Canonical profile document model (ADR-0013). Plain, JSON-safe shapes; this is
+// the persisted `Profile.Document` shape end to end — cv-api stores it as a JSON
+// column, the gRPC proto (ProfileDocumentProto) and llm-service mirror it, and
+// the PDF renders it. This TypeScript definition is the reference; keep the C#
+// CvApi.Domain.Entities.ProfileDocument and Python app/schemas.py in sync.
 
 export type SectionTemplateId = 'free-form' | 'timeline' | 'list';
 
 export interface ProfileDocument {
+  /** Fixed identity/contact letterhead, always present above the sections. */
+  header: ProfileHeader;
   sections: DocumentSection[];
+}
+
+/**
+ * The document's letterhead: identity and contact details. Unlike sections,
+ * this block is fixed (not addable/removable/reorderable) — every CV needs it,
+ * and the persisted `Profile` and PDF renderer depend on these fields.
+ */
+export interface ProfileHeader {
+  fullName: string;
+  /** Professional headline / job title, e.g. "Senior Software Engineer". */
+  title: string;
+  email: string;
+  phone: string;
+  location: string;
 }
 
 export type DocumentSection =
@@ -72,6 +91,10 @@ export function newId(): string {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export function emptyHeader(): ProfileHeader {
+  return { fullName: '', title: '', email: '', phone: '', location: '' };
+}
+
 export function emptyDocument(): ProfileDocument {
-  return { sections: [] };
+  return { header: emptyHeader(), sections: [] };
 }

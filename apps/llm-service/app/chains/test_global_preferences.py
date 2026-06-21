@@ -3,27 +3,36 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.schemas import ProfileInput, SkillInput, WorkExperienceInput
+from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
+
+# Minimal valid ProfileDocument JSON, used as the fake model response across tests.
+_DOC_JSON = (
+    '{"header":{"fullName":"Jane Doe","title":"Software Engineer","email":"","phone":"","location":"Berlin"},'
+    '"sections":[{"id":"sum","template":"free-form","heading":"Summary","body":"5 years building web apps."}]}'
+)
 
 
 @pytest.fixture()
-def basic_profile() -> ProfileInput:
-    return ProfileInput(
-        fullName="Jane Doe",
-        title="Software Engineer",
-        overview="5 years building web apps.",
-        location="Berlin",
-        workExperiences=[
-            WorkExperienceInput(
-                company="Acme",
-                role="Engineer",
-                startDate="2019-01-01",
-                endDate="2024-01-01",
-                description="Built stuff.",
-            )
+def basic_profile() -> ProfileDocument:
+    return ProfileDocument(
+        header=ProfileHeader(fullName="Jane Doe", title="Software Engineer", location="Berlin"),
+        sections=[
+            DocumentSection(
+                id="sum", template="free-form", heading="Summary",
+                body="5 years building web apps.",
+            ),
+            DocumentSection(
+                id="work", template="timeline", heading="Work Experience",
+                items=[SectionItem(
+                    id="w1", title="Engineer · Acme", dates="2019 – 2024",
+                    description="Built stuff.",
+                )],
+            ),
+            DocumentSection(
+                id="skills", template="list", heading="Skills",
+                items=[SectionItem(id="s1", text="Python")],
+            ),
         ],
-        educations=[],
-        skills=[SkillInput(name="Python")],
     )
 
 
@@ -49,8 +58,7 @@ def _make_fake_message(text: str) -> MagicMock:
 async def test_generate_cv_foundry_raw_injects_preferences_into_system_prompt(basic_profile):
     from app.chains.cv_chain import _generate_cv_foundry_raw, _profile_to_prompt_vars
 
-    fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
-    fake_msg = _make_fake_message(fake_json)
+    fake_msg = _make_fake_message(_DOC_JSON)
 
     with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
@@ -70,8 +78,7 @@ async def test_generate_cv_foundry_raw_injects_preferences_into_system_prompt(ba
 async def test_generate_cv_foundry_raw_no_preferences_leaves_system_prompt_unchanged(basic_profile):
     from app.chains.cv_chain import _generate_cv_foundry_raw, _profile_to_prompt_vars, _SYSTEM_PROMPT
 
-    fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
-    fake_msg = _make_fake_message(fake_json)
+    fake_msg = _make_fake_message(_DOC_JSON)
 
     with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
@@ -91,8 +98,7 @@ async def test_generate_cv_foundry_raw_no_preferences_leaves_system_prompt_uncha
 async def test_generate_cv_foundry_raw_whitespace_only_preferences_not_injected(basic_profile):
     from app.chains.cv_chain import _generate_cv_foundry_raw, _profile_to_prompt_vars, _SYSTEM_PROMPT
 
-    fake_json = '{"summary":"S","workExperiences":[],"educations":[],"skills":[],"highlights":[]}'
-    fake_msg = _make_fake_message(fake_json)
+    fake_msg = _make_fake_message(_DOC_JSON)
 
     with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
@@ -115,8 +121,7 @@ async def test_generate_cv_foundry_raw_whitespace_only_preferences_not_injected(
 async def test_optimize_foundry_raw_injects_preferences_into_system_prompt(basic_profile):
     from app.chains.cv_chain import _optimize_profile_foundry_raw, _build_optimize_inputs
 
-    fake_json = '{"title":"T","overview":"O","workExperiences":[],"skills":[]}'
-    fake_msg = _make_fake_message(fake_json)
+    fake_msg = _make_fake_message(_DOC_JSON)
 
     with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
@@ -136,8 +141,7 @@ async def test_optimize_foundry_raw_injects_preferences_into_system_prompt(basic
 async def test_optimize_foundry_raw_no_preferences_leaves_system_prompt_unchanged(basic_profile):
     from app.chains.cv_chain import _optimize_profile_foundry_raw, _build_optimize_inputs, _OPTIMIZE_SYSTEM_PROMPT
 
-    fake_json = '{"title":"T","overview":"O","workExperiences":[],"skills":[]}'
-    fake_msg = _make_fake_message(fake_json)
+    fake_msg = _make_fake_message(_DOC_JSON)
 
     with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
          patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
@@ -263,12 +267,10 @@ async def test_cover_letter_system_prompt_has_no_hardcoded_length():
 @pytest.mark.asyncio
 async def test_generate_cv_forwards_preferences_to_foundry(basic_profile):
     from app.chains.cv_chain import generate_cv
-    from app.schemas import GenerateResponse
+    from app.schemas import GenerateResponse, ProfileDocument
     from app.chains.usage import TokenUsage
 
-    fake_response = GenerateResponse(
-        summary="Great.", workExperiences=[], educations=[], skills=["Python"], highlights=["Led team"]
-    )
+    fake_response = GenerateResponse(document=ProfileDocument())
     fake_usage = TokenUsage(prompt_tokens=10, completion_tokens=20, model_name="claude-haiku-4-5")
 
     with patch("app.chains.cv_chain._generate_cv_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \
@@ -281,12 +283,10 @@ async def test_generate_cv_forwards_preferences_to_foundry(basic_profile):
 @pytest.mark.asyncio
 async def test_generate_cv_forwards_empty_preferences_to_foundry(basic_profile):
     from app.chains.cv_chain import generate_cv
-    from app.schemas import GenerateResponse
+    from app.schemas import GenerateResponse, ProfileDocument
     from app.chains.usage import TokenUsage
 
-    fake_response = GenerateResponse(
-        summary="Great.", workExperiences=[], educations=[], skills=[], highlights=[]
-    )
+    fake_response = GenerateResponse(document=ProfileDocument())
     fake_usage = TokenUsage(prompt_tokens=10, completion_tokens=20, model_name="claude-haiku-4-5")
 
     with patch("app.chains.cv_chain._generate_cv_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \
@@ -299,10 +299,10 @@ async def test_generate_cv_forwards_empty_preferences_to_foundry(basic_profile):
 @pytest.mark.asyncio
 async def test_optimize_profile_forwards_preferences_to_foundry(basic_profile):
     from app.chains.cv_chain import optimize_profile
-    from app.schemas import OptimizeResponse
+    from app.schemas import OptimizeResponse, ProfileDocument
     from app.chains.usage import TokenUsage
 
-    fake_response = OptimizeResponse(title="T", overview="O.", workExperiences=[], skills=[])
+    fake_response = OptimizeResponse(document=ProfileDocument())
     fake_usage = TokenUsage(prompt_tokens=10, completion_tokens=20, model_name="claude-haiku-4-5")
 
     with patch("app.chains.cv_chain._optimize_profile_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \

@@ -6,6 +6,13 @@
 
 ---
 
+> **Contract note (ADR-0013).** The gRPC/Python snippets below predate the
+> document model and still show the retired `ProfileInput` message and structured
+> profile fields. The canonical model is now `ProfileDocument { header,
+> sections[] }` (proto `ProfileDocumentProto`); `Generate`/`Optimize`/
+> `ExtractProfile` take and return documents. See `ARCHITECTURE.md` (gRPC
+> contract) and ADR-0013 — the snippets are kept for narrative history.
+
 ## 1. Overview
 
 AI assistance is available at two levels:

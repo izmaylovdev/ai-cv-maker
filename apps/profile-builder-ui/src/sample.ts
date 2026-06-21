@@ -2,6 +2,13 @@ import { ProfileDocument } from './model';
 
 // Seed document for the standalone dev harness only (not shipped as behaviour).
 export const SAMPLE_DOCUMENT: ProfileDocument = {
+  header: {
+    fullName: 'Ada Lovelace',
+    title: 'Senior Software Engineer',
+    email: 'ada@example.com',
+    phone: '+1 (555) 010-1842',
+    location: 'London, UK',
+  },
   sections: [
     {
       id: 'sample-summary',

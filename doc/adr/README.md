@@ -67,3 +67,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0010](0010-langfuse-llm-observability.md) | Langfuse for LLM observability (self-hosted, opt-in) | Accepted |
 | [0011](0011-langfuse-prod-single-vm.md) | Langfuse production hosting on a single GCE VM | Accepted |
 | [0012](0012-langfuse-evals.md) | Run LLM evals through Langfuse datasets and experiments | Accepted |
+| [0013](0013-canonical-profile-document-model.md) | Section-based ProfileDocument as the canonical profile model | Accepted |

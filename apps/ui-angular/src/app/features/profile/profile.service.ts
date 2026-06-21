@@ -1,23 +1,14 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
-import { JobProfileListItem, Profile } from '../../shared/models/profile.model';
+import { JobProfile, JobProfileListItem, ProfileDocument } from '../../shared/models/profile.model';
 
 const BASE = `${environment.apiUrl}/job-profiles`;
 
-export interface OptimizeWorkExperience {
-  company: string;
-  role: string;
-  startDate: string;
-  endDate?: string;
-  description: string;
-}
-
-export interface OptimizeProfileResponse {
-  title: string;
-  overview: string;
-  workExperiences: OptimizeWorkExperience[];
-  skills: { name: string }[];
+/** What the user edits and saves: the profile's label plus its document. */
+export interface ProfileUpdate {
+  name: string;
+  document: ProfileDocument;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -37,24 +28,22 @@ export class ProfileService {
   }
 
   getProfile(id: string) {
-    return this.http.get<Profile>(`${BASE}/${id}`);
+    return this.http.get<JobProfile>(`${BASE}/${id}`);
   }
 
-  updateProfile(id: string, profile: Omit<Profile, 'id'>) {
-    return this.http.put<Profile>(`${BASE}/${id}`, profile);
+  updateProfile(id: string, update: ProfileUpdate) {
+    return this.http.put<JobProfile>(`${BASE}/${id}`, update);
   }
 
+  /** AI-rewrites the profile for the given goal; returns the new document for review. */
   optimizeProfile(id: string, message: string) {
-    return this.http.post<OptimizeProfileResponse>(`${BASE}/${id}/optimize`, { message });
+    return this.http.post<{ document: ProfileDocument }>(`${BASE}/${id}/optimize`, { message });
   }
 
-  enhanceField(content: string, fieldPurpose: string) {
-    return this.http.post<{ enhanced: string }>(`${environment.apiUrl}/ai/enhance-field`, { content, fieldPurpose });
-  }
-
+  /** Extracts a document (and a suggested name) from an uploaded CV file. */
   extractFromCv(id: string, file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    return this.http.post<Omit<Profile, 'id'>>(`${BASE}/${id}/extract`, formData);
+    return this.http.post<{ name: string; document: ProfileDocument }>(`${BASE}/${id}/extract`, formData);
   }
 }

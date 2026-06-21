@@ -2,7 +2,7 @@
 #
 # One-line local dev environment.
 #
-#   npm run dev                    # postgres + cv-api + llm-service + ui-angular + chat-ui
+#   npm run dev                    # postgres + cv-api + llm-service + ui-angular + chat-ui + profile-builder-ui
 #   npm run dev -- --with-admin    # also start admin-db + admin-api + admin-ui
 #   npm run dev -- --with-obs      # also start the Langfuse LLM-tracing stack and
 #                                  #   point the host llm-service at it
@@ -40,6 +40,7 @@ servers=(
   "llm=llm-service:serve"
   "app=ui-angular:serve"
   "chat=chat-ui:dev"
+  "builder=profile-builder-ui:dev"
 )
 # Compose files and Docker dependencies the dev servers need.
 compose_files=(-f docker-compose.yml)

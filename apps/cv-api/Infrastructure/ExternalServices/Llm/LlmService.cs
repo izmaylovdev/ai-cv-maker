@@ -94,21 +94,14 @@ public class LlmService(
             var reply = await ExecuteAsync(async _ =>
                 await grpcClient.GenerateAsync(new GenerateRequest
                 {
-                    Profile = MapProfile(request.Profile),
+                    Profile = ToProto(request.Profile),
                     Message = request.Message ?? string.Empty,
                     GlobalPreferences = request.GlobalPreferences ?? string.Empty,
                 }, DefaultCallOptions));
 
             AddSpan("LlmService/Generate", false, sw.ElapsedMilliseconds, startedAt);
 
-            return new LlmGenerateResponse(
-                reply.Summary,
-                reply.WorkExperiences.Select(w => new LlmWorkExperience(w.Company, w.Role, w.Period, w.Description)).ToList(),
-                reply.Educations.Select(e => new LlmEducation(e.Institution, e.Degree, e.Field, e.Period)).ToList(),
-                reply.Skills.ToList(),
-                reply.Highlights.ToList(),
-                MapUsage(reply.Usage)
-            );
+            return new LlmGenerateResponse(FromProto(reply.Document), MapUsage(reply.Usage));
         }
         catch
         {
@@ -126,22 +119,14 @@ public class LlmService(
             var reply = await ExecuteAsync(async _ =>
                 await grpcClient.OptimizeAsync(new OptimizeRequest
                 {
-                    Profile = MapProfile(request.Profile),
+                    Profile = ToProto(request.Profile),
                     Message = request.Message,
                     GlobalPreferences = request.GlobalPreferences ?? string.Empty,
                 }, DefaultCallOptions));
 
             AddSpan("LlmService/Optimize", false, sw.ElapsedMilliseconds, startedAt);
 
-            return new LlmOptimizeResponse(
-                reply.Title,
-                reply.Overview,
-                reply.WorkExperiences.Select(w => new LlmOptimizeWorkExperience(
-                    w.Company, w.Role, w.StartDate, string.IsNullOrEmpty(w.EndDate) ? null : w.EndDate, w.Description
-                )).ToList(),
-                reply.Skills.Select(s => new LlmOptimizeSkill(s.Name)).ToList(),
-                MapUsage(reply.Usage)
-            );
+            return new LlmOptimizeResponse(FromProto(reply.Document), MapUsage(reply.Usage));
         }
         catch
         {
@@ -164,25 +149,7 @@ public class LlmService(
 
             AddSpan("LlmService/ExtractProfile", false, sw.ElapsedMilliseconds, startedAt);
 
-            return new LlmExtractResponse(
-                reply.FullName,
-                reply.Title,
-                reply.Overview,
-                string.IsNullOrEmpty(reply.Location) ? null : reply.Location,
-                string.IsNullOrEmpty(reply.ContactEmail) ? null : reply.ContactEmail,
-                string.IsNullOrEmpty(reply.ContactPhone) ? null : reply.ContactPhone,
-                reply.WorkExperiences.Select(w => new LlmExtractWorkExperience(
-                    w.Company, w.Role, w.StartDate,
-                    string.IsNullOrEmpty(w.EndDate) ? null : w.EndDate,
-                    w.Description
-                )).ToList(),
-                reply.Educations.Select(e => new LlmExtractEducation(
-                    e.Institution, e.Degree, e.Field, e.StartYear,
-                    e.EndYear == 0 ? null : e.EndYear
-                )).ToList(),
-                reply.Skills.Select(s => new LlmExtractSkill(s.Name)).ToList(),
-                MapUsage(reply.Usage)
-            );
+            return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage));
         }
         catch
         {
@@ -223,7 +190,7 @@ public class LlmService(
         {
             var grpcRequest = new CvApi.Grpc.ChatRequest
             {
-                Profile = MapProfile(request.Profile),
+                Profile = ToProto(request.Profile),
                 Message = request.Message,
             };
             grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
@@ -311,11 +278,7 @@ public class LlmService(
                 FieldContext = request.FieldContext,
                 GlobalPreferences = request.GlobalPreferences ?? string.Empty,
             };
-            foreach (var p in request.Profiles)
-            {
-                grpcRequest.ProfileIds.Add(p.Id);
-                grpcRequest.Profiles.Add(MapProfileFromCoverLetter(p));
-            }
+            grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
             var reply = await ExecuteAsync(async _ =>
                 await grpcClient.GenerateCoverLetterAsync(grpcRequest, DefaultCallOptions));
@@ -335,46 +298,6 @@ public class LlmService(
         }
     }
 
-    private static ProfileInput MapProfileFromCoverLetter(LlmCoverLetterProfile p) => new()
-    {
-        FullName = p.FullName,
-        Title = p.Title,
-        Overview = p.Overview,
-        Location = p.Location ?? string.Empty,
-        WorkExperiences =
-        {
-            p.WorkExperiences.Select(w => new WorkExperienceInput
-            {
-                Id = w.Id?.ToString() ?? string.Empty,
-                Company = w.Company,
-                Role = w.Role,
-                StartDate = w.StartDate.ToString(),
-                EndDate = w.EndDate?.ToString() ?? string.Empty,
-                Description = w.Description,
-            })
-        },
-        Educations =
-        {
-            p.Educations.Select(e => new EducationInput
-            {
-                Id = e.Id?.ToString() ?? string.Empty,
-                Institution = e.Institution,
-                Degree = e.Degree,
-                Field = e.Field,
-                StartYear = e.StartYear,
-                EndYear = e.EndYear ?? 0,
-            })
-        },
-        Skills =
-        {
-            p.Skills.Select(s => new SkillInput
-            {
-                Id = s.Id?.ToString() ?? string.Empty,
-                Name = s.Name,
-            })
-        },
-    };
-
     public async Task<LlmSelectBestProfileResponse> SelectBestProfileAsync(LlmSelectBestProfileRequest request)
     {
         var sw = Stopwatch.StartNew();
@@ -385,11 +308,7 @@ public class LlmService(
             {
                 JobDescription = request.JobDescription,
             };
-            foreach (var p in request.Profiles)
-            {
-                grpcRequest.ProfileIds.Add(p.Id);
-                grpcRequest.Profiles.Add(MapProfileFromCoverLetter(p));
-            }
+            grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
             var reply = await ExecuteAsync(async _ =>
                 await grpcClient.SelectBestProfileAsync(grpcRequest, DefaultCallOptions));
@@ -407,43 +326,76 @@ public class LlmService(
         }
     }
 
-    private static ProfileInput MapProfile(LlmProfileRequest p) => new()
+    private static ProfileDocumentProto ToProto(LlmProfileWithId p)
     {
-        FullName = p.FullName,
-        Title = p.Title,
-        Overview = p.Overview,
-        Location = p.Location ?? string.Empty,
-        WorkExperiences =
+        var proto = ToProto(p.Document);
+        proto.Id = p.Id;
+        return proto;
+    }
+
+    private static ProfileDocumentProto ToProto(ProfileDocument doc)
+    {
+        var proto = new ProfileDocumentProto
         {
-            p.WorkExperiences.Select(w => new WorkExperienceInput
+            Header = new ProfileHeaderProto
             {
-                Id = w.Id?.ToString() ?? string.Empty,
-                Company = w.Company,
-                Role = w.Role,
-                StartDate = w.StartDate.ToString(),
-                EndDate = w.EndDate?.ToString() ?? string.Empty,
-                Description = w.Description,
-            })
-        },
-        Educations =
+                FullName = doc.Header.FullName,
+                Title = doc.Header.Title,
+                Email = doc.Header.Email,
+                Phone = doc.Header.Phone,
+                Location = doc.Header.Location,
+            },
+        };
+        proto.Sections.AddRange(doc.Sections.Select(s =>
         {
-            p.Educations.Select(e => new EducationInput
+            var section = new DocumentSectionProto
             {
-                Id = e.Id?.ToString() ?? string.Empty,
-                Institution = e.Institution,
-                Degree = e.Degree,
-                Field = e.Field,
-                StartYear = e.StartYear,
-                EndYear = e.EndYear ?? 0,
-            })
-        },
-        Skills =
+                Id = s.Id,
+                Template = s.Template,
+                Heading = s.Heading,
+                Body = s.Body ?? string.Empty,
+            };
+            section.Items.AddRange((s.Items ?? []).Select(i => new SectionItemProto
+            {
+                Id = i.Id,
+                Title = i.Title ?? string.Empty,
+                Dates = i.Dates ?? string.Empty,
+                Description = i.Description ?? string.Empty,
+                Text = i.Text ?? string.Empty,
+            }));
+            return section;
+        }));
+        return proto;
+    }
+
+    private static ProfileDocument FromProto(ProfileDocumentProto? proto)
+    {
+        if (proto is null) return ProfileDocument.Empty();
+        return new ProfileDocument
         {
-            p.Skills.Select(s => new SkillInput
+            Header = new ProfileHeader
             {
-                Id = s.Id?.ToString() ?? string.Empty,
-                Name = s.Name,
-            })
-        },
-    };
+                FullName = proto.Header?.FullName ?? string.Empty,
+                Title = proto.Header?.Title ?? string.Empty,
+                Email = proto.Header?.Email ?? string.Empty,
+                Phone = proto.Header?.Phone ?? string.Empty,
+                Location = proto.Header?.Location ?? string.Empty,
+            },
+            Sections = proto.Sections.Select(s => new DocumentSection
+            {
+                Id = s.Id,
+                Template = string.IsNullOrEmpty(s.Template) ? "free-form" : s.Template,
+                Heading = s.Heading,
+                Body = string.IsNullOrEmpty(s.Body) ? null : s.Body,
+                Items = s.Items.Count == 0 ? null : s.Items.Select(i => new SectionItem
+                {
+                    Id = i.Id,
+                    Title = string.IsNullOrEmpty(i.Title) ? null : i.Title,
+                    Dates = string.IsNullOrEmpty(i.Dates) ? null : i.Dates,
+                    Description = string.IsNullOrEmpty(i.Description) ? null : i.Description,
+                    Text = string.IsNullOrEmpty(i.Text) ? null : i.Text,
+                }).ToList(),
+            }).ToList(),
+        };
+    }
 }

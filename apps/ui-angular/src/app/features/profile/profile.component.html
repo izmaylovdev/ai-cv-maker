@@ -22,18 +22,27 @@
         <span class="material-icons text-base">arrow_back</span>
       </button>
       <div class="min-w-0">
-        <h1 class="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">{{ profileName }}</h1>
-        <p class="hidden text-xs text-gray-500 sm:block dark:text-zinc-400">Fill in your details to generate an
-          AI-powered CV</p>
+        <h1 class="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">{{ profileName() }}</h1>
+        <p class="hidden text-xs text-gray-500 sm:block dark:text-zinc-400">Edit your profile document, then save or
+          export it as a CV</p>
       </div>
     </div>
     <div class="flex items-center gap-2 shrink-0">
-      <!-- Desktop: all three secondary actions inline -->
-      <button type="button" (click)="openReorderDialog()" title="Reorder sections"
-              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
-        <span class="material-icons text-base">sort</span><span class="hidden lg:inline">Reorder</span>
+      <!-- Import from CV (hidden file input) -->
+      <input #cvInput type="file" accept=".pdf,.doc,.docx,.txt" class="hidden"
+             (change)="onExtractFileChange($event)" />
+      <button type="button" (click)="cvInput.click()" [disabled]="extracting()" title="Import from CV"
+              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 disabled:opacity-50 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
+        @if (extracting()) {
+          <span
+            class="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+        } @else {
+          <span class="material-icons text-base">upload_file</span>
+        }
+        <span class="hidden lg:inline">Import CV</span>
       </button>
-      <button type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()" title="Optimize with AI"
+
+      <button type="button" (click)="optimize()" [disabled]="optimizing()" title="Optimize with AI"
               class="hidden sm:flex items-center gap-1.5 border border-purple-600 dark:border-purple-400 bg-white dark:bg-transparent text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 disabled:opacity-50 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         @if (optimizing()) {
           <span
@@ -43,420 +52,55 @@
         }
         <span class="hidden lg:inline">Optimize with AI</span>
       </button>
+
       <button type="button" (click)="openPdf()" title="Open PDF"
               class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         <span class="material-icons text-base">picture_as_pdf</span><span class="hidden lg:inline"> PDF</span>
       </button>
-      <!-- Mobile: three-dot menu -->
-      <app-dropdown class="sm:hidden">
-        <button appDropdownTrigger type="button" title="More actions"
-                class="flex items-center justify-center w-9 h-9 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors cursor-pointer">
-          <span class="material-icons text-base">more_vert</span>
-        </button>
 
-        <button appDropdownItem type="button" (click)="openReorderDialog()"
-                class="text-gray-700 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-700">
-          <span class="material-icons text-base">sort</span> Reorder
-        </button>
-        <button appDropdownItem type="button" (click)="openOptimizeDialog()" [disabled]="optimizing()"
-                class="text-purple-600 hover:bg-gray-50 disabled:opacity-50 dark:text-purple-400 dark:hover:bg-zinc-700">
-          @if (optimizing()) {
-            <span
-              class="w-4 h-4 border-2 border-purple-600 dark:border-purple-400 border-t-transparent rounded-full animate-spin"></span>
-          } @else {
-            <span class="material-icons text-base">auto_fix_high</span>
-          }
-          Optimize with AI
-        </button>
-        <button appDropdownItem type="button" (click)="openPdf()"
-                class="text-gray-700 hover:bg-gray-50 dark:text-zinc-300 dark:hover:bg-zinc-700">
-          <span class="material-icons text-base">picture_as_pdf</span> PDF
-        </button>
-      </app-dropdown>
-
-      <!-- Save always visible -->
-      <button (click)="save()" [disabled]="saving()" title="Save profile"
-              class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-2.5 lg:px-4 py-2 text-sm transition-colors cursor-pointer border-0">
+      <button type="button" (click)="save()" [disabled]="saving()" title="Save Profile"
+              class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-3.5 py-2 text-sm transition-colors cursor-pointer border-0">
         @if (saving()) {
           <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
         } @else {
           <span class="material-icons text-base">save</span>
         }
-        <span class="hidden lg:inline">Save Profile</span>
+        <span class="hidden sm:inline">Save Profile</span>
       </button>
     </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-
-    <!-- Left: form -->
-    <div class="flex flex-col pb-6">
-      <div class="flex flex-col gap-5">
-
-        <form [formGroup]="form" class="flex flex-col gap-5">
-
-          <!-- Personal Information -->
-          <div #leftPersonal
-               class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 flex flex-col gap-4 transition-colors">
-            <div class="flex flex-col gap-1">
-              <label for="profile-name" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Profile
-                Name</label>
-              <input id="profile-name" type="text" formControlName="name"
-                     placeholder="e.g. Senior Backend Engineer, ML Researcher…"
-                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-            </div>
-
-            <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Personal
-              Information</h3>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="flex flex-col gap-1">
-                <label for="profile-full-name" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Full
-                  Name</label>
-                <input id="profile-full-name" type="text" formControlName="fullName" placeholder="John Doe"
-                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                @if (form.get('fullName')?.hasError('required') && form.get('fullName')?.touched) {
-                  <span class="text-xs text-red-500">Full name is required</span>
-                }
-              </div>
-              <div class="flex flex-col gap-1">
-                <label for="profile-title" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Professional
-                  Title</label>
-                <input id="profile-title" type="text" formControlName="title" placeholder="Senior Software Engineer"
-                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                @if (form.get('title')?.hasError('required') && form.get('title')?.touched) {
-                  <span class="text-xs text-red-500">Title is required</span>
-                }
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="profile-location"
-                     class="text-sm font-medium text-gray-700 dark:text-zinc-300">Location</label>
-              <input id="profile-location" type="text" formControlName="location" placeholder="Berlin, Germany"
-                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="profile-overview" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Professional
-                Overview</label>
-              <app-enhanced-textarea
-                inputId="profile-overview"
-                formControlName="overview"
-                [rows]="5"
-                placeholder="Brief description of your professional background, key achievements, and career goals..."
-                textareaClass="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
-                fieldPurpose="Professional Overview / Summary for a CV. This is the main introduction paragraph that appears at the top of the CV. It should be 2-4 concise, compelling sentences capturing the candidate's professional identity, core strengths, and career goals. Maintain first or third person depending on the existing style."
-              />
-              @if (form.get('overview')?.hasError('required') && form.get('overview')?.touched) {
-                <span class="text-xs text-red-500">Overview is required</span>
-              }
-            </div>
-
-            <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide pt-2">Contact
-              Information</h3>
-
-            <div formGroupName="contacts" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="flex flex-col gap-1">
-                <label for="profile-email" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Email</label>
-                <input id="profile-email" type="email" formControlName="email" placeholder="john@example.com"
-                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                @if (form.get('contacts.email')?.hasError('email') && form.get('contacts.email')?.touched) {
-                  <span class="text-xs text-red-500">Enter a valid email address</span>
-                }
-              </div>
-              <div class="flex flex-col gap-1">
-                <label for="profile-phone" class="text-sm font-medium text-gray-700 dark:text-zinc-300">Phone</label>
-                <input id="profile-phone" type="tel" formControlName="phone" appPhoneMask
-                       placeholder="+38 (063) 78-312-49"
-                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Sections (order controlled by reorder dialog) -->
-          <div class="flex flex-col gap-5">
-            @for (section of sectionOrder(); track section) {
-              <div>
-                @switch (section) {
-
-                  @case ('workExperiences') {
-                    <!-- Work Experience -->
-                    <div #leftWork class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
-                      <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                          <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                            Work Experience</h3>
-                        </div>
-                        <button type="button" (click)="addWorkExperience()"
-                                class="flex items-center gap-1 border border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white dark:bg-transparent">
-                          <span class="material-icons text-base">add</span> Add Experience
-                        </button>
-                      </div>
-
-                      @if (workExperiences.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No work experience
-                          added yet. Click "Add Experience" to start.</p>
-                      }
-
-                      <div formArrayName="workExperiences" class="flex flex-col gap-4">
-                        @for (exp of workExperiences.controls; track $index) {
-                          <div [formGroupName]="$index"
-                               class="border border-gray-200 dark:border-zinc-600 rounded-xl p-4 bg-gray-50 dark:bg-zinc-700/50 transition-colors">
-                            <div class="flex items-center justify-between mb-4">
-                              <span
-                                class="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Experience {{ $index + 1 }}</span>
-                              <button type="button" (click)="removeWorkExperience($index)"
-                                      class="flex items-center justify-center w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors cursor-pointer bg-transparent border-0">
-                                <span class="material-icons text-base">delete</span>
-                              </button>
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'work-company-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Company</label>
-                                <input [id]="'work-company-' + $index" type="text" formControlName="company"
-                                       placeholder="Acme Corp"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                @if (exp.get('company')?.hasError('required') && exp.get('company')?.touched) {
-                                  <span class="text-xs text-red-500">Company is required</span>
-                                }
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'work-role-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Role</label>
-                                <input [id]="'work-role-' + $index" type="text" formControlName="role"
-                                       placeholder="Software Engineer"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                @if (exp.get('role')?.hasError('required') && exp.get('role')?.touched) {
-                                  <span class="text-xs text-red-500">Role is required</span>
-                                }
-                              </div>
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'work-start-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Start Date</label>
-                                <input [id]="'work-start-' + $index" type="text" formControlName="startDate"
-                                       placeholder="2020-01-15"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-zinc-500">Format: YYYY-MM-DD</span>
-                                @if (exp.get('startDate')?.hasError('required') && exp.get('startDate')?.touched) {
-                                  <span class="text-xs text-red-500">Start date is required</span>
-                                }
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'work-end-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">End Date</label>
-                                <input [id]="'work-end-' + $index" type="text" formControlName="endDate"
-                                       placeholder="2023-06-30 or leave blank"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-zinc-500">Leave blank if current</span>
-                              </div>
-                            </div>
-
-                            <div class="flex flex-col gap-1">
-                              <label [for]="'work-desc-' + $index"
-                                     class="text-xs font-medium text-gray-600 dark:text-zinc-400">Description</label>
-                              <app-enhanced-textarea
-                                [inputId]="'work-desc-' + $index"
-                                formControlName="description"
-                                [rows]="3"
-                                placeholder="Key responsibilities and achievements..."
-                                textareaClass="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"
-                                [fieldPurpose]="workDescPurpose($index)"
-                              />
-                            </div>
-                          </div>
-                        }
-                      </div>
-                    </div>
-
-                  } <!-- end workExperiences case -->
-
-                  @case ('educations') {
-                    <!-- Education -->
-                    <div #leftEdu class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
-                      <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                          <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                            Education</h3>
-                        </div>
-                        <button type="button" (click)="addEducation()"
-                                class="flex items-center gap-1 border border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white dark:bg-transparent">
-                          <span class="material-icons text-base">add</span> Add Education
-                        </button>
-                      </div>
-
-                      @if (educations.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No education added
-                          yet. Click "Add Education" to start.</p>
-                      }
-
-                      <div formArrayName="educations" class="flex flex-col gap-4">
-                        @for (edu of educations.controls; track $index) {
-                          <div [formGroupName]="$index"
-                               class="border border-gray-200 dark:border-zinc-600 rounded-xl p-4 bg-gray-50 dark:bg-zinc-700/50 transition-colors">
-                            <div class="flex items-center justify-between mb-4">
-                              <span
-                                class="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Education {{ $index + 1 }}</span>
-                              <button type="button" (click)="removeEducation($index)"
-                                      class="flex items-center justify-center w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors cursor-pointer bg-transparent border-0">
-                                <span class="material-icons text-base">delete</span>
-                              </button>
-                            </div>
-
-                            <div class="flex flex-col gap-1 mb-3">
-                              <label [for]="'edu-institution-' + $index"
-                                     class="text-xs font-medium text-gray-600 dark:text-zinc-400">Institution</label>
-                              <input [id]="'edu-institution-' + $index" type="text" formControlName="institution"
-                                     placeholder="MIT"
-                                     class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                              @if (edu.get('institution')?.hasError('required') && edu.get('institution')?.touched) {
-                                <span class="text-xs text-red-500">Institution is required</span>
-                              }
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'edu-degree-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Degree</label>
-                                <input [id]="'edu-degree-' + $index" type="text" formControlName="degree"
-                                       placeholder="Bachelor of Science"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                @if (edu.get('degree')?.hasError('required') && edu.get('degree')?.touched) {
-                                  <span class="text-xs text-red-500">Degree is required</span>
-                                }
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'edu-field-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Field of
-                                  Study</label>
-                                <input [id]="'edu-field-' + $index" type="text" formControlName="field"
-                                       placeholder="Computer Science"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                @if (edu.get('field')?.hasError('required') && edu.get('field')?.touched) {
-                                  <span class="text-xs text-red-500">Field is required</span>
-                                }
-                              </div>
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'edu-start-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">Start Year</label>
-                                <input [id]="'edu-start-' + $index" type="number" formControlName="startYear"
-                                       placeholder="2016"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                @if (edu.get('startYear')?.hasError('required') && edu.get('startYear')?.touched) {
-                                  <span class="text-xs text-red-500">Start year is required</span>
-                                }
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <label [for]="'edu-end-' + $index"
-                                       class="text-xs font-medium text-gray-600 dark:text-zinc-400">End Year</label>
-                                <input [id]="'edu-end-' + $index" type="number" formControlName="endYear"
-                                       placeholder="2020 or leave blank"
-                                       class="border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-                                <span class="text-xs text-gray-400 dark:text-zinc-500">Leave blank if current</span>
-                              </div>
-                            </div>
-                          </div>
-                        }
-                      </div>
-                    </div>
-
-                  } <!-- end educations case -->
-
-                  @case ('skills') {
-                    <!-- Skills -->
-                    <div #leftSkills class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm p-6 transition-colors">
-                      <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                          <h3 class="text-sm font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                            Skills</h3>
-                        </div>
-                        <button type="button" (click)="addSkill()"
-                                class="flex items-center gap-1 border border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-medium rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer bg-white dark:bg-transparent">
-                          <span class="material-icons text-base">add</span> Add Skill
-                        </button>
-                      </div>
-
-                      @if (skills.length === 0) {
-                        <p class="text-center text-gray-400 dark:text-zinc-500 italic text-sm py-8">No skills added yet.
-                          Click "Add Skill" to start.</p>
-                      }
-
-                      <div formArrayName="skills"
-                           class="flex flex-wrap gap-2 min-h-12 p-2 rounded-xl border border-gray-200 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-700/30"
-                           cdkDropList cdkDropListOrientation="mixed" (cdkDropListDropped)="dropSkill($event)">
-                        @for (skill of skills.controls; track skill; let i = $index) {
-                          <div [formGroupName]="i" cdkDrag
-                               class="flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700">
-                <span cdkDragHandle
-                      class="material-icons text-[14px] text-blue-400 dark:text-blue-500 cursor-grab active:cursor-grabbing select-none leading-none">
-                  drag_indicator
-                </span>
-                            <input type="text" formControlName="name" placeholder="Skill"
-                                   class="bg-transparent border-0 outline-none text-sm text-blue-800 dark:text-blue-200 placeholder-blue-300 dark:placeholder-blue-600 w-20 min-w-[3rem] max-w-[10rem] p-0" />
-                            <button type="button" (click)="removeSkill(i)"
-                                    class="flex items-center justify-center text-blue-300 dark:text-blue-600 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer bg-transparent border-0 p-0 leading-none">
-                              <span class="material-icons text-[14px] leading-none">close</span>
-                            </button>
-                            <div *cdkDragPreview
-                                 [style.display]="'flex'"
-                                 [style.align-items]="'center'"
-                                 [style.gap]="'4px'"
-                                 [style.padding]="'4px 6px 4px 4px'"
-                                 [style.border-radius]="'9999px'"
-                                 [style.background]="theme.isDark() ? 'rgb(30 58 138 / 0.4)' : '#dbeafe'"
-                                 [style.border]="theme.isDark() ? '1px solid rgb(29 78 216 / 0.7)' : '1px solid #bfdbfe'"
-                                 [style.box-shadow]="'0 4px 6px -1px rgb(0 0 0/.25)'"
-                                 [style.white-space]="'nowrap'">
-                  <span class="material-icons"
-                        [style.font-size]="'14px'"
-                        [style.color]="theme.isDark() ? '#6b7fd7' : '#93c5fd'"
-                        [style.line-height]="'1'"
-                        [style.user-select]="'none'">drag_indicator</span>
-                              <span
-                                [style.font-size]="'14px'"
-                                [style.color]="theme.isDark() ? '#bfdbfe' : '#1e40af'"
-                                [style.font-family]="'Roboto, sans-serif'">{{ skill.value.name || 'Skill' }}</span>
-                              <span class="material-icons"
-                                    [style.font-size]="'14px'"
-                                    [style.color]="theme.isDark() ? '#6b7fd7' : '#93c5fd'"
-                                    [style.line-height]="'1'">close</span>
-                            </div>
-                            <div *cdkDragPlaceholder
-                                 class="w-24 h-8 rounded-full border-2 border-dashed border-blue-300 dark:border-blue-600"></div>
-                          </div>
-                        }
-                      </div>
-                      <p class="text-xs text-gray-400 dark:text-zinc-500 mt-2">Drag chips to reorder</p>
-                    </div>
-                  } <!-- end skills case -->
-
-                } <!-- end @switch -->
-              </div>
-            } <!-- end @for -->
-          </div>
-
-        </form>
-
-      </div><!-- end gap-5 content -->
-
-    </div><!-- end outer left column -->
-
-    <!-- Right: live preview (hidden on mobile and tablet) -->
-    <div class="hidden lg:flex lg:sticky h-[calc(100vh-90px)] flex-col pb-6 top-22.5">
-      <div #previewContainer
-           class="bg-white dark:bg-zinc-800 rounded-2xl shadow-sm overflow-hidden transition-colors flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-        <app-profile-preview [profile]="profilePreview" />
-      </div>
-    </div>
-
+  <!-- Mobile secondary actions row -->
+  <div class="sm:hidden flex items-center gap-2 mb-4 -mt-2">
+    <button type="button" (click)="cvInput.click()" [disabled]="extracting()"
+            class="flex-1 flex items-center justify-center gap-1.5 border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 disabled:opacity-50 font-medium rounded-lg px-2 py-2 text-sm cursor-pointer">
+      <span class="material-icons text-base">upload_file</span> Import
+    </button>
+    <button type="button" (click)="optimize()" [disabled]="optimizing()"
+            class="flex-1 flex items-center justify-center gap-1.5 border border-purple-600 dark:border-purple-400 text-purple-600 dark:text-purple-400 disabled:opacity-50 font-medium rounded-lg px-2 py-2 text-sm cursor-pointer">
+      <span class="material-icons text-base">auto_fix_high</span> Optimize
+    </button>
+    <button type="button" (click)="openPdf()"
+            class="flex-1 flex items-center justify-center gap-1.5 border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 font-medium rounded-lg px-2 py-2 text-sm cursor-pointer">
+      <span class="material-icons text-base">picture_as_pdf</span> PDF
+    </button>
   </div>
 
+  <div class="min-h-[40vh]">
+    @if (widgetReady()) {
+      <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
+                               style="display:block"></applysy-profile-builder>
+    } @else if (widgetError()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-3 text-center px-4">
+        <p class="text-sm text-red-600 dark:text-red-400">
+          Could not load the profile builder. Make sure the profile-builder-ui dev server is running on port 4203.
+        </p>
+        <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:builder</code>
+      </div>
+    } @else {
+      <div class="flex items-center justify-center py-24">
+        <span class="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
+      </div>
+    }
+  </div>
 }

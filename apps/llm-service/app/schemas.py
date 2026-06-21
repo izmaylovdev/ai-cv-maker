@@ -1,131 +1,72 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-_SHORT = 200    # names, titles, company names, roles
-_LONG = 5_000   # free-text fields: overview, job descriptions
+_SHORT = 200    # names, titles, headings
+_LONG = 5_000   # free-text bodies and descriptions
+
+# Canonical profile model (ADR-0013): a document of freely added/removed/reordered
+# sections plus a fixed identity/contact header. Mirrors the TypeScript
+# ProfileDocument in apps/profile-builder-ui/src/model.ts and the C#
+# CvApi.Domain.Entities.ProfileDocument — keep the three in sync.
 
 
-class WorkExperienceInput(BaseModel):
+class ProfileHeader(BaseModel):
+    fullName: Annotated[str, Field(max_length=_SHORT)] = ""
+    title: Annotated[str, Field(max_length=_SHORT)] = ""
+    email: Annotated[str, Field(max_length=_SHORT)] = ""
+    phone: Annotated[str, Field(max_length=_SHORT)] = ""
+    location: Annotated[str, Field(max_length=_SHORT)] = ""
+
+
+class SectionItem(BaseModel):
+    id: str = ""
+    # Timeline item fields.
+    title: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
+    dates: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
+    description: Optional[Annotated[str, Field(max_length=_LONG)]] = None
+    # List item field.
+    text: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
+
+
+class DocumentSection(BaseModel):
+    id: str = ""
+    template: Literal["free-form", "timeline", "list"] = "free-form"
+    heading: Annotated[str, Field(max_length=_SHORT)] = ""
+    body: Optional[Annotated[str, Field(max_length=_LONG)]] = None
+    items: Optional[list[SectionItem]] = None
+
+
+class ProfileDocument(BaseModel):
+    # Optional id, carried where a response must map back to a profile.
     id: Optional[str] = None
-    company: Annotated[str, Field(max_length=_SHORT)]
-    role: Annotated[str, Field(max_length=_SHORT)]
-    startDate: str
-    endDate: Optional[str] = None
-    description: Annotated[str, Field(max_length=_LONG)]
-
-
-class EducationInput(BaseModel):
-    id: Optional[str] = None
-    institution: Annotated[str, Field(max_length=_SHORT)]
-    degree: Annotated[str, Field(max_length=_SHORT)]
-    field: Annotated[str, Field(max_length=_SHORT)]
-    startYear: int
-    endYear: Optional[int] = None
-
-
-class SkillInput(BaseModel):
-    id: Optional[str] = None
-    name: Annotated[str, Field(max_length=_SHORT)]
-    level: Optional[str] = None
-
-
-class ProfileInput(BaseModel):
-    id: Optional[str] = None
-    fullName: Annotated[str, Field(max_length=_SHORT)]
-    title: Annotated[str, Field(max_length=_SHORT)]
-    overview: Annotated[str, Field(max_length=_LONG)]
-    location: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
-    workExperiences: list[WorkExperienceInput] = []
-    educations: list[EducationInput] = []
-    skills: list[SkillInput] = []
+    header: ProfileHeader = Field(default_factory=ProfileHeader)
+    sections: list[DocumentSection] = Field(default_factory=list)
 
 
 class GenerateRequest(BaseModel):
-    profile: ProfileInput
+    profile: ProfileDocument
     message: Optional[str] = None
 
 
-class WorkExperienceOutput(BaseModel):
-    company: str
-    role: str
-    period: str
-    description: str
-
-
-class EducationOutput(BaseModel):
-    institution: str
-    degree: str
-    field: str
-    period: str
-
-
 class GenerateResponse(BaseModel):
-    summary: str
-    workExperiences: list[WorkExperienceOutput]
-    educations: list[EducationOutput]
-    skills: list[str]
-    highlights: list[str]
+    document: ProfileDocument
 
 
 class OptimizeRequest(BaseModel):
-    profile: ProfileInput
+    profile: ProfileDocument
     message: str
 
 
-class OptimizeWorkExperience(BaseModel):
-    company: str
-    role: str
-    startDate: str
-    endDate: Optional[str] = None
-    description: str
-
-
-class OptimizeSkill(BaseModel):
-    name: str
-
-
 class OptimizeResponse(BaseModel):
-    title: str
-    overview: str
-    workExperiences: list[OptimizeWorkExperience]
-    skills: list[OptimizeSkill]
+    document: ProfileDocument
 
 
 class ExtractRequest(BaseModel):
     cv_text: str
 
 
-class ExtractWorkExperience(BaseModel):
-    company: str
-    role: str
-    startDate: str
-    endDate: Optional[str] = None
-    description: str
-
-
-class ExtractEducation(BaseModel):
-    institution: str
-    degree: str
-    field: str
-    startYear: int
-    endYear: Optional[int] = None
-
-
-class ExtractSkill(BaseModel):
-    name: str
-
-
 class ExtractResponse(BaseModel):
-    fullName: str
-    title: str
-    overview: str
-    location: Optional[str] = None
-    contactEmail: Optional[str] = None
-    contactPhone: Optional[str] = None
-    workExperiences: list[ExtractWorkExperience] = []
-    educations: list[ExtractEducation] = []
-    skills: list[ExtractSkill] = []
+    document: ProfileDocument

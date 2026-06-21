@@ -1,5 +1,13 @@
 # Profile Editing
 
+> **Superseded — read first (ADR-0013).** US-EDIT-1 – US-EDIT-7 (the structured
+> split-panel editor over a `WorkExperience`/`Education`/`Skill` model) have been
+> **retired**. The canonical profile editor is the **Document Builder**
+> (US-EDIT-8 – US-EDIT-12 below), embedded in the Angular SPA at
+> `/job-profiles/:id` as `<applysy-profile-builder>`, operating on the canonical
+> `ProfileDocument { header, sections[] }`. US-EDIT-1 – US-EDIT-7 are kept for
+> history; do not implement against them.
+
 ## Overview
 
 The profile editor is a split-panel screen: a form on the left and a live CV preview on the right. Users fill in structured data across four sections — personal info, work experience, education, and skills — and control which sections appear in their CV and in what order.
@@ -101,17 +109,18 @@ The profile editor is a split-panel screen: a form on the left and a live CV pre
 
 ---
 
-## Document Builder (experimental)
+## Document Builder (canonical — ADR-0013)
 
-A new editing experience that may eventually replace the structured split-panel
+The canonical editing experience, which replaced the structured split-panel
 editor above. It presents the profile as a **single editable document** built
 from **general-purpose sections**. Each section can be empty/free-form or follow
 a **predefined template** (e.g. a Timeline of dated entries — work experience,
 education, projects — each with Title, Dates, and Description; or a bulleted
-List). Delivered as a **standalone, reusable component** so it can be
-embedded and evaluated in parallel with the current editor. This phase is
-**UX-only**: stories below are scoped to the editing experience; persistence,
-API, and CV-generation wiring are deliberately out of scope and decided later.
+List). Delivered as a **reusable web component** (`<applysy-profile-builder>`)
+and embedded in the Angular SPA at `/job-profiles/:id`. Per ADR-0013 its
+`ProfileDocument { header, sections[] }` is now the canonical persisted shape
+end to end — persistence (cv-api jsonb), the gRPC contract, the LLM service, and
+PDF rendering all speak it.
 
 ### US-EDIT-8 — Edit my profile as a single document
 

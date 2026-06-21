@@ -1,5 +1,5 @@
 # Applysy dev shortcuts. See README "One-line dev environment" for details.
-.PHONY: dev dev-admin dev-obs dev-all help
+.PHONY: dev dev-admin dev-obs dev-all migrate migration help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -16,3 +16,10 @@ dev-obs: ## dev + Langfuse LLM tracing
 
 dev-all: ## dev + admin stack + Langfuse tracing
 	bash scripts/dev.sh --with-admin --with-obs
+
+migrate: ## Apply EF Core migrations to the local cv-api database
+	dotnet run --project apps/cv-api -- migrate
+
+migration: ## Create a new EF Core migration (usage: make migration NAME=AddFoo)
+	@test -n "$(NAME)" || { echo "Usage: make migration NAME=<MigrationName>"; exit 1; }
+	dotnet ef migrations add $(NAME) --project apps/cv-api

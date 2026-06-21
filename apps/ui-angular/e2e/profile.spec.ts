@@ -2,142 +2,76 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL, TEST_PROFILE_ID } from './support/constants';
 import { mockProfileApi } from './support/mocks/profile.mock';
+import { registerFakeProfileBuilder } from './support/mocks/builder.mock';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
-test.describe('Profile page', () => {
+test.describe('Profile page (builder-based)', () => {
   test.beforeEach(async ({ page }) => {
+    await registerFakeProfileBuilder(page);
     await setupAuth(page);
     await mockProfileApi(page);
     await page.goto(`/job-profiles/${PROFILE_ID}`);
   });
 
-  test('loads and displays profile data', async ({ page }) => {
+  test('renders the embedded profile builder web component', async ({ page }) => {
+    await expect(page.locator('applysy-profile-builder')).toBeVisible();
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-loaded', 'true');
+  });
+
+  test('shows the profile name in the header', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Senior Backend Engineer' })).toBeVisible();
-    await expect(page.getByPlaceholder('John Doe')).toHaveValue('Jane Doe');
-    await expect(page.getByPlaceholder('Senior Software Engineer')).toHaveValue('Software Engineer');
-    await expect(page.getByPlaceholder('Berlin, Germany')).toHaveValue('Berlin, Germany');
   });
 
-  test('shows work experience loaded from API', async ({ page }) => {
-    await expect(page.getByText('Experience 1')).toBeVisible();
-    await expect(page.getByPlaceholder('Acme Corp')).toHaveValue('Acme Corp');
-    await expect(page.locator('input[formcontrolname="role"]')).toHaveValue('Lead Engineer');
+  test('seeds the builder with the loaded document', async ({ page }) => {
+    // The fake builder reflects the seeded document's header into data attrs.
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-full-name', 'Jane Doe');
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-title', 'Software Engineer');
   });
 
-  test('shows education loaded from API', async ({ page }) => {
-    await expect(page.getByPlaceholder('MIT')).toHaveValue('TU Berlin');
-    await expect(page.getByPlaceholder('Bachelor of Science')).toHaveValue('MSc');
-  });
+  test('saves the current document and shows a success notification', async ({ page }) => {
+    let putBody: Record<string, unknown> = {};
+    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}`, (route) => {
+      if (route.request().method() === 'PUT') {
+        putBody = JSON.parse(route.request().postData() || '{}');
+        route.fulfill({ json: { id: PROFILE_ID, name: putBody['name'], document: putBody['document'] } });
+      } else {
+        route.continue();
+      }
+    });
 
-  test('shows skills loaded from API', async ({ page }) => {
-    const skillInputs = page.getByPlaceholder('Skill');
-    await expect(skillInputs.nth(0)).toHaveValue('TypeScript');
-    await expect(skillInputs.nth(1)).toHaveValue('Go');
-  });
-
-  test('adds and removes a work experience entry', async ({ page }) => {
-    await page.getByRole('button', { name: /Add Experience/ }).click();
-    await expect(page.getByText('Experience 2')).toBeVisible();
-
-    // delete the newly added entry using its inline delete button
-    const exp2 = page.locator('[formArrayName="workExperiences"] > div').nth(1);
-    await exp2.getByRole('button').click();
-    await expect(page.getByText('Experience 2')).not.toBeVisible();
-  });
-
-  test('adds and removes a skill', async ({ page }) => {
-    await page.getByRole('button', { name: /Add Skill/ }).click();
-    const skillInputs = page.getByPlaceholder('Skill');
-    await expect(skillInputs).toHaveCount(3);
-
-    await page.locator('[formArrayName="skills"] button').last().click();
-    await expect(skillInputs).toHaveCount(2);
-  });
-
-  test('shows validation errors on save with empty required fields', async ({ page }) => {
-    await page.getByPlaceholder('John Doe').fill('');
-    await page.getByPlaceholder('John Doe').blur();
-    await page.getByRole('button', { name: /Save Profile/ }).click();
-    await expect(page.getByText('Full name is required')).toBeVisible();
-  });
-
-  test('saves profile and shows success notification', async ({ page }) => {
     await page.getByRole('button', { name: /Save Profile/ }).click();
     await expect(page.getByText('Profile saved successfully!')).toBeVisible();
+    expect(putBody['name']).toBe('Senior Backend Engineer');
+    expect((putBody['document'] as { header: { fullName: string } }).header.fullName).toBe('Jane Doe');
   });
 
-  test('opens reorder sections modal', async ({ page }) => {
-    await page.getByRole('button', { name: /Reorder/ }).click();
-    await expect(page.getByRole('heading', { name: 'Reorder Sections' })).toBeVisible();
-    const overlay = page.locator('cdk-dialog-container');
-    await expect(overlay.getByText('Work Experience')).toBeVisible();
-    await expect(overlay.getByText('Education')).toBeVisible();
-    await expect(overlay.getByText('Skills')).toBeVisible();
-  });
+  test('keeps edits from the builder and saves them', async ({ page }) => {
+    let putBody: Record<string, unknown> = {};
+    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}`, (route) => {
+      if (route.request().method() === 'PUT') {
+        putBody = JSON.parse(route.request().postData() || '{}');
+        route.fulfill({ json: { id: PROFILE_ID, name: putBody['name'], document: putBody['document'] } });
+      } else {
+        route.continue();
+      }
+    });
 
-  test('reorder widget applies new section order to modal list and form', async ({ page }) => {
-    await page.getByRole('button', { name: /Reorder/ }).click();
-    await expect(page.getByRole('heading', { name: 'Reorder Sections' })).toBeVisible();
+    // Wait until the loaded document has been seeded before editing, so the
+    // edit isn't clobbered by the initial seed.
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-full-name', 'Jane Doe');
 
-    const overlay = page.locator('cdk-dialog-container');
-    const dragItems = overlay.locator('[cdkdrag]');
-
-    // Confirm initial order in the modal drag list
-    await expect(dragItems.nth(0)).toContainText('Work Experience');
-    await expect(dragItems.nth(1)).toContainText('Education');
-    await expect(dragItems.nth(2)).toContainText('Skills');
-
-    // Drag Work Experience (index 0) down to the Skills (index 2) position
-    const handle = dragItems.nth(0).locator('[cdkdraghandle]');
-    const dropTarget = dragItems.nth(2);
-
-    const handleBox = await handle.boundingBox();
-    const targetBox = await dropTarget.boundingBox();
-
-    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(
-      targetBox!.x + targetBox!.width / 2,
-      targetBox!.y + targetBox!.height / 2,
-      { steps: 20 },
+    // Simulate a user edit inside the builder (fires documentchange).
+    await page.locator('applysy-profile-builder').evaluate((el) =>
+      (el as unknown as { __edit(p: Record<string, unknown>): void }).__edit({ fullName: 'Edited Name' }),
     );
-    await page.mouse.up();
 
-    // Modal drag list should reflect new order before Apply
-    await expect(dragItems.nth(0)).toContainText('Education');
-    await expect(dragItems.nth(1)).toContainText('Skills');
-    await expect(dragItems.nth(2)).toContainText('Work Experience');
-
-    // Apply
-    await page.getByRole('button', { name: 'Apply' }).click();
-    await expect(page.getByRole('heading', { name: 'Reorder Sections' })).not.toBeVisible();
-
-    // Form sections must appear in the same new order
-    const formSectionOrder = await page.locator('form h3').evaluateAll((els) =>
-      els
-        .map((el) => el.textContent?.trim() ?? '')
-        .filter((t) => ['Work Experience', 'Education', 'Skills'].includes(t)),
-    );
-    expect(formSectionOrder).toEqual(['Education', 'Skills', 'Work Experience']);
-
-    // Preview sections must reflect the same order (preview uses "Experience" not "Work Experience")
-    const previewSectionOrder = await page.locator('app-profile-preview h2').evaluateAll((els) =>
-      els
-        .map((el) => el.textContent?.trim() ?? '')
-        .filter((t) => ['Experience', 'Education', 'Skills'].includes(t)),
-    );
-    expect(previewSectionOrder).toEqual(['Education', 'Skills', 'Experience']);
-  });
-
-  test('closes reorder modal on Cancel', async ({ page }) => {
-    await page.getByRole('button', { name: /Reorder/ }).click();
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('heading', { name: 'Reorder Sections' })).not.toBeVisible();
+    await page.getByRole('button', { name: /Save Profile/ }).click();
+    await expect(page.getByText('Profile saved successfully!')).toBeVisible();
+    expect((putBody['document'] as { header: { fullName: string } }).header.fullName).toBe('Edited Name');
   });
 
   test('navigates back to job profiles list', async ({ page }) => {
-    // sticky preview column can overlap this button at certain viewport heights
     await page.getByRole('button', { name: 'Back to job profiles' }).click({ force: true });
     await expect(page).toHaveURL('/job-profiles');
   });
@@ -145,6 +79,7 @@ test.describe('Profile page', () => {
 
 test.describe('Profile page error state', () => {
   test('shows error UI when API fails to load', async ({ page }) => {
+    await registerFakeProfileBuilder(page);
     await setupAuth(page);
     await page.route(`${API_URL}/job-profiles/${PROFILE_ID}`, (route) =>
       route.fulfill({ status: 500, json: { error: 'Internal server error' } })

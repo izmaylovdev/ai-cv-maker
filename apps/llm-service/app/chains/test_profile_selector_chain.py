@@ -3,52 +3,60 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.chains.usage import TokenUsage
-from app.schemas import ProfileInput, SkillInput, WorkExperienceInput
+from app.schemas import DocumentSection, ProfileDocument, ProfileHeader, SectionItem
 
 _EMPTY_USAGE = TokenUsage.empty()
 
 
 @pytest.fixture()
-def backend_profile() -> ProfileInput:
-    return ProfileInput(
+def backend_profile() -> ProfileDocument:
+    return ProfileDocument(
         id="prof-backend",
-        fullName="Jane Doe",
-        title="Senior Backend Engineer",
-        overview="8 years building distributed Python and Go services.",
-        location="Berlin",
-        workExperiences=[
-            WorkExperienceInput(
-                company="Acme Corp",
-                role="Backend Engineer",
-                startDate="2018-01-01",
-                endDate="2023-12-31",
-                description="Led migration of monolith to microservices in Python.",
-            )
+        header=ProfileHeader(fullName="Jane Doe", title="Senior Backend Engineer", location="Berlin"),
+        sections=[
+            DocumentSection(
+                id="sum", template="free-form", heading="Summary",
+                body="8 years building distributed Python and Go services.",
+            ),
+            DocumentSection(
+                id="work", template="timeline", heading="Work Experience",
+                items=[SectionItem(
+                    id="w1", title="Backend Engineer · Acme Corp", dates="2018 – 2023",
+                    description="Led migration of monolith to microservices in Python.",
+                )],
+            ),
+            DocumentSection(
+                id="skills", template="list", heading="Skills",
+                items=[SectionItem(id="s1", text="Python"), SectionItem(id="s2", text="Go"),
+                       SectionItem(id="s3", text="gRPC")],
+            ),
         ],
-        educations=[],
-        skills=[SkillInput(name="Python"), SkillInput(name="Go"), SkillInput(name="gRPC")],
     )
 
 
 @pytest.fixture()
-def frontend_profile() -> ProfileInput:
-    return ProfileInput(
+def frontend_profile() -> ProfileDocument:
+    return ProfileDocument(
         id="prof-frontend",
-        fullName="Jane Doe",
-        title="Frontend Developer",
-        overview="5 years building React and Angular SPAs.",
-        location="Berlin",
-        workExperiences=[
-            WorkExperienceInput(
-                company="Startup Inc",
-                role="Frontend Developer",
-                startDate="2019-01-01",
-                endDate="2023-12-31",
-                description="Built customer-facing React dashboards.",
-            )
+        header=ProfileHeader(fullName="Jane Doe", title="Frontend Developer", location="Berlin"),
+        sections=[
+            DocumentSection(
+                id="sum", template="free-form", heading="Summary",
+                body="5 years building React and Angular SPAs.",
+            ),
+            DocumentSection(
+                id="work", template="timeline", heading="Work Experience",
+                items=[SectionItem(
+                    id="w1", title="Frontend Developer · Startup Inc", dates="2019 – 2023",
+                    description="Built customer-facing React dashboards.",
+                )],
+            ),
+            DocumentSection(
+                id="skills", template="list", heading="Skills",
+                items=[SectionItem(id="s1", text="React"), SectionItem(id="s2", text="TypeScript"),
+                       SectionItem(id="s3", text="Angular")],
+            ),
         ],
-        educations=[],
-        skills=[SkillInput(name="React"), SkillInput(name="TypeScript"), SkillInput(name="Angular")],
     )
 
 
@@ -74,8 +82,8 @@ class TestSelectBestProfile:
     @pytest.mark.asyncio
     async def test_selects_backend_profile_for_backend_job(
         self,
-        backend_profile: ProfileInput,
-        frontend_profile: ProfileInput,
+        backend_profile: ProfileDocument,
+        frontend_profile: ProfileDocument,
         backend_job_description: str,
     ) -> None:
         from app.chains.profile_selector_chain import select_best_profile
@@ -96,8 +104,8 @@ class TestSelectBestProfile:
     @pytest.mark.asyncio
     async def test_selects_frontend_profile_for_frontend_job(
         self,
-        backend_profile: ProfileInput,
-        frontend_profile: ProfileInput,
+        backend_profile: ProfileDocument,
+        frontend_profile: ProfileDocument,
         frontend_job_description: str,
     ) -> None:
         from app.chains.profile_selector_chain import select_best_profile
@@ -118,7 +126,7 @@ class TestSelectBestProfile:
     @pytest.mark.asyncio
     async def test_returns_single_profile_without_calling_llm(
         self,
-        backend_profile: ProfileInput,
+        backend_profile: ProfileDocument,
         backend_job_description: str,
     ) -> None:
         from app.chains.profile_selector_chain import select_best_profile
@@ -147,8 +155,8 @@ class TestSelectBestProfile:
     @pytest.mark.asyncio
     async def test_raises_when_llm_returns_unknown_profile_id(
         self,
-        backend_profile: ProfileInput,
-        frontend_profile: ProfileInput,
+        backend_profile: ProfileDocument,
+        frontend_profile: ProfileDocument,
         backend_job_description: str,
     ) -> None:
         from app.chains.profile_selector_chain import select_best_profile

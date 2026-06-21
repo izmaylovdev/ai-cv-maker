@@ -1,9 +1,13 @@
-using CvApi.Infrastructure.ExternalServices.Llm;
+using CvApi.Domain.Entities;
 
 namespace CvApi.Infrastructure.ExternalServices.Pdf;
 
 public interface IPdfService
 {
-    byte[] GenerateCv(LlmGenerateResponse cvData, string fullName, string title,
-        string? location, string? email, string? phone, IList<string>? sectionOrder);
+    /// <summary>
+    /// Renders the canonical ProfileDocument (ADR-0013) directly: header + its
+    /// sections in document order, faithful to whatever the user authored. Used by
+    /// the default/draft PDF paths and the stored generated-CV snapshot.
+    /// </summary>
+    byte[] GenerateFromDocument(ProfileDocument doc);
 }

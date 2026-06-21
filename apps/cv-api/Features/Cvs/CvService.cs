@@ -29,34 +29,13 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
 
     public async Task<CvListItemDto?> CreateAsync(Guid profileId, Guid userId, CreateCvRequest request)
     {
-        var profile = await db.Profiles
-            .Include(p => p.WorkExperiences)
-            .Include(p => p.Educations)
-            .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == userId);
-
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == userId);
         if (profile is null) return null;
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
 
         var llmRequest = new LlmGenerateRequest(
-            new LlmProfileRequest(
-                profile.FullName,
-                profile.Title,
-                profile.Overview,
-                profile.Location,
-                profile.WorkExperiences
-                    .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
-                    .ThenByDescending(w => w.StartDate)
-                    .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
-                    .ToList(),
-                profile.Educations
-                    .OrderByDescending(e => e.EndYear ?? int.MaxValue)
-                    .ThenByDescending(e => e.StartYear)
-                    .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
-                    .ToList(),
-                profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
-            ),
+            profile.Document,
             string.IsNullOrWhiteSpace(request.OptimizationNotes) ? null : request.OptimizationNotes,
             string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
@@ -65,17 +44,8 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         var llmResponse = await llmService.GenerateAsync(llmRequest);
         await usageService.RecordAsync(userId, "Generate", llmResponse.Usage);
 
-        var generatedCv = new GeneratedCv
-        {
-            ProfileId = profile.Id,
-            OptimizationNotes = string.IsNullOrWhiteSpace(request.OptimizationNotes) ? null : request.OptimizationNotes.Trim(),
-            FullName = profile.FullName,
-            Title = profile.Title,
-            Location = profile.Location,
-            ContactEmail = profile.ContactEmail,
-            ContactPhone = profile.ContactPhone,
-            CvDataJson = JsonSerializer.Serialize(llmResponse, _jsonCamelCase)
-        };
+        var generatedCv = NewSnapshot(profile, llmResponse,
+            string.IsNullOrWhiteSpace(request.OptimizationNotes) ? null : request.OptimizationNotes.Trim());
 
         db.GeneratedCvs.Add(generatedCv);
         await db.SaveChangesAsync();
@@ -91,72 +61,28 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         var cv = await db.GeneratedCvs.FirstOrDefaultAsync(g => g.Id == id && g.ProfileId == profileId);
         if (cv is null) return null;
 
-        var cvData = JsonSerializer.Deserialize<LlmGenerateResponse>(cv.CvDataJson, _jsonOptions)
+        // The generated-CV snapshot stores the AI-authored ProfileDocument (ADR-0013).
+        var document = JsonSerializer.Deserialize<ProfileDocument>(cv.CvDataJson, _jsonOptions)
             ?? throw new InvalidOperationException("CV data is corrupted.");
 
-        var sectionOrder = ownedProfile.SectionOrder.Split(',').ToList();
-        var pdf = pdfService.GenerateCv(cvData, cv.FullName, cv.Title, cv.Location, cv.ContactEmail, cv.ContactPhone, sectionOrder);
+        var pdf = pdfService.GenerateFromDocument(document);
         return (pdf, $"{cv.FullName.Replace(" ", "_")}_CV.pdf");
     }
 
     public async Task<(byte[] Bytes, string Filename)?> GetDefaultPdfAsync(Guid profileId, Guid userId)
     {
-        var profile = await db.Profiles
-            .Include(p => p.WorkExperiences)
-            .Include(p => p.Educations)
-            .Include(p => p.Skills)
-            .FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == userId);
-
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.UserId == userId);
         if (profile is null) return null;
 
-        var cvData = new LlmGenerateResponse(
-            Summary: profile.Overview,
-            WorkExperiences: profile.WorkExperiences
-                .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
-                .ThenByDescending(w => w.StartDate)
-                .Select(w => new LlmWorkExperience(
-                    w.Company, w.Role, FormatPeriod(w.StartDate, w.EndDate), w.Description ?? ""))
-                .ToList(),
-            Educations: profile.Educations
-                .OrderByDescending(e => e.EndYear ?? int.MaxValue)
-                .ThenByDescending(e => e.StartYear)
-                .Select(e => new LlmEducation(
-                    e.Institution, e.Degree, e.Field,
-                    e.EndYear.HasValue ? $"{e.StartYear} – {e.EndYear}" : $"{e.StartYear} – Present"))
-                .ToList(),
-            Skills: profile.Skills.OrderBy(s => s.Order).Select(s => s.Name).ToList(),
-            Highlights: [],
-            Usage: LlmTokenUsage.Empty
-        );
-
-        var sectionOrder = profile.SectionOrder.Split(',').ToList();
-        var pdf = pdfService.GenerateCv(cvData, profile.FullName, profile.Title, profile.Location, profile.ContactEmail, profile.ContactPhone, sectionOrder);
-        return (pdf, $"{profile.FullName.Replace(" ", "_")}_CV.pdf");
+        var pdf = pdfService.GenerateFromDocument(profile.Document);
+        return (pdf, $"{profile.Document.Header.FullName.Replace(" ", "_")}_CV.pdf");
     }
 
     public Task<(byte[] Bytes, string Filename)> GetDraftPdfAsync(UpdateProfileRequest data)
     {
-        var cvData = new LlmGenerateResponse(
-            Summary: data.Overview,
-            WorkExperiences: data.WorkExperiences
-                .Select(w => new LlmWorkExperience(w.Company, w.Role, FormatPeriod(w.StartDate, w.EndDate), w.Description ?? ""))
-                .ToList(),
-            Educations: data.Educations
-                .Select(e => new LlmEducation(
-                    e.Institution, e.Degree, e.Field,
-                    e.EndYear.HasValue ? $"{e.StartYear} – {e.EndYear}" : $"{e.StartYear} – Present"))
-                .ToList(),
-            Skills: data.Skills.Select(s => s.Name).ToList(),
-            Highlights: [],
-            Usage: LlmTokenUsage.Empty
-        );
-
-        var sectionOrder = data.SectionOrder is { Count: > 0 }
-            ? data.SectionOrder
-            : ["workExperiences", "educations", "skills"];
-
-        var pdf = pdfService.GenerateCv(cvData, data.FullName, data.Title, data.Location, data.Contacts?.Email, data.Contacts?.Phone, sectionOrder);
-        return Task.FromResult((pdf, $"{data.FullName.Replace(" ", "_")}_CV.pdf"));
+        var doc = data.Document ?? ProfileDocument.Empty();
+        var pdf = pdfService.GenerateFromDocument(doc);
+        return Task.FromResult((pdf, $"{doc.Header.FullName.Replace(" ", "_")}_CV.pdf"));
     }
 
     public async Task<bool> DeleteAsync(Guid profileId, Guid id, Guid userId)
@@ -174,13 +100,7 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
 
     public async Task<GenerateAutoResponse?> GenerateAutoAsync(Guid userId, GenerateAutoRequest request)
     {
-        var profiles = await db.Profiles
-            .Include(p => p.WorkExperiences)
-            .Include(p => p.Educations)
-            .Include(p => p.Skills)
-            .Where(p => p.UserId == userId)
-            .ToListAsync();
-
+        var profiles = await db.Profiles.Where(p => p.UserId == userId).ToListAsync();
         if (profiles.Count == 0) return null;
 
         await usageService.EnsureWithinLimitAsync(userId);
@@ -195,24 +115,7 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         else
         {
             var selectRequest = new LlmSelectBestProfileRequest(
-                profiles.Select(p => new LlmCoverLetterProfile(
-                    p.Id.ToString(),
-                    p.FullName,
-                    p.Title,
-                    p.Overview,
-                    p.Location,
-                    p.WorkExperiences
-                        .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
-                        .ThenByDescending(w => w.StartDate)
-                        .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
-                        .ToList(),
-                    p.Educations
-                        .OrderByDescending(e => e.EndYear ?? int.MaxValue)
-                        .ThenByDescending(e => e.StartYear)
-                        .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
-                        .ToList(),
-                    p.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
-                )).ToList(),
+                profiles.Select(p => new LlmProfileWithId(p.Id.ToString(), p.Document)).ToList(),
                 request.JobDescription
             );
 
@@ -223,23 +126,7 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         var profile = profiles.First(p => p.Id == selectedProfileId);
 
         var llmRequest = new LlmGenerateRequest(
-            new LlmProfileRequest(
-                profile.FullName,
-                profile.Title,
-                profile.Overview,
-                profile.Location,
-                profile.WorkExperiences
-                    .OrderByDescending(w => w.EndDate ?? DateOnly.MaxValue)
-                    .ThenByDescending(w => w.StartDate)
-                    .Select(w => new LlmWorkInput(w.Id, w.Company, w.Role, w.StartDate, w.EndDate, w.Description))
-                    .ToList(),
-                profile.Educations
-                    .OrderByDescending(e => e.EndYear ?? int.MaxValue)
-                    .ThenByDescending(e => e.StartYear)
-                    .Select(e => new LlmEducationInput(e.Id, e.Institution, e.Degree, e.Field, e.StartYear, e.EndYear))
-                    .ToList(),
-                profile.Skills.OrderBy(s => s.Order).Select(s => new LlmSkillInput(s.Id, s.Name)).ToList()
-            ),
+            profile.Document,
             string.IsNullOrWhiteSpace(request.JobDescription) ? null : request.JobDescription,
             string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
         );
@@ -247,28 +134,30 @@ public class CvService(AppDbContext db, ILlmService llmService, IPdfService pdfS
         var llmResponse = await llmService.GenerateAsync(llmRequest);
         await usageService.RecordAsync(userId, "GenerateAuto", llmResponse.Usage);
 
-        var generatedCv = new GeneratedCv
-        {
-            ProfileId = profile.Id,
-            OptimizationNotes = request.JobDescription.Trim(),
-            FullName = profile.FullName,
-            Title = profile.Title,
-            Location = profile.Location,
-            ContactEmail = profile.ContactEmail,
-            ContactPhone = profile.ContactPhone,
-            CvDataJson = JsonSerializer.Serialize(llmResponse, _jsonCamelCase)
-        };
-
+        var generatedCv = NewSnapshot(profile, llmResponse, request.JobDescription.Trim());
         db.GeneratedCvs.Add(generatedCv);
         await db.SaveChangesAsync();
 
-        return new GenerateAutoResponse(generatedCv.Id, profile.Id, profile.FullName);
+        return new GenerateAutoResponse(generatedCv.Id, profile.Id, profile.Document.Header.FullName);
     }
 
-    private static string FormatPeriod(DateOnly start, DateOnly? end)
+    // Snapshots the profile's identity + the AI-authored ProfileDocument (ADR-0013)
+    // at generation time, so a generated CV is reproducible and renders directly.
+    private GeneratedCv NewSnapshot(Profile profile, LlmGenerateResponse llmResponse, string? notes)
     {
-        var s = start.ToString("MMM yyyy");
-        var e = end.HasValue ? end.Value.ToString("MMM yyyy") : "Present";
-        return $"{s} – {e}";
+        var header = llmResponse.Document.Header;
+        return new GeneratedCv
+        {
+            ProfileId = profile.Id,
+            OptimizationNotes = notes,
+            FullName = header.FullName,
+            Title = header.Title,
+            Location = Nz(header.Location),
+            ContactEmail = Nz(header.Email),
+            ContactPhone = Nz(header.Phone),
+            CvDataJson = JsonSerializer.Serialize(llmResponse.Document, _jsonCamelCase),
+        };
     }
+
+    private static string? Nz(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }
