@@ -199,7 +199,7 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 
 The **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. Per ADR-0013 it is the **canonical profile editor**, embedded in `ui-angular` at `/job-profiles/:id` (it replaced the old structured split-panel editor).
 
-Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one document of general-purpose sections**, where each section can follow a predefined **template**: a blank free-form section, a **Timeline** (one generic dated-entries section — work experience, education, projects — entries with Title / Dates / Description, named via its heading), or a **List** section (a bulleted list of items, e.g. skills). The set of templates is an extensible registry.
+Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one document of general-purpose sections**, where each section can follow a predefined **template**: a blank free-form section, a **Timeline** (one generic dated-entries section — work experience, education, projects — entries with Title / Dates / Description, named via its heading), a **List** section (a bulleted list of items, e.g. skills), or a **Chip-list** section (the same text items rendered as chips/tags, e.g. skills, tools, languages). The set of templates is an extensible registry.
 
 **Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), which is now the canonical persisted shape end to end (ADR-0013): `{ header, sections[] }`. The cv-api stores it as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 
@@ -277,7 +277,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 - `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
 
 **PDF generation**  
-`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0013): the `header` (name, title, contacts) followed by each section in array order. Each section emits its heading plus template-specific body — free-form text, timeline entries (title / dates / description), or a bulleted list — so user-created sections (Projects, Publications, …) flow to the PDF without code changes; unknown or empty sections degrade gracefully. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
+`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0013): the `header` (name, title, contacts) followed by each section in array order. Each section emits its heading plus template-specific body — free-form text, timeline entries (title / dates / description), a bulleted list, or a chip/tag cloud (chip-list) — so user-created sections (Projects, Publications, …) flow to the PDF without code changes; unknown or empty sections degrade gracefully. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
 
 ---
 

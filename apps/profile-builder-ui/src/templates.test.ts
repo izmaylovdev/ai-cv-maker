@@ -3,11 +3,12 @@ import { DEFAULT_SECTION_TEMPLATES } from './templates';
 import { EntrySection } from './model';
 
 describe('DEFAULT_SECTION_TEMPLATES (F-EDIT-9.2, F-EDIT-9.6)', () => {
-  it('ships general-purpose, timeline, and list templates', () => {
+  it('ships general-purpose, timeline, list, and chip-list templates', () => {
     const ids = DEFAULT_SECTION_TEMPLATES.map((t) => t.id);
     expect(ids).toContain('free-form');
     expect(ids).toContain('timeline');
     expect(ids).toContain('list');
+    expect(ids).toContain('chip-list');
   });
 
   it('every template exposes a name and a one-line description (F-EDIT-9.3)', () => {
@@ -47,6 +48,15 @@ describe('template.create() seeds a section (F-EDIT-9.5)', () => {
     const section = list.create();
     expect(section.template).toBe('list');
     if (section.template !== 'list') throw new Error('unreachable');
+    expect(section.items).toHaveLength(1);
+    expect(section.items[0].text).toBe('');
+  });
+
+  it('chip-list seeds one empty chip item (F-EDIT-13.2)', () => {
+    const chips = DEFAULT_SECTION_TEMPLATES.find((t) => t.id === 'chip-list')!;
+    const section = chips.create();
+    expect(section.template).toBe('chip-list');
+    if (section.template !== 'chip-list') throw new Error('unreachable');
     expect(section.items).toHaveLength(1);
     expect(section.items[0].text).toBe('');
   });

@@ -135,6 +135,71 @@ describe('List template (F-EDIT-9.2, F-EDIT-9.6)', () => {
   });
 });
 
+describe('Chip-list template (F-EDIT-13.1 – 13.4)', () => {
+  function chipDoc(): ProfileDocument {
+    return {
+      header: emptyHeader(),
+      sections: [
+        {
+          id: 'c1',
+          template: 'chip-list',
+          heading: 'Skills',
+          items: [
+            { id: 'ci1', text: 'TypeScript' },
+            { id: 'ci2', text: 'React' },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('offers a Chip-list entry in the palette (F-EDIT-13.1)', () => {
+    render(<ProfileBuilder document={{ header: emptyHeader(), sections: [] }} onChange={vi.fn()} />);
+    openPalette();
+    expect(screen.getByRole('button', { name: /add chip[- ]?list/i })).toBeTruthy();
+  });
+
+  it('inserts a seeded chip-list section with one starter chip (F-EDIT-13.2)', () => {
+    const onChange = vi.fn();
+    render(<ProfileBuilder document={{ header: emptyHeader(), sections: [] }} onChange={onChange} />);
+    openPalette();
+    fireEvent.click(screen.getByRole('button', { name: /add chip[- ]?list/i }));
+
+    const last = onChange.mock.calls.at(-1)![0] as ProfileDocument;
+    expect(last.sections).toHaveLength(1);
+    const sec = last.sections[0] as { template: string; items: unknown[] };
+    expect(sec.template).toBe('chip-list');
+    expect(sec.items).toHaveLength(1);
+  });
+
+  it('renders each item as an editable chip (F-EDIT-13.3)', () => {
+    render(<ProfileBuilder document={chipDoc()} onChange={vi.fn()} />);
+    const chips = screen.getAllByLabelText(/chip/i) as HTMLInputElement[];
+    const values = chips.map((c) => c.value);
+    expect(values).toContain('TypeScript');
+    expect(values).toContain('React');
+  });
+
+  it('Enter on a chip appends a new chip (F-EDIT-13.4)', () => {
+    const onChange = vi.fn();
+    render(<ProfileBuilder document={chipDoc()} onChange={onChange} />);
+    const chips = screen.getAllByLabelText(/chip/i);
+    fireEvent.keyDown(chips[0], { key: 'Enter' });
+    const last = onChange.mock.calls.at(-1)![0] as ProfileDocument;
+    expect((last.sections[0] as { items: unknown[] }).items).toHaveLength(3);
+  });
+
+  it('removes a chip via its remove control (F-EDIT-13.4)', () => {
+    const onChange = vi.fn();
+    render(<ProfileBuilder document={chipDoc()} onChange={onChange} />);
+    fireEvent.click(screen.getAllByRole('button', { name: /remove chip/i })[0]);
+    const last = onChange.mock.calls.at(-1)![0] as ProfileDocument;
+    const items = (last.sections[0] as { items: { text: string }[] }).items;
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe('React');
+  });
+});
+
 describe('General-purpose section (F-EDIT-11.1)', () => {
   it('edits the heading and free-form body', () => {
     const onChange = vi.fn();

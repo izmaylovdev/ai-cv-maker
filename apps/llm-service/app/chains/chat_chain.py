@@ -42,7 +42,8 @@ proposing edits, and answering questions about job applications or professional 
 
 The profile is a ProfileDocument: a header (fullName, title, email, phone, location) plus \
 freely structured sections. Each section has an `id`, a `template` ("free-form" with `body`, \
-"timeline" with dated `items`, or "list" with `items` of `text`), and a `heading`.
+"timeline" with dated `items`, "list" with `items` of `text`, or "chip-list" — like "list" \
+but shown as chips/tags, same `items` of `text`), and a `heading`.
 
 Scope restriction: If the user asks about anything unrelated to their CV, career, or \
 professional development — including general knowledge, coding tasks, travel, or any other \

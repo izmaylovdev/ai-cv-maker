@@ -180,3 +180,16 @@ PDF rendering all speak it.
 - Any section can be removed, with confirmation when it contains content.
 - Items within a templated section (e.g. a Timeline) can likewise be reordered and removed.
 - The document's visual order reflects the order I set at all times.
+
+### US-EDIT-13 — Chip-list template for tag-style content
+
+**As a** user,
+**I want to** add a section whose items render as compact chips/tags (e.g. skills, tools, languages) rather than a bulleted list,
+**so that** short, scannable items read as a tag cloud both in the editor and on the generated CV.
+
+**Acceptance criteria:**
+- The "Add section" palette includes a **Chip-list** template, with a name and one-line description, alongside the existing General-purpose, Timeline, and List templates.
+- A Chip-list section holds an ordered set of short text items, each shown as a chip/tag.
+- I can add and remove individual chips; adding a chip and confirming an edit work via the keyboard.
+- The chosen order of chips is preserved and respected in the generated PDF.
+- The generated CV renders the section's items as chips/tags, not as a bulleted list.

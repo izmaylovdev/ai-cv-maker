@@ -43,6 +43,18 @@ const listTemplate: SectionTemplate = {
   }),
 };
 
+const chipListTemplate: SectionTemplate = {
+  id: 'chip-list',
+  name: 'Chip list',
+  description: 'Short items shown as chips/tags — skills, tools, languages.',
+  create: (): DocumentSection => ({
+    id: newId(),
+    template: 'chip-list',
+    heading: 'Skills',
+    items: [newListItem()],
+  }),
+};
+
 export function newEntryItem() {
   return {
     id: newId(),
@@ -63,4 +75,5 @@ export const DEFAULT_SECTION_TEMPLATES: SectionTemplate[] = [
   freeFormTemplate,
   timelineTemplate,
   listTemplate,
+  chipListTemplate,
 ];

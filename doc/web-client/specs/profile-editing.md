@@ -395,4 +395,99 @@ The custom element is the host-agnostic boundary — no `fetch`, no auth, no rou
 
 - Rich-text formatting, auto-save, undo/redo, collaborative editing (consistent with §6).
 - Date pickers / validation on Timeline entry dates (free-text by design).
-- Additional templates beyond General-purpose, Timeline, and List (registry-ready, but not built now).
+- Additional templates beyond General-purpose, Timeline, List, and Chip-list (registry-ready, but not built now).
+
+---
+
+## 8. Chip-list Template (US-EDIT-13)
+
+> **Status:** Canonical (extends §7 / ADR-0013). Adds a fourth section template,
+> `chip-list`, to the document builder. It shares the `list` template's data
+> shape (an ordered set of `{ id, text }` items) but is a **distinct section
+> type** with its own discriminant, palette entry, in-editor rendering (chips/
+> tags), and PDF rendering. Because the document model is canonical end to end
+> (ADR-0013), the new template id is mirrored across the gRPC proto, cv-api
+> (`ProfileDocument` + persisted JSON), the PDF renderer, the llm-service
+> schemas, and the Angular profile model.
+
+### 8.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-13.1 | The "Add section" palette includes a **Chip-list** template with a name and one-line description, alongside General-purpose, Timeline, and List (extends F-EDIT-9.2). |
+| F-EDIT-13.2 | A Chip-list section (`template: 'chip-list'`) holds an ordered list of items, each `{ id, text }`, seeded with one empty starter item on insert (consistent with F-EDIT-9.5). |
+| F-EDIT-13.3 | Each item renders as a chip/tag in the editor; the user types directly into a chip. |
+| F-EDIT-13.4 | The user can add a chip (Enter on a chip appends a new empty chip after it) and remove a chip (a × control on each chip, and Backspace on an empty chip removes it and focuses the previous one). |
+| F-EDIT-13.5 | The section heading is editable and the section supports the same add / remove / reorder lifecycle as any other section (F-EDIT-12.1, F-EDIT-12.2). |
+| F-EDIT-13.6 | The rendered chip order matches the model order; the emitted model reflects every edit (consistent with F-EDIT-12.4 / F-EDIT-8.4). |
+| F-EDIT-13.7 | The generated PDF renders a Chip-list section's items as chips/tags (visually distinct from a bulleted List), preserving order. |
+
+### 8.2 Technical Specification
+
+#### Data model (extends §7.2)
+
+`SectionTemplateId` gains `'chip-list'`. A new section interface is added; it
+reuses the existing `ListItem` shape:
+
+```ts
+type SectionTemplateId = 'free-form' | 'timeline' | 'list' | 'chip-list';
+
+interface ChipListSection extends SectionBase {
+  template: 'chip-list';
+  items: ListItem[];     // reuses { id, text } — rendered as chips, not bullets
+}
+
+type DocumentSection =
+  | FreeFormSection | EntrySection | ListSection | ChipListSection;
+```
+
+The reference TypeScript lives in `apps/profile-builder-ui/src/model.ts`. The
+mirror footprint was verified by inspecting each service; because `template` is
+represented as a **plain string** in the proto and C# model, and `chip-list`
+**reuses the existing `list` item shape** (`Items`/`Text`), the cross-service
+change is small:
+
+| File | Change | Why |
+|---|---|---|
+| `proto/llm_service.proto` | **None** | `DocumentSectionProto.template` is `string` — `chip-list` is just a new value. No `npm run grpc:generate` needed. |
+| `apps/cv-api/Domain/Entities/ProfileDocument.cs` | Comment only | `Template` is a `string` and chip-list uses `Items[].Text`; deserialization works as-is. Update the `"free-form" \| "timeline" \| "list"` doc comments to include `"chip-list"`. |
+| `apps/cv-api/Infrastructure/ExternalServices/Pdf/PdfService.cs` | **Add `case "chip-list"`** | The render switch (`free-form`/`timeline`/`list`, with a heading-only `default`) needs a chip/tag branch; otherwise chip-list would degrade to heading-only. |
+| `apps/llm-service/app/schemas.py` | **Add to `Literal`** | `DocumentSection.template: Literal["free-form","timeline","list"]` is strict — must add `"chip-list"` or documents are rejected at validation. |
+| `apps/llm-service/app/chains/cv_chain.py`, `chat_chain.py` | Prompt text | Serialization already handles item-based sections generically (the `else`/`list` branch), so it works; update the prompt's template descriptions so optimize/extract/chat can preserve and create chip-list sections. |
+| `apps/llm-service/evals/evaluators.py` | **None** | Only counts `timeline` sections. |
+| `apps/ui-angular/src/app/shared/models/profile.model.ts` | Add to union + `ChipListSection` interface | Keep the host's TS mirror accurate. |
+
+> **No EF migration.** `Profile.Document` is a single JSON column (ADR-0013) and
+> the discriminator is a string, not a DB-level enum — adding a template is a
+> forward-compatible JSON change; existing rows are unaffected. (Verified against
+> `ProfileDocument.cs` and the proto.)
+
+#### profile-builder-ui (React)
+
+| What | Where |
+|---|---|
+| Model + types | `src/model.ts` (`SectionTemplateId`, `ChipListSection`, `DocumentSection` union) |
+| Template registry entry | `src/templates.ts` (`chipListTemplate`, added to `DEFAULT_SECTION_TEMPLATES`; reuse `newListItem`) |
+| New component | `src/components/ChipListSection.tsx` — renders/edits chips (Enter = add, ×/Backspace = remove) |
+| Render switch | `src/ProfileBuilder.tsx` — dispatch `template === 'chip-list'` to `ChipListSection` |
+| Styles | `src/ProfileBuilder.css` — `.pb-chips` / `.pb-chip` (chip/tag styling, light + dark via CSS vars) |
+| Content check | `src/util.ts` — `sectionHasContent` handles `chip-list` (any non-empty chip) |
+
+#### Angular (host)
+
+No new components or routes — the existing `<applysy-profile-builder>` embedding
+at `/job-profiles/:id` passes the document through unchanged. Only the
+`profile.model.ts` type mirror is updated so the host's typing stays accurate.
+
+#### gRPC (llm-service)
+
+The document is exchanged via `ProfileDocumentProto`. `DocumentSectionProto.template`
+is a `string` field, so `chip-list` is just a new permitted value — **no proto
+change and no `npm run grpc:generate`**. (Verified against `proto/llm_service.proto`.)
+
+#### Out of scope (this change)
+
+- Drag-to-reorder of individual chips (chips keep insertion order; sections still reorder).
+- Per-chip metadata (color, level/proficiency, icons) — chips are plain text.
+- Auto-suggest / taxonomy of skills.
+- Migrating existing `list` sections to `chip-list` (users choose per section).

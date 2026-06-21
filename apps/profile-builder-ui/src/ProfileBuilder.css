@@ -260,6 +260,65 @@
 .pb-list__bullet { color: var(--pb-muted); line-height: 1; }
 .pb-list__text { flex: 1; font-size: 14.5px; }
 
+/* Chip-list section — short items rendered as a tag cloud. */
+.pb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 10px;
+  background: var(--pb-hover);
+  border: 1px solid var(--pb-rule);
+  border-radius: 999px;
+  transition: border-color 0.12s ease;
+}
+.pb-chip:focus-within { border-color: var(--pb-accent); }
+.pb-chip__text {
+  font: inherit;
+  font-size: 13.5px;
+  color: inherit;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+.pb-chip__text:focus { outline: none; }
+.pb-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pb-muted);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.pb-chip:hover .pb-chip__remove,
+.pb-chip:focus-within .pb-chip__remove { opacity: 1; }
+.pb-chip__remove:hover:not(:disabled) { color: var(--pb-danger); }
+.pb-chip__remove:disabled { cursor: default; }
+.pb-chip-add {
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.pb-chip-add:hover { background: var(--pb-hover); color: var(--pb-fg); }
+
 /* Item controls — left gutter, on hover. */
 .pb-item__tools {
   position: absolute;

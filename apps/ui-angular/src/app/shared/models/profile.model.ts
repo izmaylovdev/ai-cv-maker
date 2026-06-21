@@ -2,7 +2,7 @@
 // reference shape in apps/profile-builder-ui/src/model.ts — the API speaks
 // `{ id, name, document }` where `document` is this `ProfileDocument`.
 
-export type SectionTemplateId = 'free-form' | 'timeline' | 'list';
+export type SectionTemplateId = 'free-form' | 'timeline' | 'list' | 'chip-list';
 
 export interface ProfileDocument {
   /** Fixed identity/contact letterhead, always present above the sections. */
@@ -19,7 +19,11 @@ export interface ProfileHeader {
   location: string;
 }
 
-export type DocumentSection = FreeFormSection | EntrySection | ListSection;
+export type DocumentSection =
+  | FreeFormSection
+  | EntrySection
+  | ListSection
+  | ChipListSection;
 
 export interface SectionBase {
   /** Client-generated stable id. */
@@ -48,6 +52,12 @@ export interface EntryItem {
 
 export interface ListSection extends SectionBase {
   template: 'list';
+  items: ListItem[];
+}
+
+/** Like a List, but rendered as chips/tags (skills, tools, languages). */
+export interface ChipListSection extends SectionBase {
+  template: 'chip-list';
   items: ListItem[];
 }
 

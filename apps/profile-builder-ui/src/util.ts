@@ -6,6 +6,7 @@ export function sectionHasContent(section: DocumentSection): boolean {
     case 'free-form':
       return section.body.trim().length > 0;
     case 'list':
+    case 'chip-list':
       return section.items.some((it) => it.text.trim().length > 0);
     default:
       return section.items.some(

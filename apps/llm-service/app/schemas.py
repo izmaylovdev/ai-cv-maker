@@ -27,13 +27,15 @@ class SectionItem(BaseModel):
     title: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
     dates: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
     description: Optional[Annotated[str, Field(max_length=_LONG)]] = None
-    # List item field.
+    # List / chip-list item field.
     text: Optional[Annotated[str, Field(max_length=_SHORT)]] = None
 
 
 class DocumentSection(BaseModel):
     id: str = ""
-    template: Literal["free-form", "timeline", "list"] = "free-form"
+    # "chip-list" shares the "list" item shape (text items); the discriminant
+    # drives chip/tag rendering on the client and PDF.
+    template: Literal["free-form", "timeline", "list", "chip-list"] = "free-form"
     heading: Annotated[str, Field(max_length=_SHORT)] = ""
     body: Optional[Annotated[str, Field(max_length=_LONG)]] = None
     items: Optional[list[SectionItem]] = None

@@ -24,21 +24,22 @@ public class ProfileHeader
 }
 
 // One generic section. `Template` discriminates the content: "free-form" uses
-// `Body`; "timeline" and "list" use `Items` (a union — timeline items carry
-// Title/Dates/Description, list items carry Text). Modelled as a single flexible
-// type so the jsonb round-trips the builder's payload without polymorphic
-// metadata.
+// `Body`; "timeline", "list", and "chip-list" use `Items` (a union — timeline
+// items carry Title/Dates/Description, list/chip-list items carry Text).
+// "chip-list" shares the "list" item shape but renders as chips/tags. Modelled
+// as a single flexible type so the jsonb round-trips the builder's payload
+// without polymorphic metadata.
 public class DocumentSection
 {
     public string Id { get; set; } = string.Empty;
-    /// <summary>"free-form" | "timeline" | "list".</summary>
+    /// <summary>"free-form" | "timeline" | "list" | "chip-list".</summary>
     public string Template { get; set; } = "free-form";
     public string Heading { get; set; } = string.Empty;
 
     /// <summary>Free-form body (template = "free-form").</summary>
     public string? Body { get; set; }
 
-    /// <summary>Entries (template = "timeline" or "list").</summary>
+    /// <summary>Entries (template = "timeline", "list", or "chip-list").</summary>
     public List<SectionItem>? Items { get; set; }
 }
 

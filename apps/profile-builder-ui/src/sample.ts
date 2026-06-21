@@ -58,5 +58,17 @@ export const SAMPLE_DOCUMENT: ProfileDocument = {
         { id: 'sample-skill-3', text: 'Node.js' },
       ],
     },
+    {
+      id: 'sample-tools',
+      template: 'chip-list',
+      heading: 'Tools & Languages',
+      items: [
+        { id: 'sample-tool-1', text: 'Docker' },
+        { id: 'sample-tool-2', text: 'PostgreSQL' },
+        { id: 'sample-tool-3', text: 'Python' },
+        { id: 'sample-tool-4', text: 'GraphQL' },
+        { id: 'sample-tool-5', text: 'AWS' },
+      ],
+    },
   ],
 };

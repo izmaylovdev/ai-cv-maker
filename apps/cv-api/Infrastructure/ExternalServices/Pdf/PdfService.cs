@@ -111,6 +111,28 @@ public class PdfService : IPdfService
                 }
                 break;
 
+            case "chip-list":
+                // Same text items as "list", rendered as wrapping chips/tags.
+                var chips = (section.Items ?? [])
+                    .Select(i => (i.Text ?? string.Empty).Trim())
+                    .Where(t => t.Length > 0)
+                    .ToList();
+                if (chips.Count == 0) return;
+                SectionHeading(col, section.Heading);
+                col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+                col.Item().PaddingTop(6).Inlined(inlined =>
+                {
+                    inlined.Spacing(6);
+                    foreach (var text in chips)
+                    {
+                        inlined.Item()
+                            .Background(Colors.Grey.Lighten3)
+                            .PaddingVertical(3).PaddingHorizontal(9)
+                            .Text(text).FontSize(9);
+                    }
+                });
+                break;
+
             default:
                 // Unknown template: render the heading only, nothing else.
                 if (!string.IsNullOrWhiteSpace(section.Heading))

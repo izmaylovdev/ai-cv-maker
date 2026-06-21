@@ -9,6 +9,7 @@ import {
   FreeFormSection as FreeFormSectionModel,
   EntrySection as EntrySectionModel,
   ListSection as ListSectionModel,
+  ChipListSection as ChipListSectionModel,
 } from './model';
 import { DEFAULT_SECTION_TEMPLATES } from './templates';
 import { reorder, sectionHasContent } from './util';
@@ -18,6 +19,7 @@ import { FreeFormSection } from './components/FreeFormSection';
 import { EntrySection } from './components/EntrySection';
 import { EntryPlaceholders } from './components/EntryItem';
 import { ListSection } from './components/ListSection';
+import { ChipListSection } from './components/ChipListSection';
 import { AddSectionPalette } from './components/AddSectionPalette';
 
 const ENTRY_PLACEHOLDERS: EntryPlaceholders = {
@@ -143,6 +145,11 @@ export function ProfileBuilder({
             ) : section.template === 'list' ? (
               <ListSection
                 section={section as ListSectionModel}
+                onChange={(next) => updateSection(section.id, next)}
+              />
+            ) : section.template === 'chip-list' ? (
+              <ChipListSection
+                section={section as ChipListSectionModel}
                 onChange={(next) => updateSection(section.id, next)}
               />
             ) : (

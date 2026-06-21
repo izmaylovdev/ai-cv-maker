@@ -4,7 +4,7 @@
 // the PDF renders it. This TypeScript definition is the reference; keep the C#
 // CvApi.Domain.Entities.ProfileDocument and Python app/schemas.py in sync.
 
-export type SectionTemplateId = 'free-form' | 'timeline' | 'list';
+export type SectionTemplateId = 'free-form' | 'timeline' | 'list' | 'chip-list';
 
 export interface ProfileDocument {
   /** Fixed identity/contact letterhead, always present above the sections. */
@@ -29,7 +29,8 @@ export interface ProfileHeader {
 export type DocumentSection =
   | FreeFormSection
   | EntrySection
-  | ListSection;
+  | ListSection
+  | ChipListSection;
 
 export interface SectionBase {
   /** Client-generated stable id. */
@@ -64,6 +65,16 @@ export interface EntryItem {
 /** A simple bulleted list — skills, tools, or any short items. */
 export interface ListSection extends SectionBase {
   template: 'list';
+  items: ListItem[];
+}
+
+/**
+ * A chip/tag list — the same short text items as a List, but rendered as compact
+ * chips (a tag cloud) instead of bullets. Suits skills, tools, languages, etc.
+ * Reuses ListItem; the `template` discriminant drives the chip rendering.
+ */
+export interface ChipListSection extends SectionBase {
+  template: 'chip-list';
   items: ListItem[];
 }
 

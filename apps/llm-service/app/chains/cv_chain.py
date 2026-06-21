@@ -37,7 +37,10 @@ A Section is one of:
                "items": [ { "id": str, "title": str, "dates": str, "description": str }, ... ] }
 - list:      { "id": str, "template": "list", "heading": str,
                "items": [ { "id": str, "text": str }, ... ] }
+- chip-list:  { "id": str, "template": "chip-list", "heading": str,
+               "items": [ { "id": str, "text": str }, ... ] }
 Notes:
+- `chip-list` is like `list` but renders as chips/tags (skills, tools, languages); same item shape.
 - `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present", "2019 – 2023".
 - A timeline `title` carries the role/degree and organisation, e.g. "Senior Engineer · Acme Corp".
 - Keep every section's `id` unchanged when you receive one; mint a short unique id for new items.
