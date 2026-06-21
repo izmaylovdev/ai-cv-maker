@@ -4,8 +4,8 @@
     {
       "name": "profile-builder-ui",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["nx", "run", "profile-builder-ui:dev"],
-      "port": 4203,
+      "runtimeArgs": ["nx", "run", "profile-builder-ui:dev", "--port=4288"],
+      "port": 4288,
       "autoPort": false
     }
   ]

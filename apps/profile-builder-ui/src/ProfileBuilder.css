@@ -400,3 +400,54 @@
 .pb-palette__item:hover { background: var(--pb-hover); }
 .pb-palette__name { font-weight: 600; font-size: 14px; }
 .pb-palette__desc { font-size: 12px; color: var(--pb-muted); }
+
+/* ---- Lexical editor surface (ADR-0014) ---- */
+.pb-content { outline: none; }
+.pb-content:focus,
+.pb-content:focus-visible { outline: none; }
+
+/* Insert toolbar */
+.pb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 18px;
+}
+.pb-toolbar__btn {
+  border: 1px solid var(--pb-rule);
+  background: var(--pb-panel);
+  color: var(--pb-soft);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.pb-toolbar__btn:hover { background: var(--pb-hover); color: var(--pb-accent); }
+.pb-toolbar__sep { width: 1px; align-self: stretch; margin: 2px 6px; background: var(--pb-rule); }
+
+/* Native Lexical lists render <li> directly — show standard bullets. */
+.pb-content .pb-list { list-style: disc; margin: 6px 0; padding-left: 1.4em; }
+.pb-content .pb-list .pb-list__item { display: list-item; }
+.pb-content .pb-list .pb-list__item::marker { color: var(--pb-muted); }
+.pb-content .pb-list .pb-list .pb-list__item { list-style: circle; }
+
+/* Placeholders for the empty editable structural fields. */
+.pb-content [data-pb='section-heading']:empty::before,
+.pb-content [data-pb='entry-title']:empty::before,
+.pb-content [data-pb='entry-dates']:empty::before {
+  content: attr(data-placeholder);
+  color: var(--pb-muted);
+  opacity: 0.65;
+}
+
+/* Entry title/dates sit on one row. */
+.pb-content .pb-item { margin-bottom: 4px; }
+.pb-content .pb-item__title { display: inline-block; min-width: 4em; }
+.pb-content .pb-item__dates { display: block; }
+
+/* Chip input hugs its text. */
+.pb-chip__field { display: inline-flex; }
+.pb-chip__text { min-width: 2ch; }

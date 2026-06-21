@@ -1,27 +1,17 @@
 // Serialization layer (ADR-0014 §9.4): maps the neutral BlockNode tree
 // (model.ts) ⇄ Lexical's node tree. Lexical's own JSON never crosses the
 // component boundary or the network — only the neutral tree does. Round-trip
-// fidelity (BlockNode → Lexical → BlockNode is identity, ids included) is a hard
-// requirement and is covered by serialize.test.ts.
+// fidelity (BlockNode → Lexical → BlockNode is identity for neutral ids) is a
+// hard requirement covered by serialize.test.ts.
 //
-// Mapping (neutral ⇄ Lexical):
-//   root      ⇄ Lexical RootNode (Lexical's implicit document root)
-//   section   ⇄ SectionNode            (custom; heading in attrs)
-//   paragraph ⇄ PbParagraphNode        (id-carrying built-in subclass)
-//   text      ⇄ PbTextNode             (id-carrying built-in subclass)
-//   list      ⇄ PbListNode             (id-carrying @lexical/list subclass)
-//   listItem  ⇄ PbListItemNode         (id-carrying @lexical/list subclass)
-//   chips     ⇄ ChipsNode              (custom)
-//   chip      ⇄ ChipNode               (custom; text in attrs)
-//   timeline  ⇄ TimelineNode           (custom)
-//   entry     ⇄ EntryNode              (custom; title/dates in attrs)
+// Structured widgets keep their leaf data in dedicated places that the editor
+// can edit natively, and this layer bridges them back to the neutral `attrs`:
+//   section  → SectionNode + a SectionHeadingNode child (heading text)
+//   entry    → EntryNode + title/dates EntryFieldNode children, then description
+//   chips    → ChipsNode decorator state ({id,text}[]) ⇄ `chip` children
+//   paragraph/text/list/listItem → id-carrying Lexical built-ins
 
-import {
-  $getRoot,
-  ElementNode,
-  LexicalEditor,
-  LexicalNode,
-} from 'lexical';
+import { $getRoot, ElementNode, LexicalEditor, LexicalNode } from 'lexical';
 import {
   BlockNode,
   ChipNode as ChipModel,
@@ -36,28 +26,29 @@ import {
   TimelineNode as TimelineModel,
 } from './model';
 import {
-  $createChipNode,
   $createChipsNode,
+  $createEntryFieldNode,
   $createEntryNode,
   $createPbListItemNode,
   $createPbListNode,
   $createPbParagraphNode,
   $createPbTextNode,
+  $createSectionHeadingNode,
   $createSectionNode,
   $createTimelineNode,
-  $isChipNode,
   $isChipsNode,
+  $isEntryFieldNode,
   $isEntryNode,
   $isPbListItemNode,
   $isPbListNode,
   $isPbParagraphNode,
   $isPbTextNode,
+  $isSectionHeadingNode,
   $isSectionNode,
   $isTimelineNode,
-  ChipNode as LexChipNode,
-  EntryNode as LexEntryNode,
+  ChipsNode as LexChipsNode,
+  EntryFieldNode,
   PbTextNode,
-  SectionNode as LexSectionNode,
 } from './lexical/widget-nodes';
 
 // ---------------------------------------------------------------------------
@@ -68,7 +59,10 @@ import {
 export function $createLexicalNode(node: BlockNode): LexicalNode {
   switch (node.type) {
     case 'section': {
-      const el = $createSectionNode(node.id, node.attrs?.['heading'] ?? '');
+      const el = $createSectionNode(node.id);
+      const heading = $createSectionHeadingNode();
+      heading.append($createPbTextNode(undefined, node.attrs?.['heading'] ?? ''));
+      el.append(heading);
       appendChildren(el, node.children ?? []);
       return el;
     }
@@ -85,48 +79,42 @@ export function $createLexicalNode(node: BlockNode): LexicalNode {
       return el;
     }
     case 'listItem': {
-      // Lexical holds a bullet's inline text directly, with no paragraph
-      // wrapper. Flatten a leading `paragraph → text` into the list item's
-      // inline text (recording its ids on the node) so it survives Lexical's
-      // normalization; re-wrap it on read. Other children (nested list, chips)
-      // append as block children.
+      // Flatten a leading `paragraph → text` into the item's inline text (Lexical
+      // holds it directly); re-wrap on read. Other children append as blocks.
       const children = node.children ?? [];
       const [first, ...rest] = children;
-      let el: ReturnType<typeof $createPbListItemNode>;
       if (first && first.type === 'paragraph') {
         const textChild = first.children?.[0];
-        el = $createPbListItemNode(node.id, first.id, textChild?.id);
+        const el = $createPbListItemNode(node.id, first.id, textChild?.id);
         el.append($createPbTextNode(textChild?.id, textChild?.attrs?.['text'] ?? ''));
         appendChildren(el, rest);
-      } else {
-        el = $createPbListItemNode(node.id);
-        appendChildren(el, children);
+        return el;
       }
+      const el = $createPbListItemNode(node.id);
+      appendChildren(el, children);
       return el;
     }
     case 'chips': {
-      const el = $createChipsNode(node.id);
-      appendChildren(el, node.children ?? []);
-      return el;
+      const chips = (node.children ?? []).map((c) => ({ id: c.id, text: c.attrs?.['text'] ?? '' }));
+      return $createChipsNode(node.id, chips);
     }
-    case 'chip':
-      return $createChipNode(node.id, node.attrs?.['text'] ?? '');
     case 'timeline': {
       const el = $createTimelineNode(node.id);
       appendChildren(el, node.children ?? []);
       return el;
     }
     case 'entry': {
-      const el = $createEntryNode(
-        node.id,
-        node.attrs?.['title'] ?? '',
-        node.attrs?.['dates'] ?? '',
-      );
+      const el = $createEntryNode(node.id);
+      const title = $createEntryFieldNode('title');
+      title.append($createPbTextNode(undefined, node.attrs?.['title'] ?? ''));
+      const dates = $createEntryFieldNode('dates');
+      dates.append($createPbTextNode(undefined, node.attrs?.['dates'] ?? ''));
+      el.append(title);
+      el.append(dates);
       appendChildren(el, node.children ?? []);
       return el;
     }
     default:
-      // Unknown types are dropped rather than producing a raw-HTML escape hatch.
       throw new Error(`Cannot serialize unknown node type "${(node as BlockNode).type}"`);
   }
 }
@@ -137,10 +125,7 @@ function appendChildren(parent: ElementNode, children: BlockNode[]): void {
   }
 }
 
-/**
- * Replace the editor's content with the Lexical equivalent of `body`. Must be
- * called inside an `editor.update(...)` callback (or use {@link loadDocument}).
- */
+/** Replace the editor's content with the Lexical equivalent of `body`. */
 export function $writeBody(body: RootNode): void {
   const root = $getRoot();
   root.clear();
@@ -163,15 +148,27 @@ export function loadDocument(editor: LexicalEditor, body: RootNode): void {
 // Lexical nodes → BlockNode tree
 // ---------------------------------------------------------------------------
 
+/** Map an element's children to neutral nodes, skipping any the predicate hides. */
+function readChildren(node: LexicalNode, skip?: (n: LexicalNode) => boolean): BlockNode[] {
+  if (!(node instanceof ElementNode)) return [];
+  const out: BlockNode[] = [];
+  for (const child of node.getChildren()) {
+    if (skip?.(child)) continue;
+    const mapped = readLexicalNode(child);
+    if (mapped) out.push(mapped);
+  }
+  return out;
+}
+
 /** Read a single Lexical node into a neutral BlockNode (or null to skip it). */
 function readLexicalNode(node: LexicalNode): BlockNode | null {
   if ($isSectionNode(node)) {
-    const n = node as LexSectionNode;
+    const headingEl = node.getChildren().find($isSectionHeadingNode);
     return {
       type: 'section',
-      id: n.getNodeId(),
-      attrs: { heading: n.getHeading() },
-      children: readChildren(n) as SectionModel['children'],
+      id: node.getNodeId(),
+      attrs: { heading: headingEl ? headingEl.getTextContent() : '' },
+      children: readChildren(node, $isSectionHeadingNode) as SectionModel['children'],
     } satisfies SectionModel;
   }
   if ($isPbParagraphNode(node)) {
@@ -183,11 +180,7 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
   }
   if ($isPbTextNode(node)) {
     const n = node as PbTextNode;
-    return {
-      type: 'text',
-      id: n.getNodeId(),
-      attrs: { text: n.getTextContent() },
-    } satisfies TextModel;
+    return { type: 'text', id: n.getNodeId(), attrs: { text: n.getTextContent() } } satisfies TextModel;
   }
   if ($isPbListNode(node)) {
     return {
@@ -197,9 +190,6 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
     } satisfies ListModel;
   }
   if ($isPbListItemNode(node)) {
-    // Re-wrap the list item's leading inline text back into a `paragraph →
-    // text` (the inverse of the flatten on write), using the ids stashed on the
-    // node. Block children (nested list, chips) map normally.
     const out: ListItemModel['children'] = [];
     const inlineText: string[] = [];
     let hasInline = false;
@@ -213,33 +203,23 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
       }
     }
     if (hasInline) {
-      const para: ParagraphModel = {
+      out.unshift({
         type: 'paragraph',
         id: node.getParaId(),
         children: [{ type: 'text', id: node.getParaTextId(), attrs: { text: inlineText.join('') } }],
-      };
-      out.unshift(para);
+      });
     }
-    return {
-      type: 'listItem',
-      id: node.getNodeId(),
-      children: out,
-    } satisfies ListItemModel;
+    return { type: 'listItem', id: node.getNodeId(), children: out } satisfies ListItemModel;
   }
   if ($isChipsNode(node)) {
+    const n = node as LexChipsNode;
     return {
       type: 'chips',
-      id: node.getNodeId(),
-      children: readChildren(node) as ChipModel[],
-    } satisfies ChipsModel;
-  }
-  if ($isChipNode(node)) {
-    const n = node as LexChipNode;
-    return {
-      type: 'chip',
       id: n.getNodeId(),
-      attrs: { text: n.getChipText() },
-    } satisfies ChipModel;
+      children: n.getChips().map(
+        (c): ChipModel => ({ type: 'chip', id: c.id, attrs: { text: c.text } }),
+      ),
+    } satisfies ChipsModel;
   }
   if ($isTimelineNode(node)) {
     return {
@@ -249,34 +229,21 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
     } satisfies TimelineModel;
   }
   if ($isEntryNode(node)) {
-    const n = node as LexEntryNode;
+    const fields = node.getChildren().filter($isEntryFieldNode) as EntryFieldNode[];
+    const titleEl = fields.find((f) => f.getField() === 'title');
+    const datesEl = fields.find((f) => f.getField() === 'dates');
     return {
       type: 'entry',
-      id: n.getNodeId(),
-      attrs: { title: n.getTitle(), dates: n.getDates() },
-      children: readChildren(n) as EntryModel['children'],
+      id: node.getNodeId(),
+      attrs: { title: titleEl?.getTextContent() ?? '', dates: datesEl?.getTextContent() ?? '' },
+      children: readChildren(node, $isEntryFieldNode) as EntryModel['children'],
     } satisfies EntryModel;
   }
-  // Unknown/foreign node (e.g. a plain Lexical paragraph from a paste): skip it.
+  // Unknown/foreign node (e.g. a plain Lexical node from a paste): skip it.
   return null;
 }
 
-function readChildren(node: LexicalNode): BlockNode[] {
-  if (!(node instanceof ElementNode)) return [];
-  const out: BlockNode[] = [];
-  for (const child of node.getChildren()) {
-    const mapped = readLexicalNode(child);
-    if (mapped) out.push(mapped);
-  }
-  return out;
-}
-
-/**
- * Read the current editor content into a neutral body tree. Must be called
- * inside `editorState.read(...)` (or use {@link readDocument}). The implicit
- * Lexical root maps to our `root` node; only `section` children survive (other
- * top-level nodes are skipped, per the §9.3 matrix).
- */
+/** Read the current editor content into a neutral body tree. */
 export function $readBody(rootId: string): RootNode {
   const root = $getRoot();
   const children: SectionModel[] = [];
@@ -287,11 +254,7 @@ export function $readBody(rootId: string): RootNode {
   return { type: 'root', id: rootId, children };
 }
 
-/**
- * Convenience: read an editor's current state into a body tree. `rootId`
- * preserves the neutral root node's id across the round trip (Lexical's own
- * root has no stable id of ours).
- */
+/** Convenience: read an editor's current state into a body tree. */
 export function readDocument(editor: LexicalEditor, rootId: string): RootNode {
   return editor.getEditorState().read(() => $readBody(rootId));
 }

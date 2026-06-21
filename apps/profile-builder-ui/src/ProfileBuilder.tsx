@@ -43,11 +43,13 @@ export interface ProfileBuilderProps {
 const THEME = {
   paragraph: 'pb-paragraph',
   pbSection: 'pb-section',
+  pbSectionHeading: 'pb-section__heading',
   pbChips: 'pb-chips',
-  pbChip: 'pb-chip',
-  pbTimeline: 'pb-timeline',
-  pbEntry: 'pb-entry',
-  list: { ul: 'pb-ul', listitem: 'pb-li', nested: { listitem: 'pb-li--nested' } },
+  pbTimeline: 'pb-workexp',
+  pbEntry: 'pb-item',
+  pbItemTitle: 'pb-item__title',
+  pbItemDates: 'pb-item__dates',
+  list: { ul: 'pb-list', listitem: 'pb-list__item', nested: { listitem: 'pb-li--nested' } },
 };
 
 export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
@@ -131,6 +133,9 @@ function LoadBodyPlugin({
       return;
     }
     bodyJsonRef.current = json;
+    // Discrete so the content is present synchronously on mount (insertion and
+    // tests rely on it). Lexical may log a benign "flushSync in a lifecycle"
+    // notice when the chips decorator first renders; it does not affect behaviour.
     loadDocument(editor, body);
   }, [editor, body, bodyJsonRef]);
   return null;

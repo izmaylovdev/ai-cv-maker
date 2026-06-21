@@ -1,16 +1,27 @@
-// Custom Lexical nodes for our closed widget set (spec §9.4). Each maps 1:1 to a
-// BlockNode type and carries the neutral tree's stable `id` (and leaf `attrs`) so
-// the serialization layer (serialize.ts) can round-trip without relying on
-// Lexical's internal JSON. These are ElementNode/Decorator-free structural nodes:
-// section / chips / chip / timeline / entry. (paragraph/text/list/listItem reuse
-// Lexical + @lexical/list built-ins.)
+// Custom Lexical nodes for our closed widget set (spec §9.4 / ADR-0014). Each
+// maps to a BlockNode type and carries the neutral tree's stable `id` so the
+// serialization layer (serialize.ts) can round-trip without relying on Lexical's
+// internal JSON.
+//
+// Editing model: the structured widgets are made editable as NATIVE Lexical
+// content rather than opaque containers —
+//   • section heading, timeline entry title/dates → dedicated element nodes that
+//     hold a real (editable) text child; the serializer lifts their text into
+//     the neutral node's `attrs` (heading/title/dates) and back.
+//   • chips → a DecoratorNode rendering a React tag UI (chip text lives in node
+//     state; the serializer maps it to/from `chip` children).
+//   • paragraph / text / list / listItem reuse Lexical (+ @lexical/list)
+//     built-ins, subclassed only to thread the stable id.
 
 import {
+  DecoratorNode,
   EditorConfig,
   ElementNode,
+  LexicalEditor,
   LexicalNode,
   ParagraphNode as LexicalParagraphNode,
   SerializedElementNode,
+  SerializedLexicalNode,
   SerializedParagraphNode,
   SerializedTextNode,
   Spread,
@@ -22,6 +33,9 @@ import {
   SerializedListItemNode,
   SerializedListNode,
 } from '@lexical/list';
+import type { ReactNode } from 'react';
+import { createElement } from 'react';
+import { ChipsComponent } from './ChipsComponent';
 
 let counter = 0;
 /** Fallback id for nodes created in the editor before serialization assigns one. */
@@ -31,199 +45,104 @@ export function ephemeralId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${counter}`;
 }
 
-// ---- SectionNode ----------------------------------------------------------
-
-export type SerializedSectionNode = Spread<
-  { nodeId: string; heading: string },
-  SerializedElementNode
->;
-
-export class SectionNode extends ElementNode {
+/** Shared base for our id-carrying structural element nodes. */
+abstract class IdElementNode extends ElementNode {
   __nodeId: string;
-  __heading: string;
-
-  static getType(): string {
-    return 'pb-section';
-  }
-
-  static clone(node: SectionNode): SectionNode {
-    return new SectionNode(node.__nodeId, node.__heading, node.__key);
-  }
-
-  constructor(nodeId?: string, heading = '', key?: string) {
+  constructor(nodeId: string | undefined, prefix: string, key?: string) {
     super(key);
-    this.__nodeId = nodeId ?? ephemeralId('section');
-    this.__heading = heading;
+    this.__nodeId = nodeId ?? ephemeralId(prefix);
   }
-
   getNodeId(): string {
     return this.getLatest().__nodeId;
   }
-
-  getHeading(): string {
-    return this.getLatest().__heading;
-  }
-
-  setHeading(heading: string): void {
-    this.getWritable().__heading = heading;
-  }
-
-  createDOM(config: EditorConfig): HTMLElement {
-    const el = document.createElement('section');
-    if (config.theme['pbSection']) el.className = config.theme['pbSection'] as string;
-    el.setAttribute('data-pb', 'section');
-    return el;
-  }
-
   updateDOM(): boolean {
-    return false;
-  }
-
-  exportJSON(): SerializedSectionNode {
-    return {
-      ...super.exportJSON(),
-      type: SectionNode.getType(),
-      version: 1,
-      nodeId: this.__nodeId,
-      heading: this.__heading,
-    };
-  }
-
-  static importJSON(json: SerializedSectionNode): SectionNode {
-    return new SectionNode(json.nodeId, json.heading);
-  }
-
-  // A section is a block-level container, never inline.
-  isInline(): false {
-    return false;
-  }
-
-  canBeEmpty(): false {
     return false;
   }
 }
 
-export function $createSectionNode(nodeId?: string, heading = ''): SectionNode {
-  return new SectionNode(nodeId, heading);
+// ---- SectionNode + SectionHeadingNode -------------------------------------
+
+export type SerializedSectionNode = Spread<{ nodeId: string }, SerializedElementNode>;
+
+/** A document section: a heading line followed by flow content. */
+export class SectionNode extends IdElementNode {
+  static getType(): string {
+    return 'pb-section';
+  }
+  static clone(node: SectionNode): SectionNode {
+    return new SectionNode(node.__nodeId, node.__key);
+  }
+  constructor(nodeId?: string, key?: string) {
+    super(nodeId, 'section', key);
+  }
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = document.createElement('section');
+    el.className = (config.theme as Record<string, string>)['pbSection'] ?? 'pb-section';
+    el.setAttribute('data-pb', 'section');
+    return el;
+  }
+  exportJSON(): SerializedSectionNode {
+    return { ...super.exportJSON(), type: SectionNode.getType(), version: 1, nodeId: this.__nodeId };
+  }
+  static importJSON(json: SerializedSectionNode): SectionNode {
+    return new SectionNode(json.nodeId);
+  }
+  isInline(): false {
+    return false;
+  }
+  canBeEmpty(): false {
+    return false;
+  }
+}
+export function $createSectionNode(nodeId?: string): SectionNode {
+  return new SectionNode(nodeId);
 }
 export function $isSectionNode(node: LexicalNode | null | undefined): node is SectionNode {
   return node instanceof SectionNode;
 }
 
-// ---- ChipsNode / ChipNode -------------------------------------------------
+export type SerializedSectionHeadingNode = Spread<{ nodeId: string }, SerializedElementNode>;
 
-export type SerializedChipsNode = Spread<{ nodeId: string }, SerializedElementNode>;
-
-export class ChipsNode extends ElementNode {
-  __nodeId: string;
+/** The editable heading line at the top of a section (holds a text child). */
+export class SectionHeadingNode extends IdElementNode {
   static getType(): string {
-    return 'pb-chips';
+    return 'pb-section-heading';
   }
-  static clone(node: ChipsNode): ChipsNode {
-    return new ChipsNode(node.__nodeId, node.__key);
+  static clone(node: SectionHeadingNode): SectionHeadingNode {
+    return new SectionHeadingNode(node.__nodeId, node.__key);
   }
   constructor(nodeId?: string, key?: string) {
-    super(key);
-    this.__nodeId = nodeId ?? ephemeralId('chips');
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
+    super(nodeId, 'heading', key);
   }
   createDOM(config: EditorConfig): HTMLElement {
     const el = document.createElement('div');
-    if (config.theme['pbChips']) el.className = config.theme['pbChips'] as string;
-    el.setAttribute('data-pb', 'chips');
+    el.className = (config.theme as Record<string, string>)['pbSectionHeading'] ?? 'pb-section__heading';
+    el.setAttribute('data-pb', 'section-heading');
+    el.setAttribute('data-placeholder', 'Section heading');
     return el;
   }
-  updateDOM(): boolean {
-    return false;
+  exportJSON(): SerializedSectionHeadingNode {
+    return { ...super.exportJSON(), type: SectionHeadingNode.getType(), version: 1, nodeId: this.__nodeId };
   }
-  exportJSON(): SerializedChipsNode {
-    return { ...super.exportJSON(), type: ChipsNode.getType(), version: 1, nodeId: this.__nodeId };
-  }
-  static importJSON(json: SerializedChipsNode): ChipsNode {
-    return new ChipsNode(json.nodeId);
+  static importJSON(json: SerializedSectionHeadingNode): SectionHeadingNode {
+    return new SectionHeadingNode(json.nodeId);
   }
   isInline(): false {
     return false;
   }
 }
-
-export function $createChipsNode(nodeId?: string): ChipsNode {
-  return new ChipsNode(nodeId);
+export function $createSectionHeadingNode(nodeId?: string): SectionHeadingNode {
+  return new SectionHeadingNode(nodeId);
 }
-export function $isChipsNode(node: LexicalNode | null | undefined): node is ChipsNode {
-  return node instanceof ChipsNode;
-}
-
-export type SerializedChipNode = Spread<
-  { nodeId: string; text: string },
-  SerializedElementNode
->;
-
-/** A chip is a leaf-ish element carrying a plain-string label. */
-export class ChipNode extends ElementNode {
-  __nodeId: string;
-  __text: string;
-  static getType(): string {
-    return 'pb-chip';
-  }
-  static clone(node: ChipNode): ChipNode {
-    return new ChipNode(node.__nodeId, node.__text, node.__key);
-  }
-  constructor(nodeId?: string, text = '', key?: string) {
-    super(key);
-    this.__nodeId = nodeId ?? ephemeralId('chip');
-    this.__text = text;
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
-  }
-  getChipText(): string {
-    return this.getLatest().__text;
-  }
-  setChipText(text: string): void {
-    this.getWritable().__text = text;
-  }
-  createDOM(config: EditorConfig): HTMLElement {
-    const el = document.createElement('span');
-    if (config.theme['pbChip']) el.className = config.theme['pbChip'] as string;
-    el.setAttribute('data-pb', 'chip');
-    return el;
-  }
-  updateDOM(): boolean {
-    return false;
-  }
-  exportJSON(): SerializedChipNode {
-    return {
-      ...super.exportJSON(),
-      type: ChipNode.getType(),
-      version: 1,
-      nodeId: this.__nodeId,
-      text: this.__text,
-    };
-  }
-  static importJSON(json: SerializedChipNode): ChipNode {
-    return new ChipNode(json.nodeId, json.text);
-  }
-  isInline(): true {
-    return true;
-  }
+export function $isSectionHeadingNode(node: LexicalNode | null | undefined): node is SectionHeadingNode {
+  return node instanceof SectionHeadingNode;
 }
 
-export function $createChipNode(nodeId?: string, text = ''): ChipNode {
-  return new ChipNode(nodeId, text);
-}
-export function $isChipNode(node: LexicalNode | null | undefined): node is ChipNode {
-  return node instanceof ChipNode;
-}
-
-// ---- TimelineNode / EntryNode ---------------------------------------------
+// ---- TimelineNode / EntryNode / title / dates -----------------------------
 
 export type SerializedTimelineNode = Spread<{ nodeId: string }, SerializedElementNode>;
 
-export class TimelineNode extends ElementNode {
-  __nodeId: string;
+export class TimelineNode extends IdElementNode {
   static getType(): string {
     return 'pb-timeline';
   }
@@ -231,101 +150,19 @@ export class TimelineNode extends ElementNode {
     return new TimelineNode(node.__nodeId, node.__key);
   }
   constructor(nodeId?: string, key?: string) {
-    super(key);
-    this.__nodeId = nodeId ?? ephemeralId('timeline');
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
+    super(nodeId, 'timeline', key);
   }
   createDOM(config: EditorConfig): HTMLElement {
     const el = document.createElement('div');
-    if (config.theme['pbTimeline']) el.className = config.theme['pbTimeline'] as string;
+    el.className = (config.theme as Record<string, string>)['pbTimeline'] ?? 'pb-workexp';
     el.setAttribute('data-pb', 'timeline');
     return el;
   }
-  updateDOM(): boolean {
-    return false;
-  }
   exportJSON(): SerializedTimelineNode {
-    return {
-      ...super.exportJSON(),
-      type: TimelineNode.getType(),
-      version: 1,
-      nodeId: this.__nodeId,
-    };
+    return { ...super.exportJSON(), type: TimelineNode.getType(), version: 1, nodeId: this.__nodeId };
   }
   static importJSON(json: SerializedTimelineNode): TimelineNode {
     return new TimelineNode(json.nodeId);
-  }
-  isInline(): false {
-    return false;
-  }
-}
-
-export function $createTimelineNode(nodeId?: string): TimelineNode {
-  return new TimelineNode(nodeId);
-}
-export function $isTimelineNode(node: LexicalNode | null | undefined): node is TimelineNode {
-  return node instanceof TimelineNode;
-}
-
-export type SerializedEntryNode = Spread<
-  { nodeId: string; title: string; dates: string },
-  SerializedElementNode
->;
-
-export class EntryNode extends ElementNode {
-  __nodeId: string;
-  __title: string;
-  __dates: string;
-  static getType(): string {
-    return 'pb-entry';
-  }
-  static clone(node: EntryNode): EntryNode {
-    return new EntryNode(node.__nodeId, node.__title, node.__dates, node.__key);
-  }
-  constructor(nodeId?: string, title = '', dates = '', key?: string) {
-    super(key);
-    this.__nodeId = nodeId ?? ephemeralId('entry');
-    this.__title = title;
-    this.__dates = dates;
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
-  }
-  getTitle(): string {
-    return this.getLatest().__title;
-  }
-  getDates(): string {
-    return this.getLatest().__dates;
-  }
-  setTitle(title: string): void {
-    this.getWritable().__title = title;
-  }
-  setDates(dates: string): void {
-    this.getWritable().__dates = dates;
-  }
-  createDOM(config: EditorConfig): HTMLElement {
-    const el = document.createElement('div');
-    if (config.theme['pbEntry']) el.className = config.theme['pbEntry'] as string;
-    el.setAttribute('data-pb', 'entry');
-    return el;
-  }
-  updateDOM(): boolean {
-    return false;
-  }
-  exportJSON(): SerializedEntryNode {
-    return {
-      ...super.exportJSON(),
-      type: EntryNode.getType(),
-      version: 1,
-      nodeId: this.__nodeId,
-      title: this.__title,
-      dates: this.__dates,
-    };
-  }
-  static importJSON(json: SerializedEntryNode): EntryNode {
-    return new EntryNode(json.nodeId, json.title, json.dates);
   }
   isInline(): false {
     return false;
@@ -334,19 +171,170 @@ export class EntryNode extends ElementNode {
     return false;
   }
 }
+export function $createTimelineNode(nodeId?: string): TimelineNode {
+  return new TimelineNode(nodeId);
+}
+export function $isTimelineNode(node: LexicalNode | null | undefined): node is TimelineNode {
+  return node instanceof TimelineNode;
+}
 
-export function $createEntryNode(nodeId?: string, title = '', dates = ''): EntryNode {
-  return new EntryNode(nodeId, title, dates);
+export type SerializedEntryNode = Spread<{ nodeId: string }, SerializedElementNode>;
+
+/** One dated entry: title + dates rows, then a rich description (flow). */
+export class EntryNode extends IdElementNode {
+  static getType(): string {
+    return 'pb-entry';
+  }
+  static clone(node: EntryNode): EntryNode {
+    return new EntryNode(node.__nodeId, node.__key);
+  }
+  constructor(nodeId?: string, key?: string) {
+    super(nodeId, 'entry', key);
+  }
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = document.createElement('div');
+    el.className = (config.theme as Record<string, string>)['pbEntry'] ?? 'pb-item';
+    el.setAttribute('data-pb', 'entry');
+    return el;
+  }
+  exportJSON(): SerializedEntryNode {
+    return { ...super.exportJSON(), type: EntryNode.getType(), version: 1, nodeId: this.__nodeId };
+  }
+  static importJSON(json: SerializedEntryNode): EntryNode {
+    return new EntryNode(json.nodeId);
+  }
+  isInline(): false {
+    return false;
+  }
+  canBeEmpty(): false {
+    return false;
+  }
+}
+export function $createEntryNode(nodeId?: string): EntryNode {
+  return new EntryNode(nodeId);
 }
 export function $isEntryNode(node: LexicalNode | null | undefined): node is EntryNode {
   return node instanceof EntryNode;
 }
 
+export type SerializedEntryFieldNode = Spread<{ nodeId: string; field: 'title' | 'dates' }, SerializedElementNode>;
+
+/** The editable title / dates line of an entry (holds a text child). */
+export class EntryFieldNode extends IdElementNode {
+  __field: 'title' | 'dates';
+  static getType(): string {
+    return 'pb-entry-field';
+  }
+  static clone(node: EntryFieldNode): EntryFieldNode {
+    return new EntryFieldNode(node.__nodeId, node.__field, node.__key);
+  }
+  constructor(nodeId: string | undefined, field: 'title' | 'dates', key?: string) {
+    super(nodeId, field, key);
+    this.__field = field;
+  }
+  getField(): 'title' | 'dates' {
+    return this.getLatest().__field;
+  }
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = document.createElement('div');
+    const theme = config.theme as Record<string, string>;
+    el.className = this.__field === 'title' ? theme['pbItemTitle'] ?? 'pb-item__title' : theme['pbItemDates'] ?? 'pb-item__dates';
+    el.setAttribute('data-pb', `entry-${this.__field}`);
+    el.setAttribute('data-placeholder', this.__field === 'title' ? 'Title — role, degree, or project' : 'Jan 2022 – Present');
+    return el;
+  }
+  exportJSON(): SerializedEntryFieldNode {
+    return {
+      ...super.exportJSON(),
+      type: EntryFieldNode.getType(),
+      version: 1,
+      nodeId: this.__nodeId,
+      field: this.__field,
+    };
+  }
+  static importJSON(json: SerializedEntryFieldNode): EntryFieldNode {
+    return new EntryFieldNode(json.nodeId, json.field);
+  }
+  isInline(): false {
+    return false;
+  }
+}
+export function $createEntryFieldNode(field: 'title' | 'dates', nodeId?: string): EntryFieldNode {
+  return new EntryFieldNode(nodeId, field);
+}
+export function $isEntryFieldNode(node: LexicalNode | null | undefined): node is EntryFieldNode {
+  return node instanceof EntryFieldNode;
+}
+
+// ---- ChipsNode (decorator) ------------------------------------------------
+
+export interface Chip {
+  id: string;
+  text: string;
+}
+export type SerializedChipsNode = Spread<{ nodeId: string; chips: Chip[] }, SerializedLexicalNode>;
+
+/** A tag cloud. Chip data lives in node state; a React component edits it. */
+export class ChipsNode extends DecoratorNode<ReactNode> {
+  __nodeId: string;
+  __chips: Chip[];
+  static getType(): string {
+    return 'pb-chips';
+  }
+  static clone(node: ChipsNode): ChipsNode {
+    return new ChipsNode(node.__nodeId, node.__chips, node.__key);
+  }
+  constructor(nodeId?: string, chips: Chip[] = [], key?: string) {
+    super(key);
+    this.__nodeId = nodeId ?? ephemeralId('chips');
+    this.__chips = chips;
+  }
+  getNodeId(): string {
+    return this.getLatest().__nodeId;
+  }
+  getChips(): Chip[] {
+    return this.getLatest().__chips;
+  }
+  setChips(chips: Chip[]): void {
+    this.getWritable().__chips = chips;
+  }
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = document.createElement('div');
+    el.className = (config.theme as Record<string, string>)['pbChips'] ?? 'pb-chips';
+    el.setAttribute('data-pb', 'chips');
+    return el;
+  }
+  updateDOM(): boolean {
+    return false;
+  }
+  isInline(): false {
+    return false;
+  }
+  decorate(editor: LexicalEditor): ReactNode {
+    return createElement(ChipsComponent, { editor, nodeKey: this.getKey(), chips: this.getChips() });
+  }
+  exportJSON(): SerializedChipsNode {
+    return {
+      type: ChipsNode.getType(),
+      version: 1,
+      nodeId: this.__nodeId,
+      chips: this.__chips,
+    };
+  }
+  static importJSON(json: SerializedChipsNode): ChipsNode {
+    return new ChipsNode(json.nodeId, json.chips);
+  }
+}
+export function $createChipsNode(nodeId?: string, chips: Chip[] = []): ChipsNode {
+  return new ChipsNode(nodeId, chips);
+}
+export function $isChipsNode(node: LexicalNode | null | undefined): node is ChipsNode {
+  return node instanceof ChipsNode;
+}
+
 // ---- Id-carrying built-in subclasses --------------------------------------
 // paragraph / text / list / listItem reuse Lexical (+ @lexical/list) behaviour
-// but must carry the neutral tree's stable `id` so serialization round-trips it
-// (model.ts requires every node to keep its id). Each subclass overrides the
-// type, clone, and JSON to thread `__nodeId` through.
+// but carry the neutral tree's stable id so serialization round-trips it.
 
 export type SerializedPbParagraphNode = Spread<{ nodeId: string }, SerializedParagraphNode>;
 
@@ -372,7 +360,6 @@ export class PbParagraphNode extends LexicalParagraphNode {
     return new PbParagraphNode(json.nodeId);
   }
 }
-
 export function $createPbParagraphNode(nodeId?: string): PbParagraphNode {
   return new PbParagraphNode(nodeId);
 }
@@ -404,7 +391,6 @@ export class PbTextNode extends LexicalTextNode {
     return new PbTextNode(json.nodeId, json.text);
   }
 }
-
 export function $createPbTextNode(nodeId: string | undefined, text: string): PbTextNode {
   return new PbTextNode(nodeId, text);
 }
@@ -436,7 +422,6 @@ export class PbListNode extends LexicalListNode {
     return new PbListNode(json.nodeId);
   }
 }
-
 export function $createPbListNode(nodeId?: string): PbListNode {
   return new PbListNode(nodeId);
 }
@@ -450,12 +435,10 @@ export type SerializedPbListItemNode = Spread<
 >;
 
 /**
- * Id-carrying list item. Lexical holds a bullet's inline text *directly* in the
- * list item (no paragraph wrapper), but our neutral model wraps it in a
- * `paragraph` → `text` (matrix: `listItem → paragraph|list|chips`). To round-trip
- * losslessly we keep the leading paragraph's id (`__paraId`) and its text node's
- * id (`__paraTextId`) on the list item; the serializer flattens on write and
- * re-wraps on read.
+ * Id-carrying list item. Lexical holds a bullet's inline text directly (no
+ * paragraph wrapper); our neutral model wraps it in `paragraph → text`. We keep
+ * the leading paragraph/text ids on the item so the serializer can flatten on
+ * write and re-wrap on read.
  */
 export class PbListItemNode extends LexicalListItemNode {
   __nodeId: string;
@@ -482,11 +465,6 @@ export class PbListItemNode extends LexicalListItemNode {
   getParaTextId(): string {
     return this.getLatest().__paraTextId;
   }
-  setParaIds(paraId: string, paraTextId: string): void {
-    const w = this.getWritable();
-    w.__paraId = paraId;
-    w.__paraTextId = paraTextId;
-  }
   exportJSON(): SerializedPbListItemNode {
     return {
       ...super.exportJSON(),
@@ -501,37 +479,29 @@ export class PbListItemNode extends LexicalListItemNode {
     return new PbListItemNode(json.nodeId, json.paraId, json.paraTextId);
   }
 }
-
-export function $createPbListItemNode(
-  nodeId?: string,
-  paraId?: string,
-  paraTextId?: string,
-): PbListItemNode {
+export function $createPbListItemNode(nodeId?: string, paraId?: string, paraTextId?: string): PbListItemNode {
   return new PbListItemNode(nodeId, paraId, paraTextId);
 }
 export function $isPbListItemNode(node: LexicalNode | null | undefined): node is PbListItemNode {
   return node instanceof PbListItemNode;
 }
 
-/**
- * All custom nodes for the editor's `nodes` config. Includes the structural
- * widgets and the id-carrying built-in subclasses (which replace Lexical's
- * paragraph/text and @lexical/list's list/listItem so every node keeps its id).
- */
+/** All custom nodes for the editor's `nodes` config. */
 export const WIDGET_NODES = [
   SectionNode,
-  ChipsNode,
-  ChipNode,
+  SectionHeadingNode,
   TimelineNode,
   EntryNode,
+  EntryFieldNode,
+  ChipsNode,
   PbParagraphNode,
   PbTextNode,
   PbListNode,
   PbListItemNode,
   // Override the built-ins so editor commands that create paragraphs/lists use
   // our id-carrying variants.
-  { replace: LexicalParagraphNode, with: () => new PbParagraphNode() },
-  { replace: LexicalTextNode, with: (n: LexicalTextNode) => new PbTextNode(undefined, n.__text) },
-  { replace: LexicalListNode, with: () => new PbListNode() },
-  { replace: LexicalListItemNode, with: () => new PbListItemNode() },
+  { replace: LexicalParagraphNode, with: () => new PbParagraphNode(), withKlass: PbParagraphNode },
+  { replace: LexicalTextNode, with: (n: LexicalTextNode) => new PbTextNode(undefined, n.__text), withKlass: PbTextNode },
+  { replace: LexicalListNode, with: () => new PbListNode(), withKlass: PbListNode },
+  { replace: LexicalListItemNode, with: () => new PbListItemNode(), withKlass: PbListItemNode },
 ];

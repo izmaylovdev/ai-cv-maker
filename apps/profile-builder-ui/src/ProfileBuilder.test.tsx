@@ -43,10 +43,14 @@ describe('ProfileBuilder — single Lexical document (US-EDIT-14)', () => {
     expect(lastBody(onChange)?.children?.[0]?.type).toBe('section');
   });
 
-  // Robust per-widget insertion (handling Lexical's normalization of freshly
-  // inserted empty chips/timeline/list widgets, plus caret-precise nesting) is
-  // part of the remaining editor-UI work — see the editor follow-up.
-  it.todo('inserts a chips/list/timeline widget into the current section');
+  // Inserting a widget into the *current section* depends on Lexical resolving a
+  // selection inside the editor, which jsdom does not provide reliably (no real
+  // caret/range). These paths are verified end-to-end in the browser instead
+  // (clicking "+ Chips"/"+ Timeline" appends the widget to the section and emits
+  // the updated tree); the node shapes they produce are covered by the
+  // serialize round-trip tests above (chips, timeline, entry).
+  it.todo('inserts a chips widget into the current section (browser-verified)');
+  it.todo('inserts a timeline widget into the current section (browser-verified)');
 
   it('does not emit a no-op change when the host echoes the same body back', () => {
     const onChange = vi.fn();
