@@ -1,13 +1,25 @@
-// Canonical section-based profile model (ADR-0013). Mirrors the builder's
+// Canonical block-tree profile model (ADR-0014). Mirrors the builder's
 // reference shape in apps/profile-builder-ui/src/model.ts — the API speaks
 // `{ id, name, document }` where `document` is this `ProfileDocument`.
 
-export type SectionTemplateId = 'free-form' | 'timeline' | 'list' | 'chip-list';
+export type NodeType =
+  | 'root'
+  | 'title'
+  | 'paragraph'
+  | 'text'
+  | 'link'
+  | 'list'
+  | 'listItem'
+  | 'chips'
+  | 'chip'
+  | 'timeline'
+  | 'entry';
 
-export interface ProfileDocument {
-  /** Fixed identity/contact letterhead, always present above the sections. */
-  header: ProfileHeader;
-  sections: DocumentSection[];
+export interface BlockNode {
+  type: NodeType;
+  id: string;
+  attrs?: Record<string, string>;
+  children?: BlockNode[];
 }
 
 export interface ProfileHeader {
@@ -19,62 +31,11 @@ export interface ProfileHeader {
   location: string;
 }
 
-export type DocumentSection =
-  | FreeFormSection
-  | EntrySection
-  | ListSection
-  | ChipListSection;
-
-export interface SectionBase {
-  /** Client-generated stable id. */
-  id: string;
-  template: SectionTemplateId;
-  heading: string;
+export interface ProfileDocument {
+  header: ProfileHeader;
+  body: BlockNode;
 }
 
-export interface FreeFormSection extends SectionBase {
-  template: 'free-form';
-  body: string;
-}
-
-export interface EntrySection extends SectionBase {
-  template: 'timeline';
-  items: EntryItem[];
-}
-
-export interface EntryItem {
-  id: string;
-  title: string;
-  /** Free-text date range, e.g. "Jan 2022 – Present". */
-  dates: string;
-  description: string;
-}
-
-export interface ListSection extends SectionBase {
-  template: 'list';
-  items: ListItem[];
-}
-
-/** Like a List, but rendered as chips/tags (skills, tools, languages). */
-export interface ChipListSection extends SectionBase {
-  template: 'chip-list';
-  items: ListItem[];
-}
-
-export interface ListItem {
-  id: string;
-  text: string;
-}
-
-export function emptyHeader(): ProfileHeader {
-  return { fullName: '', title: '', email: '', phone: '', location: '' };
-}
-
-export function emptyDocument(): ProfileDocument {
-  return { header: emptyHeader(), sections: [] };
-}
-
-/** The profile envelope returned by GET/PUT /api/job-profiles/:id. */
 export interface JobProfile {
   id: string;
   name: string;
@@ -86,4 +47,15 @@ export interface JobProfileListItem {
   name: string;
   fullName: string;
   title: string;
+}
+
+export function emptyHeader(): ProfileHeader {
+  return { fullName: '', title: '', email: '', phone: '', location: '' };
+}
+
+export function emptyDocument(): ProfileDocument {
+  return {
+    header: emptyHeader(),
+    body: { type: 'root', id: '', children: [] },
+  };
 }

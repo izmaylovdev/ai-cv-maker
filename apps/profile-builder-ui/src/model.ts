@@ -6,14 +6,15 @@
 // only this neutral tree crosses the web-component boundary and the network.
 //
 // This TypeScript definition is the REFERENCE; keep the C# CvApi.Domain and
-// Python app/schemas.py in sync. Spec §9.2 / §9.3.
+// Python app/schemas.py in sync. Spec §9.2 / §9.3 / §13.
 
 /** Closed set of node types — no other `type` is valid, and there is no raw HTML. */
 export type NodeType =
   | 'root'
-  | 'section'
+  | 'title'
   | 'paragraph'
   | 'text'
+  | 'link'
   | 'list'
   | 'listItem'
   | 'chips'
@@ -24,7 +25,7 @@ export type NodeType =
 /**
  * A node in the profile body tree. Every node is `{ type, id, attrs?, children? }`.
  * `attrs` holds type-specific leaf data (e.g. `text.attrs.text`,
- * `section.attrs.heading`, `entry.attrs.dates`). `children` is ordered and the
+ * `title.attrs.text`, `entry.attrs.dates`). `children` is ordered and the
  * array order IS document order.
  */
 export interface BlockNode {
@@ -35,22 +36,20 @@ export interface BlockNode {
   children?: BlockNode[];
 }
 
-// Narrowed convenience aliases for each node type (spec §9.2). These describe the
-// well-formed shapes the validator (validateDocument) enforces.
-export type RootNode = BlockNode & { type: 'root'; children: SectionNode[] };
-export type SectionNode = BlockNode & {
-  type: 'section';
-  attrs: { heading: string };
-  children: FlowNode[];
-};
-export type FlowNode = ParagraphNode | ListNode | ChipsNode | TimelineNode;
+// Narrowed convenience aliases for each node type (spec §9.2 / §13.2.1).
+export type RootNode = BlockNode & { type: 'root'; children: (TitleNode | FlowNode)[] };
+/** A section heading. Leaf — no children. Groups all non-title blocks that follow it until the next TitleNode. */
+export type TitleNode = BlockNode & { type: 'title'; attrs: { text: string } };
+export type FlowNode = ParagraphNode | ListNode | ChipsNode | TimelineNode | LinkNode;
 export type ParagraphNode = BlockNode & { type: 'paragraph'; children: TextNode[] };
 /** Leaf; plain string (marks are out of scope, spec §9.6). */
 export type TextNode = BlockNode & { type: 'text'; attrs: { text: string } };
+/** Leaf; a standalone link line with display text + url (spec §10, NOT an inline mark). */
+export type LinkNode = BlockNode & { type: 'link'; attrs: { text: string; url: string } };
 export type ListNode = BlockNode & { type: 'list'; children: ListItemNode[] };
 export type ListItemNode = BlockNode & {
   type: 'listItem';
-  children: (ParagraphNode | ListNode | ChipsNode)[];
+  children: (ParagraphNode | ListNode | ChipsNode | LinkNode)[];
 };
 export type ChipsNode = BlockNode & { type: 'chips'; children: ChipNode[] };
 /** Leaf; short plain string. */
@@ -59,7 +58,7 @@ export type TimelineNode = BlockNode & { type: 'timeline'; children: EntryNode[]
 export type EntryNode = BlockNode & {
   type: 'entry';
   attrs: { title: string; dates: string };
-  children: (ParagraphNode | ListNode)[];
+  children: (ParagraphNode | ListNode | LinkNode)[];
 };
 
 export interface ProfileDocument {
@@ -100,7 +99,7 @@ export function emptyDocument(): ProfileDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Schema / nesting matrix (spec §9.3)
+// Schema / nesting matrix (spec §9.3 / §13.2.1)
 // ---------------------------------------------------------------------------
 
 /**
@@ -110,22 +109,24 @@ export function emptyDocument(): ProfileDocument {
  * them.
  */
 export const ALLOWED_CHILDREN: Record<NodeType, NodeType[]> = {
-  root: ['section'],
-  section: ['paragraph', 'list', 'chips', 'timeline'],
+  root: ['title', 'paragraph', 'list', 'chips', 'timeline', 'link'],
+  title: [],
   paragraph: ['text'],
   text: [],
+  link: [],
   list: ['listItem'],
-  listItem: ['paragraph', 'list', 'chips'],
+  listItem: ['paragraph', 'list', 'chips', 'link'],
   chips: ['chip'],
   chip: [],
   timeline: ['entry'],
-  entry: ['paragraph', 'list'],
+  entry: ['paragraph', 'list', 'link'],
 };
 
 /** Required `attrs` keys per node type (each value must be a string). */
 const REQUIRED_ATTRS: Partial<Record<NodeType, string[]>> = {
-  section: ['heading'],
+  title: ['text'],
   text: ['text'],
+  link: ['text', 'url'],
   chip: ['text'],
   entry: ['title', 'dates'],
 };
@@ -146,12 +147,8 @@ export interface ValidationResult {
 const ALL_TYPES = new Set<NodeType>(Object.keys(ALLOWED_CHILDREN) as NodeType[]);
 
 /**
- * Validate a `BlockNode` tree against the §9.3 schema: closed type set, the
- * allowed-children matrix, required `attrs`, and a bounded flow depth. The
- * "flow depth" counts nesting of flow-level containers (section, listItem,
- * entry, list) so a deeply nested list/timeline chain is rejected once it
- * exceeds `maxDepth`. Leaf inline nodes (text, chip) and structural wrappers
- * (paragraph, chips) do not themselves add a flow level.
+ * Validate a `BlockNode` tree against the §9.3 / §13 schema: closed type set, the
+ * allowed-children matrix, required `attrs`, and a bounded flow depth.
  */
 export function validateDocument(
   doc: ProfileDocument,
@@ -174,11 +171,6 @@ export function validateDocument(
     errors.push(`document.body must be a root node, got "${doc.body.type}"`);
   }
 
-  // Node types that introduce a new flow nesting level. Only the genuinely
-  // recursive containers count: a `list` can hold a nested `list` (via listItem)
-  // and a `timeline` holds entries. `section` is the always-present base and
-  // `list`/`listItem` are an inseparable pair, so counting those would
-  // double-count and reject sensible trees (spec §9.3: "default 4 flow levels").
   const FLOW_CONTAINERS = new Set<NodeType>(['list', 'timeline']);
   const seenIds = new Set<string>();
 
@@ -199,7 +191,6 @@ export function validateDocument(
       seenIds.add(node.id);
     }
 
-    // Required attrs.
     const required = REQUIRED_ATTRS[node.type];
     if (required) {
       for (const key of required) {
@@ -209,7 +200,6 @@ export function validateDocument(
       }
     }
 
-    // Parent/child matrix.
     if (parent !== null && !ALLOWED_CHILDREN[parent].includes(node.type)) {
       errors.push(`"${node.type}" is not allowed inside "${parent}"`);
     }
@@ -223,7 +213,7 @@ export function validateDocument(
     const nextDepth = FLOW_CONTAINERS.has(node.type) ? depth + 1 : depth;
     if (nextDepth > maxDepth) {
       errors.push(`nesting depth exceeds max of ${maxDepth} at "${node.type}" (${node.id})`);
-      return; // stop descending; the violation is already recorded
+      return;
     }
 
     for (const child of children) {

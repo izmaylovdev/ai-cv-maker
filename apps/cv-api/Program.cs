@@ -115,7 +115,7 @@ builder.Services.AddAuthorization();
 // CORS
 // AllowAnyOrigin cannot be combined with AllowCredentials (required for cookies).
 // Explicit origins are used so the browser sends the refresh_token HttpOnly cookie.
-var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "http://localhost:4200")
+var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"]
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 builder.Services.AddCors(opt =>
@@ -229,3 +229,7 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
+
+// Expose the implicit top-level Program class so WebApplicationFactory<Program>
+// can reference it from the test project.
+public partial class Program { }

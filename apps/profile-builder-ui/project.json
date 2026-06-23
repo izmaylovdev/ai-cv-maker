@@ -24,6 +24,13 @@
         "command": "vitest run --reporter=verbose --config vite.config.mts",
         "cwd": "apps/profile-builder-ui"
       }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx playwright test",
+        "cwd": "apps/profile-builder-ui"
+      }
     }
   }
 }

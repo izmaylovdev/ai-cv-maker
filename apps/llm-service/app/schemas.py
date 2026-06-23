@@ -7,39 +7,39 @@ from pydantic import BaseModel, Field
 _SHORT = 200    # names, titles, headings, chip labels
 _LONG = 5_000   # free-text bodies and descriptions
 
-# Canonical profile model (ADR-0014, amends ADR-0013): a fixed identity/contact
-# `header` plus a `body` which is a recursive BlockNode tree. Mirrors the
-# TypeScript BlockNode/ProfileDocument in apps/profile-builder-ui/src/model.ts and
-# the C# CvApi.Domain.Entities.ProfileDocument / BlockNode — keep the three in
-# sync. The TS file is the reference. Node `type` is from a closed set; `attrs`
-# holds type-specific leaf data; `children` is ordered (array order IS document
-# order). No raw HTML, no other node types.
+# Canonical profile model (ADR-0014, amends ADR-0013 / §13): a fixed
+# identity/contact `header` plus a `body` which is a recursive BlockNode tree.
+# Mirrors the TypeScript BlockNode/ProfileDocument in
+# apps/profile-builder-ui/src/model.ts and the C# CvApi.Domain.Entities —
+# keep the three in sync. The TS file is the reference.
+# US-EDIT-19: 'section' is retired; 'title' is the new flat heading node.
 
-# Allowed child types per node type (the §9.3 nesting matrix). An empty list means
-# "leaf" (no children). Single source of truth shared by validate_document.
+# Allowed child types per node type (§9.3 / §13 nesting matrix).
 ALLOWED_CHILDREN: dict[str, list[str]] = {
-    "root": ["section"],
-    "section": ["paragraph", "list", "chips", "timeline"],
+    "root":     ["title", "paragraph", "list", "chips", "timeline", "link"],
+    "title":    [],
     "paragraph": ["text"],
-    "text": [],
-    "list": ["listItem"],
-    "listItem": ["paragraph", "list", "chips"],
-    "chips": ["chip"],
-    "chip": [],
+    "text":     [],
+    "link":     [],
+    "list":     ["listItem"],
+    "listItem": ["paragraph", "list", "chips", "link"],
+    "chips":    ["chip"],
+    "chip":     [],
     "timeline": ["entry"],
-    "entry": ["paragraph", "list"],
+    "entry":    ["paragraph", "list", "link"],
 }
 
 # Required `attrs` keys per node type (each value must be a string).
 REQUIRED_ATTRS: dict[str, list[str]] = {
-    "section": ["heading"],
-    "text": ["text"],
-    "chip": ["text"],
+    "title": ["text"],
+    "text":  ["text"],
+    "link":  ["text", "url"],
+    "chip":  ["text"],
     "entry": ["title", "dates"],
 }
 
 # Node types that introduce a new flow nesting level (matches the TS validator).
-_FLOW_CONTAINERS = {"section", "list", "listItem", "timeline", "entry"}
+_FLOW_CONTAINERS = {"list", "timeline"}
 
 # Default maximum flow nesting depth (§9.3).
 DEFAULT_MAX_DEPTH = 4
@@ -55,7 +55,7 @@ class ProfileHeader(BaseModel):
 
 class BlockNode(BaseModel):
     """One node of the block tree. `type` is from the closed set; `attrs` carries
-    type-specific leaf data (e.g. text→{text}, section→{heading},
+    type-specific leaf data (e.g. title→{text}, text→{text},
     entry→{title,dates}); `children` is ordered. Recursive."""
 
     type: str

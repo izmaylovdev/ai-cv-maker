@@ -21,10 +21,9 @@ from app.schemas import (
     ProfileDocument,
 )
 
-# The document JSON contract the model must read and emit (ADR-0014 §9.2/§9.3).
-# The body is a single block tree of generic nodes from a CLOSED vocabulary; the
-# user names sections via `heading` and there is no fixed set — Projects,
-# Publications, Volunteering etc. all flow through as `section` nodes.
+# The document JSON contract the model must read and emit (ADR-0014 §9.2/§9.3, US-EDIT-19).
+# The body is a flat block tree: `title` nodes act as section headings directly under root,
+# followed by their content nodes — there are NO `section` wrapper nodes.
 _DOCUMENT_SCHEMA = """\
 A ProfileDocument is JSON shaped:
 {
@@ -37,20 +36,24 @@ The body is a single tree of BlockNodes. Every node is:
 (array order IS document order). No other types and no raw HTML are allowed.
 
 Node vocabulary and the children each may contain (the nesting matrix):
-- root      → children: section*                         (top level is sections only)
-- section   attrs:{heading}  → children: paragraph | list | chips | timeline
+- root      → children: title | paragraph | list | chips | timeline | link  (flat body)
+- title     attrs:{text}        → leaf; section heading, e.g. "Work Experience"
 - paragraph → children: text*                            (a text block / one run)
-- text      attrs:{text}     → leaf (no children); plain string
+- text      attrs:{text}        → leaf (no children); plain string
+- link      attrs:{text,url}    → leaf
 - list      → children: listItem*                        (bulleted list)
-- listItem  → children: paragraph | list | chips         (rich item; nested lists ok)
+- listItem  → children: paragraph | list | chips | link  (rich item; nested lists ok)
 - chips     → children: chip*                            (tag cloud: skills, tools)
-- chip      attrs:{text}     → leaf (no children); short string
+- chip      attrs:{text}        → leaf (no children); short string
 - timeline  → children: entry*                           (dated entries)
 - entry     attrs:{title,dates} → children: paragraph | list   (rich description)
 
 Rules:
-- Do NOT nest a timeline inside chips/chip/listItem/entry; no chips inside a chip;
-  nothing inside text/chip; only sections directly under root. Max nesting ~4 levels.
+- The body is FLAT. Use a `title` node to start a section, then put its content nodes
+  (paragraph, list, chips, timeline, link) directly under root — NOT inside a wrapper.
+  There is NO `section` node type.
+- Do NOT nest timeline inside listItem/entry; no chips inside a chip;
+  nothing inside text/chip/title. Max nesting ~4 levels.
 - `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present".
 - A timeline entry `title` carries the role/degree and organisation,
   e.g. "Senior Engineer · Acme Corp".
@@ -63,9 +66,7 @@ Rules:
 def _format_node(node: BlockNode, indent: int, lines: list[str]) -> None:
     """Recursively render a BlockNode subtree as readable indented text."""
     pad = "  " * indent
-    if node.type == "section":
-        lines.append(f"\n{pad}Section — {node.attrs.get('heading', '')}")
-    elif node.type == "paragraph":
+    if node.type == "paragraph":
         text = "".join(c.attrs.get("text", "") for c in node.children if c.type == "text")
         if text:
             lines.append(f"{pad}{text}")
@@ -101,7 +102,7 @@ def _format_node(node: BlockNode, indent: int, lines: list[str]) -> None:
 
 
 def _format_document(doc: ProfileDocument) -> str:
-    """Render a document as readable text for the prompt context."""
+    """Render a document as readable text for the prompt context (ADR-0014 flat body)."""
     h = doc.header
     lines: list[str] = ["Header:", f"  Name: {h.fullName}", f"  Title: {h.title}"]
     if h.location:
@@ -111,28 +112,45 @@ def _format_document(doc: ProfileDocument) -> str:
     if h.phone:
         lines.append(f"  Phone: {h.phone}")
 
-    sections = [c for c in doc.body.children if c.type == "section"]
+    # Group flat root children by title nodes into logical sections (ADR-0014).
+    sections: list[tuple[str | None, list[BlockNode]]] = []
+    current_heading: str | None = None
+    current_nodes: list[BlockNode] = []
+    for node in doc.body.children:
+        if node.type == "title":
+            if current_nodes or current_heading is not None:
+                sections.append((current_heading, current_nodes))
+            current_heading = node.attrs.get("text", "")
+            current_nodes = []
+        else:
+            current_nodes.append(node)
+    if current_nodes or current_heading is not None:
+        sections.append((current_heading, current_nodes))
+
     if not sections:
         lines.append("\nSections: (none)")
         return "\n".join(lines)
 
-    for section in sections:
-        _format_node(section, 0, lines)
+    for heading, nodes in sections:
+        if heading is not None:
+            lines.append(f"\nSection — {heading}")
+        for node in nodes:
+            _format_node(node, 1, lines)
     return "\n".join(lines)
 
 
 _SYSTEM_PROMPT = """\
 You are an expert CV writer and career coach. You receive a candidate's profile as a \
-ProfileDocument (a header plus freely structured sections) and rewrite it into a polished, \
-professional CV — returned as a ProfileDocument with the SAME structure.
+ProfileDocument (a header plus a flat body of title + content nodes) and rewrite it into \
+a polished, professional CV — returned as a ProfileDocument with the SAME structure.
 
 Rules:
-- Preserve the section structure the user authored: keep the same headings, templates, and \
-order, and the same number of timeline/list items. Improve the wording, do not restructure.
+- Preserve the structure the user authored: keep the same title headings, node order, and \
+the same number of timeline/list items. Improve the wording, do not restructure.
 - Write impactful, concise prose. Use action verbs and quantify achievements where possible.
-- For free-form sections (e.g. a summary), tighten the body to 2–4 strong sentences.
-- For timeline items, rewrite `description` into 2–4 impact-focused sentences; keep `title` and \
-the free-text `dates` exactly as given.
+- For free-form sections (e.g. a summary paragraph after a title node), tighten to 2–4 sentences.
+- For timeline entries, rewrite their paragraph children into 2–4 impact-focused sentences; \
+keep `title` and the free-text `dates` attrs exactly as given.
 - For list items (e.g. skills), normalise names (e.g. "TypeScript" not "typescript").
 - Never invent facts (companies, dates, institutions). Keep header contact fields unchanged.
 - Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
@@ -345,12 +363,12 @@ their message — returned as a ProfileDocument with the SAME structure.
 
 Rules:
 - Refine the header `title` to better reflect the target role if appropriate.
-- Rewrite free-form sections (e.g. a summary) to highlight the most relevant skills and \
-achievements for the target.
-- Improve each timeline item's `description` to emphasize impact relevant to the target role; \
-keep its `title` and free-text `dates` exactly as given.
-- Normalize and reprioritise list items (e.g. skills) by relevance to the target.
-- Preserve the section structure: same headings, templates, order, and item counts.
+- Rewrite summary paragraphs (content after a "Summary" or similar title node) to highlight \
+the most relevant skills and achievements for the target.
+- Improve each timeline entry's paragraph children to emphasize impact relevant to the target; \
+keep the entry's `title` and free-text `dates` attrs exactly as given.
+- Normalize and reprioritise chip/list items (e.g. skills) by relevance to the target.
+- Preserve the structure: same title headings, node order, and item counts.
 - Keep all factual data unchanged: organisations, dates, institutions.
 - Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
 
@@ -516,16 +534,19 @@ text and return it as a ProfileDocument.
 Rules:
 - Put identity and contact details in the header (fullName, title, email, phone, location); use \
 empty strings for fields not present.
-- Create a free-form "Summary" section for the professional summary/objective if present; \
-otherwise synthesise a 2–3 sentence summary from the experience.
-- Create a "timeline" section (heading "Work Experience") for jobs; each item's `title` is \
-"<role> · <company>" and `dates` is the free-text range exactly as written, e.g. \
-"Jan 2019 – Present" (use "Present"/"Current" verbatim if the role is ongoing).
-- Create a "timeline" section (heading "Education") for studies; each item's `title` is \
-"<degree> in <field> · <institution>" and `dates` the year range.
-- Create a "list" section (heading "Skills") with one item per skill; normalise names \
-(e.g. "TypeScript" not "typescript").
-- Only include sections that have content. Mint a short unique id for each section and item.
+- The body is FLAT: start each logical section with a `title` node directly under root, \
+then place the section's content nodes (paragraph, timeline, chips, list) directly under root \
+too — NOT inside a wrapper node. There is no `section` node type.
+- For a professional summary/objective (or synthesise one if absent): emit a title node \
+with text "Summary" followed by a paragraph node.
+- For work history: emit a title node with text "Work Experience" followed by a timeline node; \
+each entry's `title` attr is "<role> · <company>" and `dates` is the free-text range exactly \
+as written, e.g. "Jan 2019 – Present" (use "Present"/"Current" verbatim if ongoing).
+- For education: emit a title node with text "Education" followed by a timeline node; \
+each entry's `title` is "<degree> in <field> · <institution>" and `dates` the year range.
+- For skills/tools: emit a title node with text "Skills" followed by a chips node with one \
+chip per skill/tool; normalise names (e.g. "TypeScript" not "typescript").
+- Only include sections that have content. Mint a short unique id for every node.
 - Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
 
 {schema}

@@ -42,7 +42,9 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
     public async Task<ProfileDto?> GetAsync(Guid id, Guid userId)
     {
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
-        return profile is null ? null : new ProfileDto(profile.Id, profile.Name, profile.Document);
+        if (profile is null) return null;
+        var document = ProfileDocumentSchema.MigrateLegacySections(profile.Document);
+        return new ProfileDto(profile.Id, profile.Name, document);
     }
 
     public async Task<ProfileDto?> UpdateAsync(Guid id, Guid userId, UpdateProfileRequest request)
@@ -50,7 +52,8 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
         if (profile is null) return null;
 
-        var document = request.Document ?? ProfileDocument.Empty();
+        var document = ProfileDocumentSchema.MigrateLegacySections(
+            request.Document ?? ProfileDocument.Empty());
         var validationError = ProfileDocumentSchema.Validate(document.Body);
         if (validationError is not null)
             throw new InvalidProfileDocumentException(validationError);
@@ -123,8 +126,9 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         var llmResponse = await llmService.ExtractAsync(new LlmExtractRequest(cvText));
         await usageService.RecordAsync(userId, "Extract", llmResponse.Usage);
 
-        // The extract chain returns the canonical document directly (ADR-0013).
-        return new UpdateProfileRequest(profile.Name, llmResponse.Document);
+        // Migrate any legacy section nodes the LLM may still emit (transition period).
+        var document = ProfileDocumentSchema.MigrateLegacySections(llmResponse.Document);
+        return new UpdateProfileRequest(profile.Name, document);
     }
 
     public async Task<ChatResponse?> ChatAsync(Guid id, Guid userId, ChatRequest request)

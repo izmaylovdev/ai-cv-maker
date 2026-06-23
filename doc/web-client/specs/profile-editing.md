@@ -681,3 +681,354 @@ message ProfileDocument {
 - Tables, images, or any widget outside the four predefined types.
 - Loosening the nesting matrix (§9.3) or unbounded depth.
 - Date pickers/validation on `entry.dates` (free-text by design, per §7).
+
+---
+
+## 10. Controls Side Rail, Link Widget & Section Drag Preview (US-EDIT-15, US-EDIT-16)
+
+### 10.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-15.1 | A fixed vertical **controls side rail** renders beside the document sheet, always visible, listing all insertable widgets: **Title**, Text, Chips, List, Link, Timeline. Each item is **icon-only** (SVG icon styled after Google Docs toolbar icons); hovering (or focusing) it reveals a tooltip showing the widget **name and its keyboard shortcut**. |
+| F-EDIT-15.2 | Clicking a widget control inserts it at the caret's section (or the last section as fallback), reusing the existing insert path. "+ Add section" appends a new section to the document end. |
+| F-EDIT-15.3 | A control invalid at the current caret per the §9.3 matrix is rendered **disabled** (not removed), so the rail's shape is stable. |
+| F-EDIT-15.4 | A new **Link** widget inserts a `link` node and round-trips through serialization, cv-api validation, and the generated PDF. |
+| F-EDIT-15.5 | The rail is a labelled `role="toolbar"`, keyboard-operable (buttons), and screen-reader friendly: each icon button carries an accessible name (name + shortcut) and `aria-keyshortcuts`. |
+| F-EDIT-15.6 | Each widget has a keyboard shortcut matching Google Docs conventions (mod = ⌘ on macOS, Ctrl elsewhere): Title `mod+Alt+1`, Text `mod+Alt+0`, List `mod+Shift+8`, Chips `mod+Shift+9`, Link `mod+K`, Timeline `mod+Shift+6`. The shortcut is shown in the hover tooltip and registered via `aria-keyshortcuts`. |
+| F-EDIT-15.7 | When text is selected and the user inserts a **Link** (via the rail or `mod+K`), the selection is wrapped as an inline `LinkNode` rather than inserting a block link widget. A floating URL bar appears below the link; Enter or the ✓ button commits the URL and hides the bar; Escape discards changes and hides the bar; submitting an empty URL removes the link entirely. |
+| F-EDIT-16.1 | Starting a section drag sets a **custom drag image** representing the dragged section (its heading), not the bare handle glyph. |
+| F-EDIT-16.2 | While dragging over the rail, a **drop indicator** (a line between sections) shows where the section will land. |
+| F-EDIT-16.3 | Dropping on a valid target reorders there; dropping elsewhere / pressing Esc cancels with no change. Drag is the sole reorder path; there are no move-up/move-down buttons. |
+
+### 10.2 Technical Specification
+
+**New node type — `link` (flow-level leaf).** Modeled as a standalone link line,
+**not** an inline mark (inline marks stay out of scope per §9.6). Shape:
+`{ type: 'link', id, attrs: { text, url } }`, no children.
+
+Matrix changes (§9.3) — `link` is allowed wherever `paragraph` is:
+
+- `ALLOWED_CHILDREN`: `section`, `listItem`, `entry` each gain `"link"`; add
+  `link: []` (leaf).
+- `REQUIRED_ATTRS`: `link: ['text', 'url']`.
+- `link` does **not** introduce a flow level (it's a leaf).
+
+Touched in all four mirrors of the closed type set:
+
+- `apps/profile-builder-ui/src/model.ts` — `NodeType`, `LinkNode` alias,
+  `ALLOWED_CHILDREN`, `REQUIRED_ATTRS`.
+- `apps/profile-builder-ui/src/nodes.ts` — `linkNode()` factory + `WIDGETS`
+  entry (`kind: 'link'`).
+- `apps/profile-builder-ui/src/lexical/widget-nodes.ts` — a `LinkWidgetNode`
+  (DecoratorNode) carrying `{text,url}` + `$createLinkNode`/`$isLinkNode`.
+- `apps/profile-builder-ui/src/serialize.ts` — both directions.
+- `apps/cv-api/Domain/Entities/ProfileDocumentSchema.cs` — `AllowedChildren` +
+  required-attrs parity.
+- `apps/cv-api/Infrastructure/ExternalServices/Pdf/PdfService.cs` — `case "link"`
+  render (text as a hyperlink to `url`); add `link` to the listItem/entry block
+  switches and the "is flow block" predicate.
+- `apps/llm-service/app/schemas.py` — `ALLOWED_CHILDREN` + `REQUIRED_ATTRS`.
+
+No gRPC/proto change: `ProfileNode` is already a generic recursive
+`{type,id,attrs,children}`. No DB migration: body is stored as opaque jsonb.
+
+**Controls side rail.** Rendered **inside the profile-builder-ui web component**
+(it needs editor/caret access via `useLexicalComposerContext`), replacing the
+current top `InsertToolbar`. Layout: a sticky column in the left gutter of
+`.pb-root`. Each widget button calls the existing `insertWidget`; validity
+(F-EDIT-15.3) is computed from `widgetsAllowedIn` for the caret's container.
+Adding a section is a separate `AddSectionButton` rendered at the end of the
+`.pb-sheet` (a section always appends to root).
+
+Buttons are **icon-only** (`.pb-rail__icon`); the name and shortcut live in a
+CSS hover/focus tooltip (`.pb-rail__tip` + `.pb-rail__tip-key`) anchored to the
+right of the icon, and in each button's `aria-label`/`aria-keyshortcuts`.
+Shortcuts (F-EDIT-15.6) are registered once via a Lexical `KEY_DOWN_COMMAND`
+handler matching `event.code` (`Digit1`…`Digit5`) with the platform modifier
+(`metaKey` on macOS, else `ctrlKey`) + `shiftKey`; a match inserts the widget at
+the caret's section and is a no-op when no section exists.
+
+**Section drag preview.** In `SectionControls`, a **pointer-based** drag
+(mousedown/mousemove/mouseup), not native HTML5 DnD — native DnD is unreliable
+for this web component embedded in a host's light DOM and cannot be driven by
+automated tests (neither Playwright `dragTo` nor `page.mouse` triggers the native
+drag pipeline):
+
+- `onMouseDown` on the handle captures the section key and shows a fixed-position
+  floating ghost (`.pb-drag-ghost`) labelled with the heading (F-EDIT-16.1);
+  window-level `mousemove`/`mouseup` listeners continue the drag outside the
+  gutter.
+- `mousemove` maps the pointer Y (via `sectionAt`) to the target section across
+  the whole document band — not just the gutter handle — and positions the
+  `.pb-drop-line` indicator (F-EDIT-16.2). The line is **centred in the
+  inter-section gap** (midpoint between the target and its neighbour), never
+  flush against a section's edge where it would read as "inside" the section; at
+  the document start/end it nudges just outside the first/last section.
+- `mouseup` reorders relative to the target (insert before/after by index) and
+  clears the ghost/indicator; a drop on the source section is a no-op.
+
+### 10.3 Out of Scope (this change)
+
+- ~~Inline links inside running text~~ — **now in scope** (F-EDIT-15.7); the original §9.6 out-of-scope note is superseded.
+- Drag-to-insert from the rail (insertion is click-at-caret only).
+- Reordering non-section widgets via drag (covered separately).
+- Link URL validation beyond non-empty / basic `href` safety.
+
+## 11. Empty-region Affordances (US-EDIT-17)
+
+### 11.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-17.1 | An empty editable **structural field** (section heading, timeline entry title, entry dates) renders a subtle tinted, dashed **slot** plus its placeholder text, so the field is visible even when it holds no text. |
+| F-EDIT-17.2 | A genuinely **empty section body** (its last/only flow child is an empty paragraph) renders a full-width slot with the hint *"Empty section — type here, or insert a widget from the rail"*. |
+| F-EDIT-17.3 | An **empty timeline entry description** renders a full-width slot with a *"Describe it — …"* hint, so an inserted timeline reads as fillable rather than blank. |
+| F-EDIT-17.4 | All markers disappear as soon as the region has content; sections/fields with content show no marker (clean résumé output). |
+| F-EDIT-17.5 | A timeline entry's subsections (title, dates, description) are **required and non-removable**: editing may clear a field's text but must not delete or merge the field/line. Backspace at the start — or Delete at the end — of an entry subsection is a no-op; ordinary mid-text editing is unaffected. The entry always round-trips with its title/dates/description structure. |
+
+### 11.2 Technical Specification
+
+CSS-only, in `ProfileBuilder.css`. The key constraint: Lexical keeps an **empty
+text span** (`<span data-lexical-text>` with no text) inside an "empty" editable
+element, so `:empty` does **not** match it and the prior placeholder rules never
+fired. Emptiness is detected with `:has(> span[data-lexical-text]:empty)` (the
+truly-childless `:empty` case is kept too).
+
+- Fields (`[data-pb='section-heading'|'entry-title'|'entry-dates']`): slot fill
+  `--pb-slot` + inset `--pb-slot-border` ring; placeholder via `::before` =
+  `attr(data-placeholder)`.
+- Flow paragraphs: scoped to the **last** direct child of `[data-pb='entry']` /
+  `[data-pb='section']` (`:last-child:has(> span:empty)`) so the hint marks a
+  genuinely empty region and clears once a widget/more content follows; hint text
+  is a literal `content:` string per context.
+- New theme tokens `--pb-slot` / `--pb-slot-border` (light + dark).
+
+Requires `:has()` (supported in the embedded modern-Chromium host). Behaviour is
+verified in the browser (the `:has()`/`::before` empty-state styling is not
+expressible in jsdom), consistent with the other browser-verified editor paths.
+
+**Entry subsection guard (F-EDIT-17.5).** Two pieces, both in the editor:
+
+- `EntryFieldNode.collapseAtStart()` returns `false` (widget-nodes.ts) — Lexical
+  won't merge/remove a title/dates line on a start-of-line Backspace.
+- An `EntryStructureGuardPlugin` (ProfileBuilder.tsx) registers
+  `KEY_BACKSPACE_COMMAND` / `KEY_DELETE_COMMAND` at `COMMAND_PRIORITY_HIGH`. When
+  the collapsed caret sits on a subsection boundary — the very start (Backspace)
+  or very end (Delete) of a block that is a direct child of an `EntryNode` — it
+  consumes the event so the destructive merge/delete never runs. Offsets inside a
+  field fall through to normal editing.
+
+Verified by Playwright (`e2e/timeline-entry.spec.ts`) with real keypresses and
+caret placement synced to Lexical, asserting on the serialized `document`.
+
+### 11.3 Out of Scope (this change)
+
+- An explicit **"Add entry"** button for timelines (adding further entries) —
+  separate follow-up; this change only makes the existing entry's fields visible
+  and keeps an entry's subsections from being deleted (F-EDIT-17.5).
+- Per-widget empty states beyond sections, timelines, and their fields.
+- Range-selection deletions that span multiple subsections (the guard covers the
+  collapsed-caret Backspace/Delete merge paths, which are the accidental ones).
+
+---
+
+## 12. Remove Section Button (US-EDIT-18)
+
+### 12.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-18.1 | Each section renders a ✕ **remove button** in the left gutter rail, vertically aligned with the section heading row. |
+| F-EDIT-18.2 | The button is styled consistently with the timeline-entry remove button (`.pb-remove-entry`): same size, glyph, and gutter-positioning convention. |
+| F-EDIT-18.3 | Clicking ✕ removes the section immediately — no confirmation, regardless of content. Undo via Ctrl/⌘+Z restores it through Lexical's built-in history. |
+| F-EDIT-18.4 | The button carries `aria-label="Remove section"` for screen-reader accessibility. |
+
+### 12.2 Technical Specification
+
+All work is inside `apps/profile-builder-ui`.
+
+**`RemoveSectionButtons` component** (`ProfileBuilder.tsx`) — mirrors `RemoveEntryButtons`. Renders one positioned ✕ button per section; positions are derived from the section heading element's vertical centre via `registerUpdateListener` + `ResizeObserver`. `removeSection(key)` calls `editor.update(() => $getNodeByKey(key)?.remove())`.
+
+**Styles** (`ProfileBuilder.css`) — `.pb-remove-section` mirrors `.pb-remove-entry`: `position: absolute`, left-gutter offset aligned with the heading row.
+
+### 12.3 Out of Scope
+
+- Confirmation dialogs — removal is immediate and reversible via undo.
+- Bulk-remove or drag-to-trash.
+
+## 12. Remove Section Button (US-EDIT-18)
+
+### 12.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-18.1 | Each section in the document renders a ✕ **remove button** in the left gutter rail, vertically aligned with the section heading row. |
+| F-EDIT-18.2 | The button is styled consistently with the timeline-entry remove button (`.pb-remove-entry`): same size, same glyph, same positioning convention. |
+| F-EDIT-18.3 | Clicking ✕ on an **empty** section (all flow children have no text content) removes it immediately without confirmation. |
+| F-EDIT-18.4 | Clicking ✕ on a **non-empty** section shows a `window.confirm` prompt — *"Remove this section and all its content?"*. The section is removed only if the user confirms; cancelling leaves it untouched. |
+| F-EDIT-18.5 | The button carries `aria-label="Remove section"` for screen-reader accessibility. |
+
+### 12.2 Technical Specification
+
+All work is inside `apps/profile-builder-ui`.
+
+**`SectionControls` component** (`ProfileBuilder.tsx`) — add a remove button to each section handle group. Positions track the section heading DOM element (same `registerUpdateListener` + `ResizeObserver` loop already used for the move/drag handles). A section is considered empty when every flow child's `getTextContent()` is `''`.
+
+**`removeSection(key)`** — `editor.update()` call: `$getNodeByKey(key).remove()`.
+
+**Styles** (`ProfileBuilder.css`) — `.pb-remove-section` mirrors `.pb-remove-entry`: `position: absolute`, left-gutter offset, small `×` icon button; hover state consistent with existing gutter controls.
+
+### 12.3 Out of Scope
+
+- Undo after section removal (covered by Lexical's built-in history plugin).
+- Bulk-remove or drag-to-trash.
+- Custom confirmation dialog UI (plain `window.confirm` is sufficient for now).
+
+---
+
+## 13. Title-Anchored Document Sections (US-EDIT-19)
+
+### 13.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-19.1 | The `section` node type is retired. The document body (`RootNode.children`) is now a flat ordered list of `title`, `paragraph`, `chips`, `list`, `timeline`, and `link` nodes. |
+| F-EDIT-19.2 | A `title` node is a leaf with a single required attr `text` (the heading string). It renders as a bold heading line in the editor. |
+| F-EDIT-19.3 | The controls rail includes a **Title** entry; clicking it inserts a new `title` node at the current caret position (or appends to the end if no caret). |
+| F-EDIT-19.4 | Dragging the drag handle on a `title` node moves the title **and all consecutive non-title nodes that follow it** (its "group") as a single unit, inserting the whole group before or after the target `title` group. |
+| F-EDIT-19.5 | ~~Move-up / move-down buttons~~ — **removed**. Drag via the handle is the sole reorder path (see F-EDIT-19.4). |
+| F-EDIT-19.6 | The drag handle is only shown for `title` nodes (appears on hover over the title); individual non-title blocks at the root have no reorder controls. |
+| F-EDIT-19.9 | Pressing **Enter** while the caret is inside a `title` node inserts an empty `paragraph` node immediately after the title and moves the caret into it, letting the user start typing content below the heading without reaching for the rail. |
+| F-EDIT-19.7 | The `title` node round-trips faithfully through `serialize.ts` (BlockNode ↔ Lexical) and through the network (cv-api JSON column, gRPC proto, PDF rendering). |
+| F-EDIT-19.8 | On load, documents containing `section` nodes are **migrated in-memory**: each `section` is converted to a `title` node (attrs `text` = `section.attrs.heading`) followed by the section's former flow children, all appended flat to root. The migration runs client-side in `loadDocument` / `$writeBody`; the neutral tree emitted by `onChange` is already in the new flat shape. |
+
+### 13.2 Technical Specification
+
+All work is inside `apps/profile-builder-ui` unless noted.
+
+#### 13.2.1 Data model (`model.ts`)
+
+- Add `'title'` to `NodeType`.
+- Remove `'section'` from `NodeType` and from `ALLOWED_CHILDREN`.
+- Add `ALLOWED_CHILDREN.title = []` (leaf — no children).
+- Add `ALLOWED_CHILDREN.root` entry: `['title', 'paragraph', 'list', 'chips', 'timeline', 'link']`.
+- Add `REQUIRED_ATTRS.title = ['text']`.
+- Add type alias: `export type TitleNode = BlockNode & { type: 'title'; attrs: { text: string } }`.
+- Update `RootNode`: `children: (TitleNode | FlowNode)[]`.
+- Update `FlowNode` union to remove all section references (it no longer exists at root).
+- Remove `SectionNode` type alias and all references to it.
+- Update `validateDocument` `FLOW_CONTAINERS`: remove `'section'` if present.
+
+#### 13.2.2 Node factory (`nodes.ts`)
+
+- Add `titleNode(text = 'Section heading'): TitleNode`.
+- Remove `sectionNode`.
+- Update `rootNode` signature to accept `(TitleNode | FlowNode)[]`.
+- Add `title` to `WidgetKind` union and to `WIDGETS` array (name: `'Title'`, description: `'A section heading that groups the content below it.'`, make: `() => titleNode()`).
+- Remove `timeline` widget's dependency on `SectionNode`; update `widgetsAllowedIn` — root now allows `title`.
+
+#### 13.2.3 Lexical node (`lexical/widget-nodes.ts`)
+
+- Add `PbTitleNode extends ElementNode` (or `DecoratorNode` if inline editing is simpler):
+  - Serializes to/from `{ type: 'title', id, attrs: { text } }`.
+  - `createDOM` returns a `<h2 data-pb="title">` element styled via CSS class `pb-title`.
+  - Stores the heading text as a single child `PbTextNode` so it is editable in-line (same pattern as `SectionHeadingNode`).
+  - `getNodeId()` returns the stable neutral id.
+- Export `$createTitleNode(id?, text?)`, `$isTitleNode`.
+- Remove `SectionNode`, `SectionHeadingNode`, `$createSectionNode`, `$createSectionHeadingNode`, `$isSectionNode`, `$isSectionHeadingNode` (or keep as deprecated stubs for migration only).
+- Add `PbTitleNode` to the `WIDGET_NODES` export array.
+
+#### 13.2.4 Serialization (`serialize.ts`)
+
+**BlockNode → Lexical (`$createLexicalNode`)**
+
+- Add `case 'title'`: create a `PbTitleNode`, append a `PbTextNode` with `node.attrs.text`.
+- Add `case 'section'` (migration path): convert to a `PbTitleNode` (heading = `node.attrs.heading`) followed by the section's children appended directly to the parent root — handled in `$writeBody` (see below).
+- Remove the old `case 'section'` that produced a `SectionNode`.
+
+**`$writeBody`**
+
+- Iterate `body.children`; for each child:
+  - If `type === 'title'` → `$createLexicalNode(child)`, append to root.
+  - If `type === 'section'` (legacy) → create a `PbTitleNode` from `attrs.heading`, then create Lexical nodes for each of `child.children` and append them all to root (flattening the section).
+  - Otherwise → `$createLexicalNode(child)`, append to root.
+
+**Lexical → BlockNode (`readLexicalNode` / `$readBody`)**
+
+- Add handler for `$isTitleNode`: emit `{ type: 'title', id, attrs: { text } }`.
+- Remove handler for `$isSectionNode`.
+- `$readBody`: collect **all** root children (not only sections); emit them into `children` as a flat array. The `children` type becomes `(TitleNode | FlowNode)[]`.
+
+#### 13.2.5 Editor UI (`ProfileBuilder.tsx`)
+
+**Drag-group helpers**
+
+```
+// Returns all root nodes that belong to the same title group as `key`:
+// the title node at `key` plus all consecutive non-title siblings that follow it.
+function titleGroupKeys(editor, titleKey): string[]
+
+// Given a clientY, resolve the drop target: the title node (key) whose group
+// the pointer is over, and whether the whole group lands before or after it.
+function dropGroupTargetAt(clientY, handles): { key: string; place: 'before'|'after'; lineY: number } | null
+```
+
+**`TitleControls` component** (replaces `SectionControls`)
+
+- Renders one gutter group per `title` node (drag handle + ▲ ▼ + ✕).
+- Positions track the `PbTitleNode`'s DOM element top (same `registerUpdateListener` + `ResizeObserver` pattern).
+- `moveGroup(key, dir)` — collect the group's keys, find the adjacent title group in direction `dir`, and insert the whole group before/after it in one `editor.update` call.
+- `reorderGroup(sourceKey, place, targetKey)` — collect source group keys, insert them before/after the target title node in one `editor.update` call.
+- `removeTitle(key)` — removes only the title node itself (not its group); group content stays in place.
+- Drag ghost: clone the group's DOM elements (all group nodes' `outerHTML` concatenated) for the floating preview.
+- Drop line: drawn between title groups, not between individual blocks.
+
+**`ControlRail`**
+
+- `hasSection` check becomes `hasTitle` (or removed entirely — widgets can always be inserted at root now).
+- Add `title` widget button to the rail.
+
+**`EntryStructureGuardPlugin`**
+
+- Remove `$isSectionNode` / `$isSectionHeadingNode` branches; the title node's text is guarded the same way as the section heading was (block the structural-boundary backspace/delete for `PbTitleNode`'s text child).
+
+**`AddSectionButton`** → rename to `AddTitleButton` or remove (if the rail covers it).
+
+**`RemoveSectionButtons`** → remove (now part of `TitleControls`).
+
+#### 13.2.6 Styles (`ProfileBuilder.css`)
+
+- Add `.pb-title` — bold heading, same visual weight as the former `.pb-section__heading`.
+- Remove `.pb-section`, `.pb-section__heading` (or keep as tombstones with a comment).
+- Update `.pb-section-rail` → `.pb-title-rail` (or keep class name if reuse is cleaner).
+
+#### 13.2.7 Back-end sync
+
+**`apps/cv-api/Domain/Entities/ProfileDocumentSchema.cs`**
+
+- Add `"title"` to the allowed node-type enum / discriminator.
+- Remove `"section"` (or keep for read-only legacy migration).
+- Update the required-attrs table: `title` requires `text`.
+- Update the nesting matrix: `root` children now include `title`.
+
+**`apps/llm-service/app/schemas.py`**
+
+- Add `'title'` to the `NodeType` literal / enum.
+- Remove `'section'` (or keep as deprecated).
+- Mirror the `ALLOWED_CHILDREN` matrix changes.
+
+**`apps/cv-api/Infrastructure/ExternalServices/Pdf/PdfService.cs`**
+
+- Add rendering for `title` node: output a bold heading element (same as the former section heading).
+- Remove rendering for `section` (or keep as fallback for stored legacy documents).
+
+#### 13.2.8 Migration strategy
+
+The migration is **client-side and lazy**: `$writeBody` converts any `section` node it encounters into a flat title + children. The neutral tree emitted by `onChange` is already in the new shape, so the first save after opening a legacy document transparently upgrades it. No server-side migration or database schema change is required.
+
+### 13.3 Out of Scope
+
+- Server-side bulk migration of stored documents.
+- Drag reordering of individual non-title root blocks (they have no drag handle).
+- Nested titles (a `title` is always a root-level node; it cannot appear inside a timeline entry or list).

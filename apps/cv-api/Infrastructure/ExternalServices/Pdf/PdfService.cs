@@ -5,11 +5,12 @@ using QuestPDF.Infrastructure;
 
 namespace CvApi.Infrastructure.ExternalServices.Pdf;
 
-// Renders a canonical ProfileDocument (ADR-0014 §9.2/§9.5) to PDF via a recursive
-// walk of the BlockNode tree — one handler per node type. Unknown or empty nodes
-// are skipped (graceful degradation); recursion is bounded so a malformed/deep
-// tree can never blow the stack. The walk assumes a tree that passed
-// ProfileDocumentSchema validation but defends against bad data regardless.
+// Renders a canonical ProfileDocument (ADR-0014 §9.2/§9.5/§13) to PDF via a
+// recursive walk of the BlockNode tree — one handler per node type. Unknown or
+// empty nodes are skipped (graceful degradation); recursion is bounded so a
+// malformed/deep tree can never blow the stack. The walk assumes a tree that
+// passed ProfileDocumentSchema validation but defends against bad data regardless.
+// US-EDIT-19: body is now a flat list of title/flow nodes; 'section' is retired.
 public class PdfService : IPdfService
 {
     // Hard cap on recursion depth; matches the schema's bounded depth (§9.3) with
@@ -37,15 +38,29 @@ public class PdfService : IPdfService
         BuildHeader(col, doc.Header);
         col.Item().LineHorizontal(1).LineColor(Colors.Blue.Darken3);
 
-        // Body is a `root` node whose children are `section` nodes (§9.2). Walk
-        // each top-level section; everything else flows recursively from there.
+        // Body is a `root` node whose children are flat title/flow nodes (§13).
+        // A `title` node renders as a bold section heading + rule; flow nodes
+        // render directly. Legacy `section` nodes are handled for graceful
+        // degradation of stored documents not yet migrated by the client.
         var body = doc.Body;
         if (body is not null)
         {
-            foreach (var section in body.Children)
+            foreach (var node in body.Children)
             {
-                if (section.Type == "section")
-                    col.Item().Column(s => RenderSection(s, section, depth: 0));
+                switch (node.Type)
+                {
+                    case "title":
+                        col.Item().Column(c => RenderTitle(c, node));
+                        break;
+                    case "section":
+                        // Legacy fallback: render as title + children.
+                        col.Item().Column(c => RenderSection(c, node, depth: 0));
+                        break;
+                    default:
+                        if (IsRenderableFlow(node))
+                            col.Item().PaddingTop(4).Column(c => RenderFlow(c, node, depth: 1));
+                        break;
+                }
             }
         }
     }
@@ -79,8 +94,16 @@ public class PdfService : IPdfService
 
     // ---- Node handlers --------------------------------------------------------
 
-    // section → heading + a flow of block widgets (paragraph/list/chips/timeline).
-    // Skipped entirely if it produces no renderable content.
+    // title → bold heading with a rule below (US-EDIT-19 §13.2.7).
+    private static void RenderTitle(ColumnDescriptor col, BlockNode title)
+    {
+        var text = Attr(title, "text").Trim();
+        if (string.IsNullOrWhiteSpace(text)) return;
+        col.Item().PaddingTop(8).Text(text).Bold().FontSize(12).FontColor(Colors.Blue.Darken3);
+        col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+    }
+
+    // section → heading + a flow of block widgets. Legacy fallback only.
     private static void RenderSection(ColumnDescriptor col, BlockNode section, int depth)
     {
         var flow = section.Children.Where(IsRenderableFlow).ToList();
@@ -109,8 +132,35 @@ public class PdfService : IPdfService
             case "list": RenderList(col, node, depth); break;
             case "chips": RenderChips(col, node); break;
             case "timeline": RenderTimeline(col, node, depth); break;
+            case "link": RenderLink(col, node); break;
             // Unknown / unexpected node type: skip silently.
         }
+    }
+
+    // link → a standalone hyperlink line (spec §10). Shows the display text (or the
+    // url when no text), linked to the url when it is a safe http(s)/mailto target.
+    private static void RenderLink(ColumnDescriptor col, BlockNode link)
+    {
+        var url = Attr(link, "url").Trim();
+        var label = Attr(link, "text").Trim();
+        if (label.Length == 0) label = url;
+        if (label.Length == 0) return;
+
+        var href = SafeHref(url);
+        var item = col.Item().PaddingTop(2);
+        if (href is not null) item = item.Hyperlink(href);
+        item.Text(label).FontColor(Colors.Blue.Medium).Underline();
+    }
+
+    // Only surface http(s)/mailto links as clickable; bare domains get https://.
+    private static string? SafeHref(string url)
+    {
+        if (url.Length == 0) return null;
+        if (System.Text.RegularExpressions.Regex.IsMatch(url, "^(https?:|mailto:)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            return url;
+        if (System.Text.RegularExpressions.Regex.IsMatch(url, @"^[\w.-]+\.[a-z]{2,}", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            return "https://" + url;
+        return null;
     }
 
     // paragraph → a single text run (concatenated text children).
@@ -129,7 +179,7 @@ public class PdfService : IPdfService
         foreach (var item in list.Children.Where(c => c.Type == "listItem"))
         {
             var blocks = item.Children
-                .Where(b => b.Type is "paragraph" or "list" or "chips")
+                .Where(b => b.Type is "paragraph" or "list" or "chips" or "link")
                 .ToList();
             if (blocks.Count == 0) continue;
 
@@ -145,6 +195,7 @@ public class PdfService : IPdfService
                             case "paragraph": RenderParagraph(itemCol, block); break;
                             case "list": itemCol.Item().PaddingLeft(8).Column(c => RenderList(c, block, depth + 1)); break;
                             case "chips": RenderChips(itemCol, block); break;
+                            case "link": RenderLink(itemCol, block); break;
                         }
                     }
                 });
@@ -185,7 +236,7 @@ public class PdfService : IPdfService
             var title = Attr(entry, "title");
             var dates = Attr(entry, "dates");
             var description = entry.Children
-                .Where(c => c.Type is "paragraph" or "list")
+                .Where(c => c.Type is "paragraph" or "list" or "link")
                 .ToList();
 
             if (string.IsNullOrWhiteSpace(title)
@@ -207,6 +258,8 @@ public class PdfService : IPdfService
                         e.Item().PaddingTop(2).Column(c => RenderParagraph(c, block));
                     else if (block.Type == "list")
                         e.Item().PaddingTop(2).Column(c => RenderList(c, block, depth + 1));
+                    else if (block.Type == "link")
+                        e.Item().Column(c => RenderLink(c, block));
                 }
             });
         }
@@ -217,7 +270,7 @@ public class PdfService : IPdfService
     // A flow node contributes content if it (recursively) carries any non-empty
     // text or chip. Empty widgets are dropped so the section can skip its divider.
     private static bool IsRenderableFlow(BlockNode node) =>
-        node.Type is "paragraph" or "list" or "chips" or "timeline"
+        node.Type is "paragraph" or "list" or "chips" or "timeline" or "link"
         && !string.IsNullOrWhiteSpace(NodeText(node));
 
     private static string Attr(BlockNode node, string key) =>
@@ -231,9 +284,11 @@ public class PdfService : IPdfService
     {
         if (node.Type == "text") return Attr(node, "text");
         if (node.Type == "chip") return Attr(node, "text");
-        if (node.Type is "section" or "entry")
+        if (node.Type == "link") return Attr(node, "text") + Attr(node, "url");
+        if (node.Type == "title") return Attr(node, "text");
+        if (node.Type == "entry")
         {
-            var head = Attr(node, "heading") + Attr(node, "title");
+            var head = Attr(node, "title");
             return head + string.Concat(node.Children.Select(NodeText));
         }
         return string.Concat(node.Children.Select(NodeText));

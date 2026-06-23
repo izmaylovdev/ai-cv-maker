@@ -4,8 +4,8 @@ namespace CvApi.Features.JobProfiles.Dtos;
 
 public record JobProfileListItemDto(Guid Id, string Name, string FullName, string Title);
 
-// Canonical profile payload (ADR-0013): the section-based document, exactly the
-// shape the <applysy-profile-builder> web component emits/consumes.
+// Canonical profile payload (ADR-0014): the block-tree document (flat title/flow nodes),
+// exactly the shape the <applysy-profile-builder> web component emits/consumes.
 public record ProfileDto(Guid Id, string Name, ProfileDocument Document);
 
 public record CreateJobProfileRequest(string Name);

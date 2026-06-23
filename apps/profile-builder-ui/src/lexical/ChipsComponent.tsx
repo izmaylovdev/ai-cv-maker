@@ -25,7 +25,7 @@ export function ChipsComponent({ editor, nodeKey, chips }: ChipsComponentProps) 
   const add = () => mutate([...chips, { id: newId(), text: '' }]);
 
   return (
-    <div className="pb-chips" data-pb="chips-ui">
+    <>
       {chips.map((chip) => (
         <span key={chip.id} className="pb-chip">
           <ChipInput value={chip.text} onChange={(t) => setText(chip.id, t)} />
@@ -42,7 +42,7 @@ export function ChipsComponent({ editor, nodeKey, chips }: ChipsComponentProps) 
       <button type="button" className="pb-chip-add" onClick={add}>
         + Add
       </button>
-    </div>
+    </>
   );
 }
 
@@ -52,7 +52,6 @@ function ChipInput({ value, onChange }: { value: string; onChange: (v: string) =
     <span className="pb-chip__field" data-text={value || 'tag'}>
       <input
         className="pb-chip__text"
-        size={Math.max(value.length, 3)}
         value={value}
         placeholder="tag"
         onChange={(e) => onChange(e.target.value)}

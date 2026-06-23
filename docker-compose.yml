@@ -35,6 +35,7 @@ services:
       Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       # Shared key admin-api uses to call /api/admin/* (ADR-0005).
       AdminApi__ApiKey: ${CV_API_ADMIN_KEY:-localdevkey}
+      UsageLimit__MaxCostUsdPerUser: "2.00"
     ports:
       - "5050:8080"
     depends_on:

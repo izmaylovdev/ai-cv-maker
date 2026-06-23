@@ -239,3 +239,88 @@ being locked into fixed per-section templates.
   my first widget.
 - The generated CV and live rendering reflect each widget in its type, nesting,
   and order.
+
+### US-EDIT-15 — Insert widgets from a controls side rail
+
+**As a** user,
+**I want to** a persistent side rail beside the document listing every control I
+can insert (text, chips, list, **link**, timeline), each clicked to insert at my
+caret,
+**so that** I can discover and add structured content without remembering a
+hidden menu.
+
+**Acceptance criteria:**
+- A fixed vertical side rail sits beside the document sheet, always visible,
+  listing each available widget with its name and an icon/short label.
+- Clicking a control inserts that widget at the current caret position (the
+  section containing the caret, or the last section as fallback), consistent
+  with the current insert behaviour.
+- Controls not valid at the caret (per the §9.3 nesting matrix) are
+  disabled/hidden rather than producing an invalid insert.
+- A new **Link** widget is available: an inline link with editable text and URL,
+  insertable like the other widgets, and it round-trips through serialization
+  and the generated CV.
+- The rail is keyboard accessible and labelled for assistive tech.
+
+### US-EDIT-16 — Visual drag preview when reordering sections
+
+**As a** user,
+**I want to** see a clear visual preview while I drag a section to reorder it — a
+ghost of the section being moved following the cursor and an indicator of where
+it will drop,
+**so that** I can tell exactly where the section will land before I release.
+
+**Acceptance criteria:**
+- Starting a section drag shows a drag preview representing the section being
+  moved (not just the bare handle glyph).
+- While dragging, a drop indicator shows the position where the section will be
+  inserted (e.g. a line between sections or a highlighted target).
+- Releasing on a valid target reorders the section there; releasing elsewhere
+  cancels with no change.
+- The existing move-up/move-down buttons remain as an accessible, non-drag
+  alternative.
+
+### US-EDIT-17 — See where empty sections and fields are, so I can fill them
+
+**As a** user populating my profile,
+**I want** empty sections, timeline entry fields, and empty content areas to be
+visibly marked (a subtle highlighted region with a hint of what goes there),
+**so that** I can tell where to type — especially in a freshly inserted timeline,
+which otherwise looks like blank space.
+
+**Acceptance criteria:**
+- An empty section's body shows a marked region with a prompt to type or insert a
+  widget; a section with content stays clean (no marker).
+- An inserted timeline's empty entry fields (title, dates) and its empty
+  description each show a marked slot with a placeholder describing what goes
+  there.
+- The markers disappear as soon as the region has content, leaving the finished
+  document clean.
+- A timeline entry's title, dates, and description are required parts: I can clear
+  their text but cannot accidentally delete or merge them away while editing, so an
+  entry never ends up structurally broken.
+
+### US-EDIT-18 — Remove a section via a gutter button
+
+**As a** user editing my profile,
+**I want to** remove a section by clicking a ✕ button that appears in the section's gutter rail,
+**so that** I can delete sections I no longer need without having to hunt for a separate action.
+
+**Acceptance criteria:**
+- Each section shows a ✕ remove button in the left gutter rail, aligned with the section heading, styled consistently with the timeline-entry remove button.
+- Clicking ✕ removes the section immediately — no confirmation dialog, regardless of content.
+- The button is accessible (labelled for screen readers).
+
+### US-EDIT-19 — Title-anchored document sections
+
+**As a** user editing my profile,
+**I want** the document to be a flat sequence of blocks where a **Title** block marks the start of a logical group — so that dragging a Title drags everything beneath it (up to the next Title or the end of the document) together,
+**so that** I can reorder whole sections of my profile with a single gesture without being locked into a two-level section/content hierarchy.
+
+**Acceptance criteria:**
+- The `section` node type is retired; the document body is now a flat list of block nodes at the root level (`title`, `paragraph`, `chips`, `list`, `timeline`, `link`).
+- A `title` block renders as a bold heading line and can be added from the controls rail.
+- Dragging the drag handle on a `title` block moves the title and all blocks following it until the next `title` (or end of document) as a single unit.
+- Drag via the handle is the sole reorder path; no move-up / move-down buttons exist.
+- The `title` node round-trips through serialization and the neutral `ProfileDocument` model, and persists through cv-api and PDF rendering.
+- Existing documents with `section` nodes are migrated: each `section` becomes a `title` block (carrying the heading text) followed by the section's former children, flattened to root level.

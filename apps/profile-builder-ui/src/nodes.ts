@@ -1,4 +1,4 @@
-// Factory helpers for building well-formed BlockNode subtrees (spec §9.2 / §9.3).
+// Factory helpers for building well-formed BlockNode subtrees (spec §9.2 / §9.3 / §13).
 // Each returns a fresh node with a new id. These keep node construction in one
 // place so the editor, serialization layer, and tests agree on seeded shapes.
 
@@ -7,14 +7,16 @@ import {
   ChipNode,
   ChipsNode,
   EntryNode,
+  FlowNode,
+  LinkNode,
   ListItemNode,
   ListNode,
   NodeType,
   ParagraphNode,
   RootNode,
-  SectionNode,
   TextNode,
   TimelineNode,
+  TitleNode,
   newId,
 } from './model';
 
@@ -28,6 +30,10 @@ export function paragraphNode(text = ''): ParagraphNode {
 
 export function chipNode(text = ''): ChipNode {
   return { type: 'chip', id: newId(), attrs: { text } };
+}
+
+export function linkNode(text = '', url = ''): LinkNode {
+  return { type: 'link', id: newId(), attrs: { text, url } };
 }
 
 export function chipsNode(texts: string[] = ['']): ChipsNode {
@@ -55,31 +61,32 @@ export function timelineNode(entries: EntryNode[] = [entryNode()]): TimelineNode
   return { type: 'timeline', id: newId(), children: entries };
 }
 
-export function sectionNode(heading = 'Section heading'): SectionNode {
-  return {
-    type: 'section',
-    id: newId(),
-    attrs: { heading },
-    children: [paragraphNode()],
-  };
+export function titleNode(text = 'Section heading'): TitleNode {
+  return { type: 'title', id: newId(), attrs: { text } };
 }
 
-export function rootNode(children: SectionNode[] = []): RootNode {
+export function rootNode(children: (TitleNode | FlowNode)[] = []): RootNode {
   return { type: 'root', id: newId(), children };
 }
 
-// The closed widget set offered by the insert menu (spec §9.4). `kind` is the
+// The closed widget set offered by the insert rail (spec §9.4 / §13.2.5). `kind` is the
 // flow-level widget; `make` produces a fresh subtree to insert at the caret.
-export type WidgetKind = 'text' | 'chips' | 'list' | 'timeline';
+export type WidgetKind = 'title' | 'text' | 'chips' | 'list' | 'link' | 'timeline';
 
 export interface WidgetDescriptor {
   kind: WidgetKind;
   name: string;
   description: string;
-  make: () => ParagraphNode | ChipsNode | ListNode | TimelineNode;
+  make: () => TitleNode | ParagraphNode | ChipsNode | ListNode | LinkNode | TimelineNode;
 }
 
 export const WIDGETS: WidgetDescriptor[] = [
+  {
+    kind: 'title',
+    name: 'Title',
+    description: 'A bold heading. Drag it to move all content below it as a group.',
+    make: () => titleNode(),
+  },
   {
     kind: 'text',
     name: 'Text',
@@ -99,6 +106,12 @@ export const WIDGETS: WidgetDescriptor[] = [
     make: () => listNode(),
   },
   {
+    kind: 'link',
+    name: 'Link',
+    description: 'A standalone link — portfolio, profile, or reference.',
+    make: () => linkNode(),
+  },
+  {
     kind: 'timeline',
     name: 'Timeline',
     description: 'Dated entries — work experience, education, projects.',
@@ -107,13 +120,14 @@ export const WIDGETS: WidgetDescriptor[] = [
 ];
 
 /**
- * Widgets permitted as a direct child of `parent`, filtered by the §9.3 matrix.
- * Used to scope the insert menu to what is valid at the caret. `timeline` maps
- * to its node type for the matrix lookup; the others map 1:1.
+ * Widgets permitted as a direct child of `parent`, filtered by the §9.3 / §13 matrix.
+ * Used to scope the insert menu to what is valid at the caret.
  */
 export function widgetsAllowedIn(parent: NodeType): WidgetDescriptor[] {
   const allowed = new Set(ALLOWED_CHILDREN[parent]);
-  return WIDGETS.filter((w) =>
-    allowed.has(w.kind === 'text' ? 'paragraph' : (w.kind as NodeType)),
-  );
+  return WIDGETS.filter((w) => {
+    const nodeType: NodeType =
+      w.kind === 'text' ? 'paragraph' : w.kind === 'title' ? 'title' : (w.kind as NodeType);
+    return allowed.has(nodeType);
+  });
 }

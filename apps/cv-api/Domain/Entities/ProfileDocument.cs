@@ -25,9 +25,9 @@ public class ProfileHeader
     public string Location { get; set; } = string.Empty;
 }
 
-// One node of the block tree (ADR-0014 §9.2). `Type` is from the closed set
-// (root, section, paragraph, text, list, listItem, chips, chip, timeline, entry).
-// `Attrs` carries type-specific leaf data (e.g. text→{text}, section→{heading},
+// One node of the block tree (ADR-0014 §9.2 / US-EDIT-19). `Type` is from the closed set
+// (root, title, paragraph, text, link, list, listItem, chips, chip, timeline, entry).
+// `Attrs` carries type-specific leaf data (e.g. text→{text}, title→{text},
 // entry→{title,dates}). `Children` is ordered; array order IS document order.
 public class BlockNode
 {

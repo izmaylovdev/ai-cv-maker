@@ -13,6 +13,7 @@
 //   • paragraph / text / list / listItem reuse Lexical (+ @lexical/list)
 //     built-ins, subclassed only to thread the stable id.
 
+import { LinkNode } from '@lexical/link';
 import {
   DecoratorNode,
   EditorConfig,
@@ -36,6 +37,7 @@ import {
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
 import { ChipsComponent } from './ChipsComponent';
+import { LinkComponent } from './LinkComponent';
 
 let counter = 0;
 /** Fallback id for nodes created in the editor before serialization assigns one. */
@@ -130,12 +132,64 @@ export class SectionHeadingNode extends IdElementNode {
   isInline(): false {
     return false;
   }
+  // The heading is a required part of its section — Backspace at start must not
+  // merge it into the previous section's content.
+  collapseAtStart(): boolean {
+    return false;
+  }
 }
 export function $createSectionHeadingNode(nodeId?: string): SectionHeadingNode {
   return new SectionHeadingNode(nodeId);
 }
 export function $isSectionHeadingNode(node: LexicalNode | null | undefined): node is SectionHeadingNode {
   return node instanceof SectionHeadingNode;
+}
+
+// ---- PbTitleNode -----------------------------------------------------------
+
+export type SerializedTitleNode = Spread<{ nodeId: string }, SerializedElementNode>;
+
+/**
+ * A section-heading block (spec §13.2.3). Holds a single editable PbTextNode
+ * child. At the root level, it anchors a "title group" — all non-title siblings
+ * that follow it until the next PbTitleNode (or end of root) belong to its group
+ * and move with it when reordered.
+ */
+export class PbTitleNode extends IdElementNode {
+  static getType(): string {
+    return 'pb-title';
+  }
+  static clone(node: PbTitleNode): PbTitleNode {
+    return new PbTitleNode(node.__nodeId, node.__key);
+  }
+  constructor(nodeId?: string, key?: string) {
+    super(nodeId, 'title', key);
+  }
+  createDOM(): HTMLElement {
+    const el = document.createElement('h2');
+    el.className = 'pb-title';
+    el.setAttribute('data-pb', 'title');
+    el.setAttribute('data-placeholder', 'Section heading');
+    return el;
+  }
+  exportJSON(): SerializedTitleNode {
+    return { ...super.exportJSON(), type: PbTitleNode.getType(), version: 1, nodeId: this.__nodeId };
+  }
+  static importJSON(json: SerializedTitleNode): PbTitleNode {
+    return new PbTitleNode(json.nodeId);
+  }
+  isInline(): false {
+    return false;
+  }
+  collapseAtStart(): boolean {
+    return false;
+  }
+}
+export function $createTitleNode(nodeId?: string): PbTitleNode {
+  return new PbTitleNode(nodeId);
+}
+export function $isTitleNode(node: LexicalNode | null | undefined): node is PbTitleNode {
+  return node instanceof PbTitleNode;
 }
 
 // ---- TimelineNode / EntryNode / title / dates -----------------------------
@@ -258,6 +312,12 @@ export class EntryFieldNode extends IdElementNode {
   isInline(): false {
     return false;
   }
+  // A title/dates line is a required part of its entry — Backspace at its start
+  // must not merge it into (or delete it from) the entry. Returning false stops
+  // Lexical's default collapse/merge so the field can be emptied but not removed.
+  collapseAtStart(): boolean {
+    return false;
+  }
 }
 export function $createEntryFieldNode(field: 'title' | 'dates', nodeId?: string): EntryFieldNode {
   return new EntryFieldNode(nodeId, field);
@@ -330,6 +390,86 @@ export function $createChipsNode(nodeId?: string, chips: Chip[] = []): ChipsNode
 }
 export function $isChipsNode(node: LexicalNode | null | undefined): node is ChipsNode {
   return node instanceof ChipsNode;
+}
+
+// ---- LinkWidgetNode (decorator) -------------------------------------------
+
+export type SerializedLinkNode = Spread<{ nodeId: string; text: string; url: string }, SerializedLexicalNode>;
+
+/**
+ * A standalone link line (spec §10). A leaf widget — text + url live in node
+ * state and a small React component edits them; the serializer maps them to/from
+ * the neutral `link` node's `attrs`. NOT an inline mark (those stay out of scope
+ * per §9.6); it renders as its own block, like chips/timeline.
+ */
+export class LinkWidgetNode extends DecoratorNode<ReactNode> {
+  __nodeId: string;
+  __text: string;
+  __url: string;
+  static getType(): string {
+    return 'pb-link';
+  }
+  static clone(node: LinkWidgetNode): LinkWidgetNode {
+    return new LinkWidgetNode(node.__nodeId, node.__text, node.__url, node.__key);
+  }
+  constructor(nodeId?: string, text = '', url = '', key?: string) {
+    super(key);
+    this.__nodeId = nodeId ?? ephemeralId('link');
+    this.__text = text;
+    this.__url = url;
+  }
+  getNodeId(): string {
+    return this.getLatest().__nodeId;
+  }
+  getText(): string {
+    return this.getLatest().__text;
+  }
+  getUrl(): string {
+    return this.getLatest().__url;
+  }
+  setLink(text: string, url: string): void {
+    const writable = this.getWritable();
+    writable.__text = text;
+    writable.__url = url;
+  }
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = document.createElement('div');
+    el.className = (config.theme as Record<string, string>)['pbLink'] ?? 'pb-link';
+    el.setAttribute('data-pb', 'link');
+    return el;
+  }
+  updateDOM(): boolean {
+    return false;
+  }
+  isInline(): false {
+    return false;
+  }
+  decorate(editor: LexicalEditor): ReactNode {
+    return createElement(LinkComponent, {
+      editor,
+      nodeKey: this.getKey(),
+      text: this.getText(),
+      url: this.getUrl(),
+    });
+  }
+  exportJSON(): SerializedLinkNode {
+    return {
+      type: LinkWidgetNode.getType(),
+      version: 1,
+      nodeId: this.__nodeId,
+      text: this.__text,
+      url: this.__url,
+    };
+  }
+  static importJSON(json: SerializedLinkNode): LinkWidgetNode {
+    return new LinkWidgetNode(json.nodeId, json.text, json.url);
+  }
+}
+export function $createLinkNode(nodeId?: string, text = '', url = ''): LinkWidgetNode {
+  return new LinkWidgetNode(nodeId, text, url);
+}
+export function $isLinkNode(node: LexicalNode | null | undefined): node is LinkWidgetNode {
+  return node instanceof LinkWidgetNode;
 }
 
 // ---- Id-carrying built-in subclasses --------------------------------------
@@ -488,12 +628,15 @@ export function $isPbListItemNode(node: LexicalNode | null | undefined): node is
 
 /** All custom nodes for the editor's `nodes` config. */
 export const WIDGET_NODES = [
+  LinkNode,
+  PbTitleNode,
   SectionNode,
   SectionHeadingNode,
   TimelineNode,
   EntryNode,
   EntryFieldNode,
   ChipsNode,
+  LinkWidgetNode,
   PbParagraphNode,
   PbTextNode,
   PbListNode,

@@ -14,6 +14,8 @@
   --pb-paper: #ffffff;        /* the sheet */
   --pb-panel: #ffffff;        /* floating tools / menus */
   --pb-danger-bg: #fef2f2;
+  --pb-slot: rgba(79, 70, 229, 0.045);   /* empty editable region fill */
+  --pb-slot-border: rgba(79, 70, 229, 0.3); /* empty region dashed outline */
   --pb-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 12px 40px rgba(16, 24, 40, 0.06);
   --pb-paper-border: transparent;
 
@@ -22,9 +24,23 @@
   color: var(--pb-fg);
   font-size: 15px;
   line-height: 1.6;
+}
 
-  max-width: 760px;
+/* Shell: the controls rail (left) beside the paper sheet (centered). */
+.pb-shell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 20px;
   margin: 32px auto;
+  max-width: 920px;
+  padding: 0 16px;
+}
+
+/* The sheet — a single piece of paper, edited in place. */
+.pb-sheet {
+  flex: 0 1 760px;
+  min-width: 0;
   padding: 64px 72px 96px;
   background: var(--pb-paper);
   border: 1px solid var(--pb-paper-border);
@@ -45,6 +61,8 @@
   --pb-paper: #16181d;
   --pb-panel: #1f232b;
   --pb-danger-bg: #3a1f1f;
+  --pb-slot: rgba(165, 180, 252, 0.08);
+  --pb-slot-border: rgba(165, 180, 252, 0.32);
   --pb-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 16px 48px rgba(0, 0, 0, 0.45);
   --pb-paper-border: #262b34;
 }
@@ -84,8 +102,19 @@
 .pb-list__text:focus { outline: none; }
 .pb-root ::placeholder { color: var(--pb-muted); }
 
-/* Letterhead — fixed identity/contact block above the sections. */
-.pb-header { margin-bottom: 36px; }
+/* Letterhead — fixed identity/contact block above the sections. Mirrors the PDF
+   renderer: name/title/location on the left, contacts at the right. */
+.pb-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 36px;
+}
+.pb-header__identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .pb-header__name,
 .pb-header__title,
 .pb-header__contact {
@@ -117,16 +146,25 @@
   width: calc(100% + 12px);
   font-size: 16px;
   color: var(--pb-soft);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
+.pb-header__location {
+  display: block;
+  width: calc(100% + 12px);
+  font-size: 13px;
+  color: var(--pb-muted);
+}
+/* Contacts column — right-aligned, bottom-aligned with the name block. */
 .pb-header__contacts {
+  flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
-.pb-header__contact {
-  flex: 1 1 150px;
-  min-width: 0;
+.pb-header__contacts .pb-header__contact {
+  width: auto;
+  text-align: right;
   font-size: 13px;
   color: var(--pb-muted);
 }
@@ -136,11 +174,8 @@
 .pb-empty__title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--pb-soft); }
 .pb-empty__hint { margin: 0 auto 22px; max-width: 380px; font-size: 14px; }
 
-/* Section */
-.pb-section { position: relative; margin-bottom: 30px; }
-.pb-section-wrap + .pb-section-wrap { margin-top: 0; }
-
-.pb-section__heading {
+/* Title block (US-EDIT-19) — a bold heading anchoring a group of content below it. */
+.pb-title {
   display: block;
   width: calc(100% + 12px);
   font-size: 12px;
@@ -150,51 +185,14 @@
   color: var(--pb-muted);
   padding-bottom: 7px;
   margin-bottom: 16px;
+  margin-top: 24px;
   border-bottom: 1px solid var(--pb-rule);
   border-radius: 0;
+  outline: none;
 }
-.pb-section__heading:hover,
-.pb-section__heading:focus { background: transparent; color: var(--pb-soft); }
-.pb-section__body { display: block; }
+.pb-title:hover { color: var(--pb-soft); }
+.pb-content .pb-title:first-child { margin-top: 0; }
 
-/* Drag handle — left gutter, on hover. */
-.pb-section__drag {
-  position: absolute;
-  left: -30px;
-  top: -2px;
-  border: none;
-  background: transparent;
-  color: var(--pb-muted);
-  font-size: 15px;
-  line-height: 1;
-  padding: 4px;
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-.pb-section:hover .pb-section__drag { opacity: 0.7; }
-.pb-section__drag:active { cursor: grabbing; }
-
-/* Floating hover toolbar — top-right of the section. */
-.pb-section__tools {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: flex;
-  gap: 1px;
-  padding: 2px;
-  background: var(--pb-panel);
-  border: 1px solid var(--pb-rule);
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.08);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 5;
-}
-.pb-section:hover .pb-section__tools,
-.pb-section__tools:focus-within { opacity: 1; pointer-events: auto; }
-.pb-section__tools button,
 .pb-item__tools button {
   border: none;
   background: transparent;
@@ -205,9 +203,7 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.pb-section__tools button:hover:not(:disabled),
 .pb-item__tools button:hover:not(:disabled) { background: var(--pb-hover); color: var(--pb-fg); }
-.pb-section__tools button:disabled,
 .pb-item__tools button:disabled { opacity: 0.3; cursor: default; }
 .pb-tool-danger { color: var(--pb-danger) !important; }
 .pb-tool-danger:hover { background: var(--pb-danger-bg) !important; }
@@ -224,7 +220,7 @@
 }
 
 /* Work experience — résumé-style entries. */
-.pb-workexp { display: flex; flex-direction: column; gap: 18px; }
+.pb-workexp { display: flex; flex-direction: column; gap: 18px; padding-bottom: 26px; }
 .pb-item { position: relative; }
 .pb-item__row {
   display: flex;
@@ -406,27 +402,281 @@
 .pb-content:focus,
 .pb-content:focus-visible { outline: none; }
 
-/* Insert toolbar */
-.pb-toolbar {
+/* Remove-entry icon — overlaid in the left gutter of each timeline entry. */
+.pb-remove-entry {
+  position: absolute;
+  left: -22px;
+  width: 18px;
+  height: 18px;
+  transform: translateY(-50%);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  margin: 0 0 18px;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font-size: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.1s ease;
+  padding: 0;
 }
-.pb-toolbar__btn {
-  border: 1px solid var(--pb-rule);
+.pb-remove-entry--visible { opacity: 1; }
+.pb-remove-entry:hover { opacity: 1; color: var(--pb-danger, #e53e3e); background: color-mix(in srgb, var(--pb-danger, #e53e3e) 10%, transparent); }
+
+/* Add-entry button — overlaid below each timeline (position tracked via JS). */
+.pb-add-entry {
+  position: absolute;
+  left: 0;
+  transform: translateY(-16px);
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.1s ease;
+  pointer-events: auto;
+}
+.pb-add-entry:hover {
+  color: var(--pb-accent);
+  background: color-mix(in srgb, var(--pb-accent) 8%, transparent);
+}
+
+/* Controls side rail (US-EDIT-15) — a fixed vertical panel of insertable
+   controls, docked left of the sheet and sticky while the document scrolls. */
+.pb-rail {
+  position: sticky;
+  top: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
   background: var(--pb-panel);
+  border: 1px solid var(--pb-rule);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.06);
+}
+/* Icon-only buttons; the name + shortcut surface in a hover/focus tooltip. */
+.pb-rail__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
   color: var(--pb-soft);
   font: inherit;
-  font-size: 12px;
-  padding: 4px 9px;
-  border-radius: 7px;
+  padding: 0;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.pb-toolbar__btn:hover { background: var(--pb-hover); color: var(--pb-accent); }
-.pb-toolbar__sep { width: 1px; align-self: stretch; margin: 2px 6px; background: var(--pb-rule); }
+.pb-rail__item:hover:not(:disabled) { background: var(--pb-hover); color: var(--pb-accent); }
+.pb-rail__item:disabled { opacity: 0.4; cursor: default; }
+.pb-rail__item--section { color: var(--pb-fg); font-weight: 600; }
+.pb-rail__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  color: var(--pb-muted);
+}
+.pb-rail__item:hover:not(:disabled) .pb-rail__icon { color: var(--pb-accent); }
+
+/* Hover/focus tooltip — name + keyboard shortcut, anchored to the right of the
+   icon (the rail is docked left of the sheet). */
+.pb-rail__tip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  white-space: nowrap;
+  background: var(--pb-fg);
+  color: var(--pb-paper);
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 20;
+}
+.pb-rail__tip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--pb-fg);
+}
+.pb-rail__item:hover:not(:disabled) .pb-rail__tip,
+.pb-rail__item:focus-visible .pb-rail__tip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+.pb-rail__tip-name { font-weight: 600; }
+.pb-rail__tip-key {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--pb-paper);
+}
+.pb-rail__sep { height: 1px; margin: 4px 6px; background: var(--pb-rule); }
+
+/* Section drag preview (US-EDIT-16). */
+/* Floating drag preview — a clone of the whole dragged section, rendered as a
+   lifted paper card that follows the cursor during a pointer-based drag. The
+   cloned markup carries its own section/heading/widget styling. */
+.pb-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  padding: 14px 20px;
+  background: var(--pb-paper);
+  color: var(--pb-fg);
+  border: 1px solid var(--pb-rule);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.24);
+  opacity: 0.94;
+  transform: rotate(-1deg);
+  max-height: 240px;
+  overflow: hidden;
+}
+/* Fade the bottom edge so a clipped tall section doesn't end abruptly. */
+.pb-drag-ghost::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40px;
+  background: linear-gradient(to bottom, transparent, var(--pb-paper));
+}
+.pb-drag-ghost--floating { z-index: 1000; }
+/* Drop indicator — a line spanning the sheet at the insertion boundary. */
+.pb-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -3px;
+  background: var(--pb-accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 6;
+}
+.pb-drop-line::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pb-accent);
+}
+
+/* Inline link (created via selection → Link button). */
+.pb-content a { color: var(--pb-accent); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Floating URL bar for inline link editing. */
+.pb-inline-link-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--pb-panel);
+  border: 1px solid var(--pb-rule);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.14);
+  z-index: 50;
+}
+.pb-inline-link-editor__input {
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: var(--pb-focus);
+  border: 1px solid var(--pb-rule);
+  border-radius: 5px;
+  padding: 3px 8px;
+  width: 220px;
+}
+.pb-inline-link-editor__input:focus { outline: none; border-color: var(--pb-accent); }
+.pb-inline-link-editor__btn {
+  border: none;
+  background: transparent;
+  color: var(--pb-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pb-inline-link-editor__btn:hover { background: var(--pb-hover); }
+.pb-inline-link-editor__btn--apply { color: var(--pb-accent); font-size: 14px; }
+.pb-inline-link-editor__btn--remove { color: var(--pb-muted); font-size: 11px; }
+.pb-inline-link-editor__btn--remove:hover { color: var(--pb-fg); }
+
+/* Link widget (US-EDIT-15 / spec §10) — a standalone link line. */
+.pb-link { margin: 4px 0; }
+.pb-link__view { display: inline-flex; align-items: center; gap: 6px; }
+.pb-link__anchor {
+  color: var(--pb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 14.5px;
+  word-break: break-word;
+}
+.pb-link__edit-btn,
+.pb-link__done {
+  border: none;
+  background: transparent;
+  color: var(--pb-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.pb-link__view:hover .pb-link__edit-btn,
+.pb-link__edit-btn:focus { opacity: 1; }
+.pb-link__edit-btn:hover,
+.pb-link__done:hover { background: var(--pb-hover); color: var(--pb-accent); }
+.pb-link__edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pb-link__text-input,
+.pb-link__url-input {
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: var(--pb-focus);
+  border: 1px solid var(--pb-rule);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.pb-link__text-input { width: 12ch; }
+.pb-link__url-input { width: 22ch; }
+.pb-link__text-input:focus,
+.pb-link__url-input:focus { outline: none; border-color: var(--pb-accent); }
+.pb-link__done { opacity: 1; color: var(--pb-accent); }
+
+.pb-content .pb-paragraph { margin: 4px 0; }
 
 /* Native Lexical lists render <li> directly — show standard bullets. */
 .pb-content .pb-list { list-style: disc; margin: 6px 0; padding-left: 1.4em; }
@@ -434,13 +684,34 @@
 .pb-content .pb-list .pb-list__item::marker { color: var(--pb-muted); }
 .pb-content .pb-list .pb-list .pb-list__item { list-style: circle; }
 
-/* Placeholders for the empty editable structural fields. */
-.pb-content [data-pb='section-heading']:empty::before,
+/* Empty editable regions (US-EDIT-17). A structural field is "empty" when its
+   only content is Lexical's empty text span (`<span data-lexical-text>` with no
+   text). Empty regions show their data-placeholder as a ghost hint. */
+.pb-content [data-pb='title']:empty::before,
 .pb-content [data-pb='entry-title']:empty::before,
-.pb-content [data-pb='entry-dates']:empty::before {
+.pb-content [data-pb='entry-dates']:empty::before,
+.pb-content [data-pb='title']:has(> span[data-lexical-text]:empty)::before,
+.pb-content [data-pb='entry-title']:has(> span[data-lexical-text]:empty)::before,
+.pb-content [data-pb='entry-dates']:has(> span[data-lexical-text]:empty)::before {
   content: attr(data-placeholder);
   color: var(--pb-muted);
-  opacity: 0.65;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.pb-content [data-pb='entry-title']:has(> span[data-lexical-text]:empty),
+.pb-content [data-pb='entry-dates']:has(> span[data-lexical-text]:empty) {
+  min-height: 1.5em;
+}
+
+.pb-content [data-pb='entry'] > p.pb-paragraph:last-child:has(> span[data-lexical-text]:empty) {
+  min-height: 1.6em;
+}
+.pb-content [data-pb='entry'] > p.pb-paragraph:last-child:has(> span[data-lexical-text]:empty)::before {
+  content: 'Describe it — scope, impact, results…';
+  color: var(--pb-muted);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 /* Entry: title (left) + dates (right) share the first row; the description
@@ -459,20 +730,20 @@
   grid-column: 1 / -1;
 }
 
-/* Chip input hugs its text. */
+/* Chip input hugs its text. field-sizing: content auto-sizes to value. */
 .pb-chip__field { display: inline-flex; }
-.pb-chip__text { min-width: 2ch; }
+.pb-chip__text { field-sizing: content; min-width: 2ch; }
 
-/* Section reorder rail — overlay in the left gutter (F-EDIT-14.3). */
+/* Title group reorder rail — overlay in the left gutter (F-EDIT-19.4 / F-EDIT-19.5). */
 .pb-doc { position: relative; }
-.pb-section-rail {
+.pb-title-rail {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-.pb-section-rail__group {
+.pb-title-rail__group {
   position: absolute;
-  left: -38px;
+  left: -27px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -481,9 +752,9 @@
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.pb-doc:hover .pb-section-rail__group { opacity: 0.45; }
-.pb-section-rail__group:hover,
-.pb-section-rail__group:focus-within { opacity: 1; }
+.pb-title-rail__group:hover,
+.pb-title-rail__group:focus-within,
+.pb-title-rail__group--visible { opacity: 1; }
 .pb-rail-btn {
   border: none;
   background: transparent;
@@ -496,5 +767,5 @@
 }
 .pb-rail-btn:hover:not(:disabled) { background: var(--pb-hover); color: var(--pb-fg); }
 .pb-rail-btn:disabled { opacity: 0.3; cursor: default; }
-.pb-rail-handle { cursor: grab; font-size: 11px; }
+.pb-rail-handle { cursor: grab; font-size: 16px; padding: 3px 5px; }
 .pb-rail-handle:active { cursor: grabbing; }

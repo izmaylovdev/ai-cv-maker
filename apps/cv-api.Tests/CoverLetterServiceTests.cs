@@ -23,30 +23,46 @@ public class CoverLetterServiceTests
             Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
             Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()));
 
+    // --- Block-tree node factories (ADR-0014; mirror profile-builder-ui/src/nodes.ts) ---
+
+    private static BlockNode Node(string type, Dictionary<string, string>? attrs = null, List<BlockNode>? children = null)
+        => new()
+        {
+            Type = type,
+            Id = Guid.NewGuid().ToString("n"),
+            Attrs = attrs ?? [],
+            Children = children ?? [],
+        };
+
+    private static BlockNode TextNode(string text)
+        => Node("text", attrs: new() { ["text"] = text });
+
+    private static BlockNode ParagraphNode(string text)
+        => Node("paragraph", children: [TextNode(text)]);
+
+    private static BlockNode ChipNode(string text)
+        => Node("chip", attrs: new() { ["text"] = text });
+
+    private static BlockNode TitleNode(string text)
+        => Node("title", attrs: new() { ["text"] = text });
+
     private static Profile MakeProfile(Guid userId, string title, string overview)
         => new()
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             Name = title,
-            // ADR-0013: profile content lives in the canonical ProfileDocument.
+            // ADR-0014 §13 (US-EDIT-19): body is a flat list of title/flow nodes.
             Document = new ProfileDocument
             {
                 Header = new ProfileHeader { FullName = "Jane Doe", Title = title },
-                Sections =
+                Body = Node("root", children:
                 [
-                    new DocumentSection { Template = "free-form", Heading = "Summary", Body = overview },
-                    new DocumentSection
-                    {
-                        Template = "list",
-                        Heading = "Skills",
-                        Items =
-                        [
-                            new SectionItem { Text = "Python" },
-                            new SectionItem { Text = "Go" },
-                        ],
-                    },
-                ],
+                    TitleNode("Summary"),
+                    ParagraphNode(overview),
+                    TitleNode("Skills"),
+                    Node("chips", children: [ChipNode("Python"), ChipNode("Go")]),
+                ]),
             },
         };
 

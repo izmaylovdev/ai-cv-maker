@@ -1,21 +1,17 @@
-import { FlowNode, ProfileDocument, SectionNode } from './model';
+import { ProfileDocument } from './model';
 import {
   chipsNode,
   entryNode,
   listNode,
   paragraphNode,
   rootNode,
-  sectionNode,
   timelineNode,
+  titleNode,
 } from './nodes';
 
 // Seed document for the standalone dev harness only (not shipped as behaviour).
-// Demonstrates the block-tree body (ADR-0014 §9.2): sections containing mixed
-// widgets — text, timeline, list, chips.
-function section(heading: string, ...children: FlowNode[]): SectionNode {
-  return { ...sectionNode(heading), children };
-}
-
+// Demonstrates the flat title-anchored body (ADR-0014 §13 / US-EDIT-19):
+// title nodes anchor groups of flow widgets (text, timeline, list, chips).
 export const SAMPLE_DOCUMENT: ProfileDocument = {
   header: {
     fullName: 'Ada Lovelace',
@@ -25,32 +21,32 @@ export const SAMPLE_DOCUMENT: ProfileDocument = {
     location: 'London, UK',
   },
   body: rootNode([
-    section(
-      'Summary',
-      paragraphNode('Product-minded engineer with 8 years building web apps end to end.'),
-    ),
-    section(
-      'Work Experience',
-      timelineNode([
-        entryNode(
-          'Senior Engineer · Acme Inc.',
-          'Jan 2022 – Present',
-          'Lead the web platform team; shipped the new editor.',
-        ),
-        entryNode(
-          'Engineer · Globex',
-          'Jun 2018 – Dec 2021',
-          'Built internal tooling and the public API.',
-        ),
-      ]),
-    ),
-    section(
-      'Education',
-      timelineNode([
-        entryNode('BSc Computer Science · MIT', '2014 – 2018', 'Graduated with honors.'),
-      ]),
-    ),
-    section('Skills', listNode(['TypeScript', 'React', 'Node.js'])),
-    section('Tools & Languages', chipsNode(['Docker', 'PostgreSQL', 'Python', 'GraphQL', 'AWS'])),
+    titleNode('Summary'),
+    paragraphNode('Product-minded engineer with 8 years building web apps end to end.'),
+
+    titleNode('Work Experience'),
+    timelineNode([
+      entryNode(
+        'Senior Engineer · Acme Inc.',
+        'Jan 2022 – Present',
+        'Lead the web platform team; shipped the new editor.',
+      ),
+      entryNode(
+        'Engineer · Globex',
+        'Jun 2018 – Dec 2021',
+        'Built internal tooling and the public API.',
+      ),
+    ]),
+
+    titleNode('Education'),
+    timelineNode([
+      entryNode('BSc Computer Science · MIT', '2014 – 2018', 'Graduated with honors.'),
+    ]),
+
+    titleNode('Skills'),
+    listNode(['TypeScript', 'React', 'Node.js']),
+
+    titleNode('Tools & Languages'),
+    chipsNode(['Docker', 'PostgreSQL', 'Python', 'GraphQL', 'AWS']),
   ]),
 };

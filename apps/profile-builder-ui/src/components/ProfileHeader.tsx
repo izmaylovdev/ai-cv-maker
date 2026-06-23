@@ -14,20 +14,29 @@ export function ProfileHeader({ header, onChange }: ProfileHeaderProps) {
 
   return (
     <header className="pb-header">
-      <input
-        className="pb-header__name"
-        aria-label="Full name"
-        placeholder="Your name"
-        value={header.fullName}
-        onChange={(e) => set({ fullName: e.target.value })}
-      />
-      <input
-        className="pb-header__title"
-        aria-label="Job title"
-        placeholder="Professional headline — e.g. Senior Software Engineer"
-        value={header.title}
-        onChange={(e) => set({ title: e.target.value })}
-      />
+      <div className="pb-header__identity">
+        <input
+          className="pb-header__name"
+          aria-label="Full name"
+          placeholder="Your name"
+          value={header.fullName}
+          onChange={(e) => set({ fullName: e.target.value })}
+        />
+        <input
+          className="pb-header__title"
+          aria-label="Job title"
+          placeholder="Professional headline — e.g. Senior Software Engineer"
+          value={header.title}
+          onChange={(e) => set({ title: e.target.value })}
+        />
+        <input
+          className="pb-header__contact pb-header__location"
+          aria-label="Location"
+          placeholder="Location"
+          value={header.location}
+          onChange={(e) => set({ location: e.target.value })}
+        />
+      </div>
       <div className="pb-header__contacts">
         <input
           className="pb-header__contact"
@@ -44,13 +53,6 @@ export function ProfileHeader({ header, onChange }: ProfileHeaderProps) {
           placeholder="Phone"
           value={header.phone}
           onChange={(e) => set({ phone: e.target.value })}
-        />
-        <input
-          className="pb-header__contact"
-          aria-label="Location"
-          placeholder="Location"
-          value={header.location}
-          onChange={(e) => set({ location: e.target.value })}
         />
       </div>
     </header>
