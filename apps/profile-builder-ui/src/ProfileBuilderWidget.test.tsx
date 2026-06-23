@@ -7,10 +7,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { waitFor } from '@testing-library/dom';
 import './main';  // registers <applysy-profile-builder>
-import { ProfileDocument, emptyHeader } from './model';
+import { ProfileDocument, TitleNode, FlowNode, emptyHeader } from './model';
 import { paragraphNode, rootNode, titleNode, timelineNode, entryNode, chipsNode } from './nodes';
 
-function makeDoc(overrides?: Partial<ProfileDocument['body']['children']>): ProfileDocument {
+function makeDoc(overrides?: (TitleNode | FlowNode)[]): ProfileDocument {
   return {
     header: { ...emptyHeader(), fullName: 'Jane Doe', title: 'Staff Engineer' },
     body: rootNode(
@@ -18,7 +18,7 @@ function makeDoc(overrides?: Partial<ProfileDocument['body']['children']>): Prof
         titleNode('Summary'),
         paragraphNode('Builds things that scale.'),
         titleNode('Skills'),
-        chipsNode([{ id: 'c1', text: 'TypeScript' }, { id: 'c2', text: 'Go' }]),
+        chipsNode(['TypeScript', 'Go']),
       ],
     ),
   };
