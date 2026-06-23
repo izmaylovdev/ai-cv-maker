@@ -26,12 +26,17 @@ git diff --name-only HEAD | grep -E "^apps/" | cut -d'/' -f2 | sort -u
 
 Also check if `infra/` changed — if so, run `terraform apply` (see below).
 
-Services: `cv-api`, `ui-angular`, `chat-ui`, `llm-service`, `admin-api`, `admin-ui`
+Services: `cv-api`, `ui-angular`, `chat-ui`, `profile-builder-ui`, `llm-service`, `admin-api`, `admin-ui`
 
 ## Build & push changed images
 
 Run only for services that changed. Images are built for `linux/amd64`.
 **All builds use the repo root as the build context** (some Dockerfiles copy from `proto/` or `libs/`).
+
+**Apple Silicon (M-series) warning — nginx-based services:** Docker may cache `nginx:alpine` for arm64 locally. Even with `--platform linux/amd64`, the cached layer can sneak in and cause `exec format error` on Cloud Run. Services affected: `ui-angular`, `chat-ui`, `profile-builder-ui`, `landing`. If a revision fails with `exec format error` in logs, rebuild with `--no-cache`:
+```bash
+docker build --platform linux/amd64 --no-cache ...
+```
 
 **Tag by commit SHA, deploy by that SHA** (ADR-0003). Deploys are pinned to an
 immutable tag so a revision maps to an exact commit and Terraform never reverts
@@ -127,6 +132,12 @@ terraform apply
 
 If terraform fails because a Cloud Run revision fails its startup probe, fix the image first, repush, then re-run `terraform apply`. Do not skip — infra state will drift otherwise.
 
+If a Cloud Run service is tainted (failed health check on first deploy) and the fixed image has been pushed, untaint before re-applying:
+```bash
+terraform untaint google_cloud_run_v2_service.<name>
+terraform apply
+```
+
 If terraform fails with "ssl_certificate resource is already being used", run:
 ```bash
 terraform untaint google_compute_managed_ssl_certificate.app
@@ -145,7 +156,7 @@ BASE="https://app.applysy.works"
 check() {
   local desc=$1 url=$2 expected=$3
   local actual
-  actual=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$url")
+  actual=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$url")
   if [ "$actual" = "$expected" ]; then
     echo "✓ $desc ($actual)"
   else

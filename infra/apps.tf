@@ -451,6 +451,54 @@ resource "google_cloud_run_v2_service_iam_member" "chat_ui_invoker" {
   member   = "allUsers"
 }
 
+# ── profile-builder-ui ─────────────────────────────────────────────────────────
+
+resource "google_cloud_run_v2_service" "profile_builder_ui" {
+  name                = "profile-builder-ui"
+  location            = var.region
+  deletion_protection = false
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
+  template {
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+
+    containers {
+      image = "${local.ar_repository}/profile-builder-ui:latest"
+
+      resources {
+        cpu_idle = true
+        limits = {
+          cpu    = "500m"
+          memory = "512Mi"
+        }
+      }
+
+      ports {
+        container_port = 80
+      }
+    }
+  }
+
+  depends_on = [google_project_service.run]
+
+  lifecycle {
+    # CI owns the running image (deployed by SHA tag); :latest above is
+    # bootstrap-only. Prevent terraform apply from reverting it (ADR-0003).
+    ignore_changes = [template[0].containers[0].image]
+  }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "profile_builder_ui_invoker" {
+  project  = var.gcp_project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.profile_builder_ui.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 # ── ui-angular ─────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "ui_angular" {
@@ -499,8 +547,12 @@ resource "google_cloud_run_v2_service" "ui_angular" {
         value = google_cloud_run_v2_service.chat_ui.uri
       }
       env {
+        name  = "PROFILE_BUILDER_UI_UPSTREAM"
+        value = google_cloud_run_v2_service.profile_builder_ui.uri
+      }
+      env {
         name  = "NGINX_ENVSUBST_TEMPLATE_VARS"
-        value = "CV_API_UPSTREAM CHAT_UI_UPSTREAM"
+        value = "CV_API_UPSTREAM CHAT_UI_UPSTREAM PROFILE_BUILDER_UI_UPSTREAM"
       }
 
       liveness_probe {
@@ -527,6 +579,7 @@ resource "google_cloud_run_v2_service" "ui_angular" {
   depends_on = [
     google_cloud_run_v2_service.cv_api,
     google_cloud_run_v2_service.chat_ui,
+    google_cloud_run_v2_service.profile_builder_ui,
   ]
 
   lifecycle {
