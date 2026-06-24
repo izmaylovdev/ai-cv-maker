@@ -1,11 +1,12 @@
 import ReactDOM from 'react-dom/client';
 import { ProfileBuilder } from './ProfileBuilder';
-import { ProfileDocument, emptyDocument } from './model';
+import { DocumentPatch, ProfileDocument, applyPatch, emptyDocument } from './model';
 
 // Self-contained web component wrapper (spec §7.3), mirroring apps/chat-ui's
 // <ai-chat-widget>. Host-agnostic boundary:
 //   • input:  `document` attribute (JSON string) or `.document` property (object)
 //   • output: `documentchange` CustomEvent, detail = the current ProfileDocument
+//   • method: `applyEdit(patchJson)` applies a chat edit (US-AI-9 §6.4)
 
 class ProfileBuilderWidget extends HTMLElement {
   private root?: ReturnType<typeof ReactDOM.createRoot>;
@@ -47,6 +48,28 @@ class ProfileBuilderWidget extends HTMLElement {
     } catch {
       console.warn('[profile-builder] Ignoring invalid `document` attribute JSON.');
     }
+  }
+
+  /**
+   * Apply an AI chat edit (US-AI-9 §6.4). Parses the patch JSON, applies +
+   * validates it against the current document via {@link applyPatch}, and on
+   * success seeds the editor (firing `documentchange`, so the host marks the
+   * profile dirty). Never persists — the host's Save flow does that. Atomic: an
+   * invalid patch changes nothing and returns `{ ok: false, errors }`.
+   */
+  applyEdit(patchJson: string): { ok: boolean; errors: string[] } {
+    let patch: DocumentPatch;
+    try {
+      patch = JSON.parse(patchJson) as DocumentPatch;
+    } catch {
+      return { ok: false, errors: ['Edit could not be parsed.'] };
+    }
+    const { document, result } = applyPatch(this._document, patch);
+    if (!result.valid) return { ok: false, errors: result.errors };
+    this._document = document;
+    this.renderWidget();
+    this.handleChange(document);
+    return { ok: true, errors: [] };
   }
 
   private handleChange = (doc: ProfileDocument) => {

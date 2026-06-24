@@ -127,3 +127,23 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 - Assistant replies render common Markdown — paragraphs, bullet/numbered lists, bold/italic, inline code, code blocks, and links.
 - Rendered Markdown is sanitized so assistant/user content cannot inject active markup (no raw HTML/script execution); links open safely.
 - Formatting renders correctly in both light and dark themes.
+
+---
+
+### US-AI-9 — Edit my CV through the in-editor chat
+
+**As a** user editing one of my CV profiles,
+**I want to** tell an AI chat assistant inside the profile editor to restructure or change the open profile in plain language (e.g. "turn my Skills list into chips", "add Python to my skills", "shorten my summary"),
+**so that** I can make structural and content edits conversationally without manually using the editor controls.
+
+**Supersedes** the editing scope of US-AI-4, which shipped as Q&A-only. The global `/chat` assistant (US-AI-4) stays Q&A; editing-by-chat lives only in the profile editor. Global-chat editing is deferred.
+
+**Acceptance criteria:**
+- The profile editor page hosts a chat window alongside the profile, scoped to the profile I currently have open.
+- I can instruct the assistant to edit the open profile in natural language: structural transforms (**convert a list to chips** and vice-versa), content edits (add / remove / update list, chip & timeline items, edit a paragraph), and header changes (e.g. job title).
+- A chat edit is **applied live to the open document but never saved automatically** — it appears in the editor without a reload and persists only when I save the profile, exactly like a manual edit. If I leave without saving, the edit is discarded.
+- Edits are **applied directly** — no separate confirm / reject step. The assistant briefly states in its reply what it changed.
+- If my message is a question, not an edit, the assistant answers it and changes nothing.
+- The assistant only edits in response to an edit request, and never invents factual data (organisations, dates, institutions) unless I explicitly ask.
+- If an edit cannot be applied (ambiguous target, request fails), the assistant says so in its reply and the document is left unchanged.
+- Edits respect the document schema (ADR-0014 block-tree nesting rules); an edit that would produce an invalid document is rejected rather than applied.

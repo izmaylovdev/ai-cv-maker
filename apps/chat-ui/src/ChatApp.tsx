@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageList } from './components/MessageList';
 import { MessageInput } from './components/MessageInput';
 import './ChatApp.css';
@@ -11,12 +11,33 @@ export interface Message {
   content: string;
 }
 
+// US-AI-9 §6.3 — an edit the assistant proposes against the open document.
+export interface ChatEdit {
+  patchJson: string;
+  description: string;
+}
+
 interface Props {
   authToken: string;
   apiBase: string;
+  /**
+   * The open profile document (in-editor chat only). When provided it is sent
+   * as context with every message, enabling edit mode. Omitted on the global
+   * read-only assistant.
+   */
+  document?: unknown;
+  /** Called when the assistant returns an edit to apply to {@link document}. */
+  onEdit?: (edit: ChatEdit) => void;
+  /** Exposes an imperative API to the host (e.g. to append a note to the thread). */
+  onReady?: (api: ChatApi) => void;
 }
 
-export function ChatApp({ authToken, apiBase }: Props) {
+export interface ChatApi {
+  /** Append an assistant-authored note to the thread (e.g. a rejected edit). */
+  addAssistantNote: (text: string) => void;
+}
+
+export function ChatApp({ authToken, apiBase, document, onEdit, onReady }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -24,6 +45,14 @@ export function ChatApp({ authToken, apiBase }: Props) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const addAssistantNote = useCallback((content: string) => {
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'assistant', content }]);
+  }, []);
+
+  useEffect(() => {
+    onReady?.({ addAssistantNote });
+  }, [onReady, addAssistantNote]);
 
   async function send(text: string) {
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text };
@@ -42,7 +71,9 @@ export function ChatApp({ authToken, apiBase }: Props) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ message: text, history }),
+        // `document` is sent only in edit mode (in-editor chat). Omitted → the
+        // backend handles the message with the global read-only assistant.
+        body: JSON.stringify(document ? { message: text, history, document } : { message: text, history }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -54,6 +85,14 @@ export function ChatApp({ authToken, apiBase }: Props) {
         content: data.reply,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Edit mode: hand any proposed edit to the host to apply to the document.
+      if (data.proposal && onEdit) {
+        onEdit({
+          patchJson: data.proposal.patchJson ?? data.proposal.patch_json ?? '',
+          description: data.proposal.description ?? '',
+        });
+      }
     } catch {
       setMessages((prev) => [
         ...prev,

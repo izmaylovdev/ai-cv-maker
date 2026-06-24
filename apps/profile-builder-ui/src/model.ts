@@ -225,3 +225,160 @@ export function validateDocument(
 
   return { valid: errors.length === 0, errors };
 }
+
+// ---------------------------------------------------------------------------
+// Patch / apply (US-AI-9, spec §6.4) — structured AI-chat edits.
+// ---------------------------------------------------------------------------
+
+/**
+ * A single edit operation, addressed by stable `BlockNode.id` (or `parentId`).
+ * Closed set — see spec §6.4.
+ */
+export type PatchOp =
+  | { op: 'convertNode'; id: string; to: 'chips' | 'list' }
+  | { op: 'setAttrs'; id: string; attrs: Record<string, string> }
+  | { op: 'addChild'; parentId: string; index?: number; node: BlockNode }
+  | { op: 'removeNode'; id: string }
+  | { op: 'updateHeader'; fields: Partial<ProfileHeader> };
+
+export interface DocumentPatch {
+  ops: PatchOp[];
+}
+
+class PatchError extends Error {}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Assign a fresh id to any node (recursively) that is missing one. */
+function ensureIds(node: BlockNode): BlockNode {
+  const next: BlockNode = { ...node, id: node.id || newId() };
+  if (node.children) next.children = node.children.map(ensureIds);
+  return next;
+}
+
+interface Located {
+  node: BlockNode;
+  parent: BlockNode | null;
+  index: number;
+}
+
+/** Depth-first lookup of a node by id, with its parent and child index. */
+function locate(root: BlockNode, id: string): Located | null {
+  if (root.id === id) return { node: root, parent: null, index: -1 };
+  const stack: { node: BlockNode }[] = [{ node: root }];
+  while (stack.length) {
+    const { node } = stack.pop()!;
+    const children = node.children ?? [];
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].id === id) return { node: children[i], parent: node, index: i };
+      stack.push({ node: children[i] });
+    }
+  }
+  return null;
+}
+
+/** Concatenated text of the leading paragraph inside a listItem (or ''). */
+function leadingText(item: BlockNode): string {
+  const paragraph = (item.children ?? []).find((c) => c.type === 'paragraph');
+  if (!paragraph) return '';
+  return (paragraph.children ?? [])
+    .filter((c) => c.type === 'text')
+    .map((c) => c.attrs?.text ?? '')
+    .join('');
+}
+
+function listToChips(list: BlockNode): BlockNode {
+  return {
+    type: 'chips',
+    id: newId(),
+    children: (list.children ?? []).map((item) => ({
+      type: 'chip',
+      id: newId(),
+      attrs: { text: leadingText(item) },
+    })),
+  };
+}
+
+function chipsToList(chips: BlockNode): BlockNode {
+  return {
+    type: 'list',
+    id: newId(),
+    children: (chips.children ?? []).map((chip) => ({
+      type: 'listItem',
+      id: newId(),
+      children: [
+        {
+          type: 'paragraph',
+          id: newId(),
+          children: [{ type: 'text', id: newId(), attrs: { text: chip.attrs?.text ?? '' } }],
+        },
+      ],
+    })),
+  };
+}
+
+/** Apply one op in place to `doc`. Throws {@link PatchError} on a bad target/op. */
+function applyOp(doc: ProfileDocument, op: PatchOp): void {
+  switch (op.op) {
+    case 'updateHeader': {
+      doc.header = { ...doc.header, ...op.fields };
+      return;
+    }
+    case 'setAttrs': {
+      const found = locate(doc.body, op.id);
+      if (!found) throw new PatchError(`node "${op.id}" not found`);
+      found.node.attrs = { ...(found.node.attrs ?? {}), ...op.attrs };
+      return;
+    }
+    case 'removeNode': {
+      const found = locate(doc.body, op.id);
+      if (!found || !found.parent) throw new PatchError(`node "${op.id}" not found or not removable`);
+      found.parent.children!.splice(found.index, 1);
+      return;
+    }
+    case 'addChild': {
+      const parent = locate(doc.body, op.parentId);
+      if (!parent) throw new PatchError(`parent "${op.parentId}" not found`);
+      const children = parent.node.children ?? (parent.node.children = []);
+      const index = op.index ?? children.length;
+      children.splice(index, 0, ensureIds(op.node));
+      return;
+    }
+    case 'convertNode': {
+      const found = locate(doc.body, op.id);
+      if (!found || !found.parent) throw new PatchError(`node "${op.id}" not found or not convertible`);
+      let replacement: BlockNode;
+      if (op.to === 'chips' && found.node.type === 'list') replacement = listToChips(found.node);
+      else if (op.to === 'list' && found.node.type === 'chips') replacement = chipsToList(found.node);
+      else throw new PatchError(`cannot convert "${found.node.type}" to "${op.to}"`);
+      found.parent.children![found.index] = replacement;
+      return;
+    }
+    default:
+      throw new PatchError(`unknown op "${(op as { op: string }).op}"`);
+  }
+}
+
+/**
+ * Apply an ordered patch to a clone of `doc`, then validate (US-AI-9 §6.4 /
+ * F-CHAT-6.9). The patch is **atomic**: if any op targets a missing node, is
+ * unknown, or the result fails {@link validateDocument}, the ORIGINAL document
+ * is returned unchanged with `result.valid === false`.
+ */
+export function applyPatch(
+  doc: ProfileDocument,
+  patch: DocumentPatch,
+  options: ValidationOptions = {},
+): { document: ProfileDocument; result: ValidationResult } {
+  const working = clone(doc);
+  try {
+    for (const op of patch?.ops ?? []) applyOp(working, op);
+  } catch (e) {
+    return { document: doc, result: { valid: false, errors: [(e as Error).message] } };
+  }
+  const result = validateDocument(working, options);
+  if (!result.valid) return { document: doc, result };
+  return { document: working, result };
+}

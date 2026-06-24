@@ -7,13 +7,14 @@ import { ProfileComponent } from './profile.component';
 import { ProfileService } from './profile.service';
 import { AuthService } from '../../auth/auth.service';
 import { BuilderLoaderService } from '../../core/builder-loader.service';
+import { ChatLoaderService } from '../../core/chat-loader.service';
 import { NotifyService } from '../../shared/services/notify.service';
 import { ProfileDocument } from '../../shared/models/profile.model';
 
 function doc(fullName: string): ProfileDocument {
   return {
     header: { fullName, title: 'Engineer', email: '', phone: '', location: '' },
-    sections: [],
+    body: { type: 'root', id: 'root-1', children: [] },
   };
 }
 
@@ -45,6 +46,7 @@ describe('ProfileComponent (builder-based)', () => {
         { provide: ProfileService, useValue: profileService },
         { provide: AuthService, useValue: { logout: vi.fn() } },
         { provide: BuilderLoaderService, useValue: { load: () => Promise.resolve() } },
+        { provide: ChatLoaderService, useValue: { load: () => Promise.resolve() } },
         { provide: NotifyService, useValue: notify },
         { provide: Router, useValue: router },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => '1' } } } },

@@ -115,6 +115,7 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 
 **Key features**
 - Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Optimize / Import-from-CV / Open-PDF. The old reactive-form split-panel editor and its structured `Profile` model are removed.
+- In-editor AI editing (US-AI-9): `ProfileComponent` also embeds `<ai-chat-widget>` (via `ChatLoaderService`), keeps its `.document` synced to the live (possibly unsaved) document, and on the widget's `edit` event calls `builder.applyEdit(patchJson)`. Rejected/invalid edits are surfaced back into the chat thread via the widget's `addAssistantNote(...)`; nothing is persisted until the user Saves.
 - Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`); the profile page posts the current `{ name, document }` to `/api/cvs/draft-pdf`
 - Theme service (dark/light)
 
@@ -165,9 +166,13 @@ The widget has no auth of its own. `ChatPageComponent` passes the current JWT as
 
 | Method | Endpoint | Body | Purpose |
 |---|---|---|---|
-| `POST` | `/api/chat` | `{ message, history[] }` | Send a message; receive `{ reply }` |
+| `POST` | `/api/chat` | `{ message, history[], document? }` | Send a message; receive `{ reply, proposal? }` |
 
 `history` is the in-memory conversation array (filtered to `user`/`assistant` roles), sent with every request so `cv-api` can forward full context to the LLM.
+
+The same widget serves two modes, switched by whether `document` is present (US-AI-9):
+- **Global assistant** (the `/chat` page) omits `document` → `cv-api` answers from profile *summaries* (read-only, `UserChat`).
+- **In-editor editor** (embedded in `ProfileComponent`, see below) sends the open profile `document` as context → `cv-api` routes to the per-profile `Chat` agent, which may return a `proposal` (`{ type, description, patchJson }`). The widget raises an `edit` CustomEvent; the host applies the patch live to `<applysy-profile-builder>` (unsaved) and never persists — the normal Save flow does. The patch is an ordered op list (`convertNode`/`setAttrs`/`addChild`/`removeNode`/`updateHeader`) addressed by `BlockNode.id`, applied and schema-validated by `applyPatch` in `profile-builder-ui/src/model.ts`.
 
 **Components**
 
@@ -249,7 +254,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content (`{ name, document }`) |
 | `DELETE /api/job-profiles/:id` | `JobProfileController` | Delete profile |
 | `POST /api/job-profiles/:id/optimize` | `JobProfileController` | AI-rewrite profile via LLM → `{ document }` |
-| `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat (reply + optional document patch proposal) |
+| `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat against the **saved** document (reply + optional patch proposal). Not used by the in-editor chat, which sends the live document to `/api/chat` (US-AI-9); retained for callers that want to edit by stored profile id |
 | `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) → `{ name, document }` |
 | `GET /api/job-profiles/:id/cvs` | `CvController` | List generated CVs |
 | `POST /api/job-profiles/:id/cvs` | `CvController` | Generate new tailored CV via LLM |
@@ -258,7 +263,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `DELETE /api/job-profiles/:id/cvs/:cvId` | `CvController` | Delete generated CV |
 | `POST /api/cvs/generate-auto` | `CvController` | LLM selects best profile then generates CV |
 | `POST /api/cvs/draft-pdf` | `CvController` | Render an unsaved profile draft as PDF (live preview) |
-| `POST /api/chat` | `ChatController` | Account-wide AI chat (used by `<ai-chat-widget>`); can update `GlobalPreferences` when the agent signals one |
+| `POST /api/chat` | `ChatController` | AI chat for `<ai-chat-widget>`. Without `document`: account-wide assistant over profile summaries (can update `GlobalPreferences`). With `document` (in-editor edit mode, US-AI-9): per-profile `Chat` agent returning `{ reply, proposal? }`; the document is taken from the request (live/unsaved) and nothing is persisted |
 | `POST /api/cover-letter` | `CoverLetterController` | Generate cover letter from job description (auto-selects profile) |
 | `POST /api/ai/enhance-field` | `AiController` | AI-enhance a single text field |
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |

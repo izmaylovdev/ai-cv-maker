@@ -86,21 +86,41 @@
     </button>
   </div>
 
-  <div class="min-h-[40vh]">
-    @if (widgetReady()) {
-      <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
-                               style="display:block"></applysy-profile-builder>
-    } @else if (widgetError()) {
-      <div class="flex flex-col items-center justify-center py-24 gap-3 text-center px-4">
-        <p class="text-sm text-red-600 dark:text-red-400">
-          Could not load the profile builder. Make sure the profile-builder-ui dev server is running on port 4203.
-        </p>
-        <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:builder</code>
-      </div>
-    } @else {
-      <div class="flex items-center justify-center py-24">
-        <span class="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
-      </div>
+  <div class="flex flex-col lg:flex-row gap-4 min-h-[40vh]">
+    <div class="flex-1 min-w-0">
+      @if (widgetReady()) {
+        <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
+                                 style="display:block"></applysy-profile-builder>
+      } @else if (widgetError()) {
+        <div class="flex flex-col items-center justify-center py-24 gap-3 text-center px-4">
+          <p class="text-sm text-red-600 dark:text-red-400">
+            Could not load the profile builder. Make sure the profile-builder-ui dev server is running on port 4203.
+          </p>
+          <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:builder</code>
+        </div>
+      } @else {
+        <div class="flex items-center justify-center py-24">
+          <span class="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
+        </div>
+      }
+    </div>
+
+    <!-- In-editor AI chat (US-AI-9): ask it to edit the open profile. -->
+    @if (chatReady()) {
+      <aside
+        class="lg:w-96 shrink-0 flex flex-col rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden h-[60vh] lg:h-[calc(100vh-9rem)] lg:sticky lg:top-20">
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0">
+          <h2 class="text-sm font-bold text-gray-900 dark:text-white">AI Editor</h2>
+          <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+            Ask me to edit this profile — e.g. "turn my skills list into chips".
+          </p>
+        </div>
+        <div class="flex-1 min-h-0">
+          <ai-chat-widget #chat (edit)="onChatEdit($event)"
+                          [attr.auth-token]="authToken" [attr.api-base]="apiBase"
+                          style="display:block;height:100%"></ai-chat-widget>
+        </div>
+      </aside>
     }
   </div>
 }

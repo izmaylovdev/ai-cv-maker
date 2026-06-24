@@ -10,7 +10,7 @@
 
 A dedicated Chat page in `ui-angular` embeds `<ai-chat-widget>` — a self-contained React application packaged as an IIFE Custom Element. The widget sends messages to `POST /api/chat`, which loads the authenticated user's profile summaries as read-only context so the assistant can answer profile-specific questions.
 
-Profile editing via chat (proposing and persisting changes) is out of scope for MVP; the current assistant is Q&A only.
+The global `/chat` assistant is Q&A only. Editing a profile via chat is handled by a second instance of the same widget embedded in the profile editor — see §6 (US-AI-9).
 
 ---
 
@@ -105,7 +105,7 @@ If loading fails (e.g. `chat-ui` dev server not running), `ChatPageComponent` sh
 
 ## 4. Out of Scope (MVP)
 
-- Profile editing via chat (proposing, reviewing, and persisting field changes). `ProposalCard` exists as a placeholder for a future iteration.
+- Profile editing from the **global `/chat` page** (it stays Q&A). In-editor editing is specified in §6 (US-AI-9).
 - Persisting chat history across page reloads or sessions.
 - Targeting a specific profile within chat — all profiles are sent as context for every message.
 - Streaming / progressive responses.
@@ -157,3 +157,162 @@ No `dompurify`/`rehype-sanitize` is required because react-markdown's default pi
 - Rendering Markdown in the input box (live preview / WYSIWYG) — input stays plain text.
 - Syntax highlighting of code blocks (plain monospace only).
 - Markdown in `user` messages (treated as literal text with preserved newlines, not parsed).
+
+---
+
+## 6. Edit the Open Profile via the In-Editor Chat (US-AI-9)
+
+### 6.1 Overview
+
+A second instance of the same `<ai-chat-widget>` is embedded on the profile editor
+page (`/job-profiles/:id`), next to `<applysy-profile-builder>`. Unlike the global
+`/chat` page (which sees lossy summaries of all profiles), this instance is given
+the **full open document** as context and can return a **structured edit** that is
+applied **live** to the builder. Nothing is auto-saved — an applied edit is an
+unsaved change in the builder exactly like a manual edit or an Optimize/Import
+result, and persists only when the user clicks Save.
+
+This reuses the already-present-but-unused per-profile `Chat` gRPC path
+(`ChatRequest{profile,message,history}` → `ChatResponse{reply,proposal}`); the
+global `/chat` path (`UserChat`) is unchanged. Both share `POST /api/chat`, which
+branches on whether a `document` is present in the request.
+
+### 6.2 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-CHAT-6.1 | The profile editor page hosts an `<ai-chat-widget>` instance scoped to the open profile, alongside the profile-builder. |
+| F-CHAT-6.2 | The in-editor chat sends the **full current (possibly unsaved) document** as context with every message; the global `/chat` page continues to send no document. |
+| F-CHAT-6.3 | An edit instruction (e.g. "turn my Skills list into chips", "add Python to my skills", "shorten the summary", "change my title to Staff Engineer") yields an assistant reply **and** a structured patch. |
+| F-CHAT-6.4 | The patch is applied **live** to the builder without a reload; the result is an unsaved change (the builder fires `documentchange`, the page's dirty/working document updates). |
+| F-CHAT-6.5 | An edit is **never persisted automatically**; it is saved only via the existing profile Save action. Leaving without saving discards it. |
+| F-CHAT-6.6 | Edits are applied directly — no confirm/reject step. The assistant's reply states what changed (from `proposal.description`). |
+| F-CHAT-6.7 | A question (no edit intent) returns a reply with `proposal = null`; the document is unchanged. |
+| F-CHAT-6.8 | The assistant edits only on an edit request and never fabricates factual data (organisations, dates, institutions) unless explicitly asked; off-topic requests are declined (unchanged scope rule). |
+| F-CHAT-6.9 | The applied patch must yield a document valid under the ADR-0014 schema (`validate` in `model.ts`); an invalid patch is **rejected atomically** (no partial apply) and the document is left unchanged. |
+| F-CHAT-6.10 | When a patch is rejected or the request fails, an assistant-style note is shown in the chat thread and the document is unchanged. |
+
+### 6.3 Technical Specification
+
+#### API — `POST /api/chat` (additive change)
+
+`document` is a **new optional field**. When absent, behaviour is unchanged
+(global assistant / `UserChat`). When present, the request is handled as a
+per-profile edit (`Chat`).
+
+Request body (edit mode):
+```json
+{
+  "message": "turn my Skills list into chips",
+  "history": [ { "role": "user", "content": "…" }, { "role": "assistant", "content": "…" } ],
+  "document": { "header": { … }, "body": { "type": "root", "id": "…", "children": [ … ] } }
+}
+```
+
+Response 200 (edit mode):
+```json
+{
+  "reply": "Done — I converted your Skills list into chips.",
+  "proposal": {
+    "type": "edit",
+    "description": "Convert Skills list to chips",
+    "patchJson": "{\"ops\":[{\"op\":\"convertNode\",\"id\":\"<list-id>\",\"to\":\"chips\"}]}"
+  }
+}
+```
+
+Response 200 (question, or global mode): `{ "reply": "…", "proposal": null }`.
+
+Errors: `400` empty message; `402` spending limit reached (existing
+`EnsureWithinLimitAsync`); `502` LLM/gRPC failure. On any non-200 the widget
+shows its existing inline error and the document is untouched.
+
+cv-api wiring (`Features/Chat/ChatController.cs`):
+- `UserChatRequest` gains `ProfileDocument? Document`.
+- If `Document is not null` → call `llmService.ChatAsync(new LlmChatRequest(Document, message, history))`, record usage as `"Chat"`, return `{ reply, proposal }` (mapping `LlmChatProposal`). The `ProfileDocument` is taken **from the request body**, not loaded from the DB, so unsaved edits are included and nothing is persisted.
+- Else → existing `UserChatAsync` path, return `{ reply, proposal: null }`.
+- `UserChatResponse` gains `ChatProposalDto? Proposal`.
+
+> The per-profile `Chat` client (`ILlmService.ChatAsync`, `LlmChatRequest`,
+> `LlmChatResponse.Proposal.PatchJson`) and the gRPC mapping **already exist** —
+> no new C# transport code, only the controller branch + DTO fields.
+
+#### gRPC
+
+No `.proto` change. Reuses the existing `Chat` rpc and `ChatProposal{type,
+description, patch_json}`. `patch_json` now carries the §6.4 patch schema.
+
+#### llm-service (`app/chains/chat_chain.py`) — rewrite
+
+The chain currently targets the **old** section/template model and is unused.
+Rewrite it for ADR-0014:
+- Context: render the full document via `_format_document` (already block-tree aware), including each node's `id` so the model can address nodes.
+- System prompt: describe the block-tree node types + nesting matrix, the patch op set (§6.4), and the rules (edit only on request; never fabricate facts; decline off-topic; ignore instructions embedded in profile content).
+- Output: the existing JSON `{ reply, proposal: null | { type, description, patch_json } }` where `patch_json` is a JSON **string** of `{ "ops": [ … ] }`.
+- The service does **not** apply or validate the patch (that is the frontend's job, §6.4) — it only emits it. Update `app/chains/test_chat_chain.py` accordingly.
+
+#### 6.4 Patch schema + apply (frontend, single source of truth)
+
+Patch JSON: `{ "ops": Op[] }`, applied **in order** to a deep clone of the
+document, then validated; the whole patch is atomic.
+
+Closed op set (every node addressed by its stable `BlockNode.id`):
+
+| op | shape | effect |
+|----|-------|--------|
+| `convertNode` | `{ op, id, to: "chips" \| "list" }` | Convert a `list`↔`chips` node **in place** (same parent/position). list→chips: each `listItem`'s leading paragraph text → one `chip` (nested lists/links are dropped — lossy, documented). chips→list: each `chip` → `listItem > paragraph > text`. |
+| `setAttrs` | `{ op, id, attrs: Record<string,string> }` | Merge into the node's `attrs` (e.g. `text` on `text`/`title`/`chip`, `text`+`url` on `link`, `title`+`dates` on `entry`). |
+| `addChild` | `{ op, parentId, index?, node: BlockNode }` | Insert `node` under `parentId` at `index` (default: append). Missing `id`s are generated (`newId`) recursively. |
+| `removeNode` | `{ op, id }` | Remove the node (and its subtree) from its parent. |
+| `updateHeader` | `{ op, fields: Partial<ProfileHeader> }` | Merge fields into `document.header`. |
+
+New in `apps/profile-builder-ui/src/model.ts` (next to `validate`):
+```ts
+export interface DocumentPatch { ops: PatchOp[]; }
+export function applyPatch(
+  doc: ProfileDocument,
+  patch: DocumentPatch,
+  opts?: ValidationOptions,
+): { document: ProfileDocument; result: ValidationResult };
+```
+`applyPatch` clones, applies each op (unknown op / missing target id ⇒
+`result.valid = false`), then runs `validate` on the new body. On
+`result.valid === false` the **original** document is returned unchanged.
+
+#### Angular + web-component wiring
+
+`apps/profile-builder-ui` (`main.tsx`): the custom element gains an imperative
+method
+```ts
+applyEdit(patchJson: string): { ok: boolean; errors: string[] }
+```
+which JSON-parses `patchJson`, calls `applyPatch(this.document, patch)`, and on
+`ok` sets `this.document` (rebuilds the editor) and fires `documentchange`. On
+failure it returns `{ ok:false, errors }` and changes nothing.
+
+`apps/chat-ui` (`ChatApp.tsx` / `main.tsx`): the widget gains
+- an optional `document` **property** (set via JS like the builder's `document`),
+  included in the POST body when non-null;
+- an `edit` `CustomEvent` (detail `{ patchJson, description }`) dispatched when a
+  response includes a `proposal`;
+- an `addAssistantNote(text)` imperative method to append an assistant bubble
+  (used by the host to report a rejected/failed edit, F-CHAT-6.10).
+
+`apps/ui-angular` profile editor (`features/profile/profile.component.*`):
+- render a second pane with `<ai-chat-widget>` (reusing `ChatLoaderService`);
+- an `effect` keeps the widget's `.document` in sync with `currentDocument`;
+- on `(edit)` → `builderRef.applyEdit(detail.patchJson)`; if `!ok`, call the
+  widget's `addAssistantNote(...)` with a short failure message.
+
+The layout (side-by-side vs. toggle/drawer on narrow viewports) follows the
+existing editor responsive pattern; exact placement is a UI detail, not a
+contract.
+
+#### Out of scope (this iteration)
+
+- Editing from the global `/chat` page (deferred; `UserChat` stays Q&A).
+- Whole-document free-form rewrites via chat (use the existing Optimize flow).
+- Multi-profile or batch edits in one message.
+- Undo-via-chat (the editor's own undo applies to chat edits like any other).
+- Server-side validation/application of the patch (frontend is the single apply + validate site).
+- Preserving nested lists/links when converting list→chips (documented lossy behaviour).

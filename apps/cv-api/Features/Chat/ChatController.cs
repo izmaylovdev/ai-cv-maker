@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using CvApi.Domain.Entities;
 using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
@@ -23,6 +24,14 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
             return BadRequest("Message is required.");
 
         await usageService.EnsureWithinLimitAsync(UserId);
+
+        // Edit mode (US-AI-9): the in-editor chat sends the open (possibly
+        // unsaved) document. Route it to the per-profile Chat agent, which can
+        // return a structured edit. Nothing is persisted here — the document is
+        // taken from the request and the frontend applies the patch to the live
+        // editor; the user saves via the normal profile-save flow.
+        if (request.Document is not null)
+            return await EditAsync(request);
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
 
@@ -68,7 +77,32 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
 
         return Ok(new UserChatResponse(result.Reply));
     }
+
+    private async Task<ActionResult<UserChatResponse>> EditAsync(UserChatRequest request)
+    {
+        var history = (request.History ?? [])
+            .Select(h => new LlmChatMessage(h.Role, h.Content))
+            .ToList();
+
+        LlmChatResponse result;
+        try
+        {
+            result = await llmService.ChatAsync(new LlmChatRequest(request.Document!, request.Message, history));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(502, $"Chat failed: {ex.Message}");
+        }
+
+        await usageService.RecordAsync(UserId, "Chat", result.Usage);
+
+        var proposal = result.Proposal is null
+            ? null
+            : new ChatProposalDto(result.Proposal.Type, result.Proposal.Description, result.Proposal.PatchJson);
+
+        return Ok(new UserChatResponse(result.Reply, proposal));
+    }
 }
 
-public record UserChatRequest(string Message, List<ChatMessageDto>? History = null);
-public record UserChatResponse(string Reply);
+public record UserChatRequest(string Message, List<ChatMessageDto>? History = null, ProfileDocument? Document = null);
+public record UserChatResponse(string Reply, ChatProposalDto? Proposal = null);

@@ -37,6 +37,44 @@ export async function registerFakeProfileBuilder(page: Page) {
         return this._document;
       }
 
+      // US-AI-9: apply a chat edit (ops patch JSON). The real builder applies +
+      // validates via model.ts; this stub honours `updateHeader` (so the change
+      // is observable) and rejects empty / unknown-op / missing-target patches
+      // so the host's failure path (F-CHAT-6.10) can be exercised.
+      applyEdit(patchJson: string): { ok: boolean; errors: string[] } {
+        let patch: { ops?: Array<Record<string, unknown>> };
+        try {
+          patch = JSON.parse(patchJson);
+        } catch {
+          return { ok: false, errors: ['invalid json'] };
+        }
+        const ops = patch.ops ?? [];
+        const known = ['updateHeader', 'convertNode', 'setAttrs', 'addChild', 'removeNode'];
+        const bad =
+          ops.length === 0 ||
+          ops.some((o) => !known.includes(o.op as string)) ||
+          ops.some((o) => o.id === 'MISSING' || o.parentId === 'MISSING');
+        if (bad) return { ok: false, errors: ['rejected'] };
+
+        const headerOp = ops.find((o) => o.op === 'updateHeader');
+        if (headerOp) {
+          const doc = this._document as { header?: Record<string, unknown> };
+          this._document = {
+            ...(this._document as object),
+            header: { ...(doc.header ?? {}), ...((headerOp.fields as object) ?? {}) },
+          };
+          this.renderDoc();
+        }
+        this.dispatchEvent(
+          new CustomEvent('documentchange', {
+            detail: this._document,
+            bubbles: true,
+            composed: true,
+          }),
+        );
+        return { ok: true, errors: [] };
+      }
+
       // Test hook: merge a header patch and fire documentchange (simulated edit).
       __edit(patch: Record<string, unknown>) {
         const doc = this._document as { header?: Record<string, unknown> };
