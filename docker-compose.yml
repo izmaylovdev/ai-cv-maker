@@ -155,12 +155,12 @@ services:
       context: .
       dockerfile: apps/admin-ui/Dockerfile
       args:
-        GRAFANA_URL: http://localhost:3000
+        GRAFANA_URL: http://localhost:3003
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID}
     restart: unless-stopped
     environment:
       ADMIN_API_URL: http://admin-api:3000
-      GRAFANA_URL: http://localhost:3000
+      GRAFANA_URL: http://localhost:3003
     ports:
       - "3002:3000"
     depends_on:
@@ -197,7 +197,8 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "3000:3000"
+      # Host 3000 is reserved for the local admin-ui dev server; Grafana on 3003.
+      - "3003:3000"
     depends_on:
       prometheus:
         condition: service_started

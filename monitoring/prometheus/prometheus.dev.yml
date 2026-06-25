@@ -1,0 +1,20 @@
+# Dev-mode Prometheus config (used by scripts/dev.sh --with-obs via
+# docker-compose.obs-dev.yml). Unlike prometheus.yml — which scrapes the
+# *containerized* services by their compose hostnames — here cv-api and
+# llm-service run on the host, so we scrape them through host.docker.internal
+# at their host dev ports: cv-api 5050 (Kestrel /metrics), llm-service 9090
+# (prometheus_client default METRICS_PORT, see apps/llm-service/app/main.py).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: cv-api
+    static_configs:
+      - targets: ["host.docker.internal:5050"]
+    metrics_path: /metrics
+
+  - job_name: llm-service
+    static_configs:
+      - targets: ["host.docker.internal:9090"]
+    metrics_path: /metrics

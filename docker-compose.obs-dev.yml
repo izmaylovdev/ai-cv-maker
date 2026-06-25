@@ -1,0 +1,31 @@
+# Dev observability overlay — opt-in via scripts/dev.sh --with-obs (make dev-obs
+# / dev-all). Brings up Prometheus + Grafana wired to the HOST-run dev servers
+# instead of containers:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.obs-dev.yml up -d prometheus grafana
+#
+# Differences from the base definitions:
+#   - depends_on cleared: cv-api/llm-service run on the host in dev, not as
+#     containers, so Prometheus/Grafana must not try to start container copies.
+#   - Prometheus uses prometheus.dev.yml (scrapes host.docker.internal).
+#   - Prometheus host port moved to 9091 — host 9090 is taken by the llm-service
+#     dev metrics endpoint (apps/llm-service/app/main.py METRICS_PORT default).
+#
+# Grafana still reaches Prometheus in-network at prometheus:9090 (its datasource
+# url is unchanged), so only the *published* host port differs.
+# !reset / !override are Compose merge tags: without them depends_on and ports
+# would *merge* with the base (keeping cv-api/llm-service deps and the 9090
+# publish), which is exactly what we must avoid in dev.
+services:
+  prometheus:
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports: !override
+      - "9091:9090"
+
+  grafana:
+    depends_on: !reset {}
