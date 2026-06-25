@@ -318,6 +318,14 @@
 }
 .pb-chip-add:hover { background: var(--pb-hover); color: var(--pb-fg); }
 
+/* Chips nested inside a timeline entry sit alongside denser content, so render
+   them a touch smaller than standalone chip-list sections. */
+[data-pb='entry'] .pb-chips { gap: 6px; }
+[data-pb='entry'] .pb-chip { padding: 2px 3px 2px 8px; }
+[data-pb='entry'] .pb-chip__text { font-size: 12px; }
+[data-pb='entry'] .pb-chip__remove { width: 16px; height: 16px; font-size: 9px; }
+[data-pb='entry'] .pb-chip-add { font-size: 12px; padding: 3px 6px; }
+
 /* Item controls — left gutter, on hover. */
 .pb-item__tools {
   position: absolute;
@@ -679,7 +687,7 @@
 .pb-link__url-input:focus { outline: none; border-color: var(--pb-accent); }
 .pb-link__done { opacity: 1; color: var(--pb-accent); }
 
-.pb-content .pb-paragraph { margin: 4px 0; }
+.pb-content .pb-paragraph { margin: 2px 0 6px; }
 
 /* Native Lexical lists render <li> directly — show standard bullets. */
 .pb-content .pb-list { list-style: disc; margin: 6px 0; padding-left: 1.4em; }
