@@ -39,20 +39,10 @@ class LlmServiceStub(object):
                 request_serializer=llm__service__pb2.GenerateRequest.SerializeToString,
                 response_deserializer=llm__service__pb2.GenerateResponse.FromString,
                 _registered_method=True)
-        self.Optimize = channel.unary_unary(
-                '/llm.LlmService/Optimize',
-                request_serializer=llm__service__pb2.OptimizeRequest.SerializeToString,
-                response_deserializer=llm__service__pb2.OptimizeResponse.FromString,
-                _registered_method=True)
         self.ExtractProfile = channel.unary_unary(
                 '/llm.LlmService/ExtractProfile',
                 request_serializer=llm__service__pb2.ExtractProfileRequest.SerializeToString,
                 response_deserializer=llm__service__pb2.ExtractProfileResponse.FromString,
-                _registered_method=True)
-        self.EnhanceField = channel.unary_unary(
-                '/llm.LlmService/EnhanceField',
-                request_serializer=llm__service__pb2.EnhanceFieldRequest.SerializeToString,
-                response_deserializer=llm__service__pb2.EnhanceFieldResponse.FromString,
                 _registered_method=True)
         self.Chat = channel.unary_unary(
                 '/llm.LlmService/Chat',
@@ -90,19 +80,7 @@ class LlmServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def Optimize(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def ExtractProfile(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def EnhanceField(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -146,20 +124,10 @@ def add_LlmServiceServicer_to_server(servicer, server):
                     request_deserializer=llm__service__pb2.GenerateRequest.FromString,
                     response_serializer=llm__service__pb2.GenerateResponse.SerializeToString,
             ),
-            'Optimize': grpc.unary_unary_rpc_method_handler(
-                    servicer.Optimize,
-                    request_deserializer=llm__service__pb2.OptimizeRequest.FromString,
-                    response_serializer=llm__service__pb2.OptimizeResponse.SerializeToString,
-            ),
             'ExtractProfile': grpc.unary_unary_rpc_method_handler(
                     servicer.ExtractProfile,
                     request_deserializer=llm__service__pb2.ExtractProfileRequest.FromString,
                     response_serializer=llm__service__pb2.ExtractProfileResponse.SerializeToString,
-            ),
-            'EnhanceField': grpc.unary_unary_rpc_method_handler(
-                    servicer.EnhanceField,
-                    request_deserializer=llm__service__pb2.EnhanceFieldRequest.FromString,
-                    response_serializer=llm__service__pb2.EnhanceFieldResponse.SerializeToString,
             ),
             'Chat': grpc.unary_unary_rpc_method_handler(
                     servicer.Chat,
@@ -225,33 +193,6 @@ class LlmService(object):
             _registered_method=True)
 
     @staticmethod
-    def Optimize(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/llm.LlmService/Optimize',
-            llm__service__pb2.OptimizeRequest.SerializeToString,
-            llm__service__pb2.OptimizeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
     def ExtractProfile(request,
             target,
             options=(),
@@ -268,33 +209,6 @@ class LlmService(object):
             '/llm.LlmService/ExtractProfile',
             llm__service__pb2.ExtractProfileRequest.SerializeToString,
             llm__service__pb2.ExtractProfileResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def EnhanceField(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/llm.LlmService/EnhanceField',
-            llm__service__pb2.EnhanceFieldRequest.SerializeToString,
-            llm__service__pb2.EnhanceFieldResponse.FromString,
             options,
             channel_credentials,
             insecure,

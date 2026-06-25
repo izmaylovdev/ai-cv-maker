@@ -1,34 +1,51 @@
 # Spec: AI Enhancement & Optimization
 
-**Source user stories:** US-AI-1 – US-AI-3  
-**Feature area:** AI-powered field enhancement and full profile optimization  
-**Status:** Draft
+**Source user stories:** US-AI-1 – US-AI-5, US-AI-9  
+**Feature area:** AI-powered profile optimization and conversational editing  
+**Status:** Partially removed (see banner) — chat editing (US-AI-9) is the only live AI-edit path
 
 ---
 
-> **Contract note (ADR-0013).** The gRPC/Python snippets below predate the
-> document model and still show the retired `ProfileInput` message and structured
-> profile fields. The canonical model is now `ProfileDocument { header,
-> sections[] }` (proto `ProfileDocumentProto`); `Generate`/`Optimize`/
-> `ExtractProfile` take and return documents. See `ARCHITECTURE.md` (gRPC
-> contract) and ADR-0013 — the snippets are kept for narrative history.
+> **REMOVED (ADR-0015, 2026-06-24).** The **Optimize** (`POST /api/job-profiles/:id/optimize`)
+> and **EnhanceField** (`POST /api/ai/enhance-field`) endpoints, their gRPC RPCs,
+> llm-service chains, and the job-posting-URL fetch path (US-AI-5,
+> `link_enricher`) have been **deleted**. AI profile editing is now exclusively
+> the in-editor chat (US-AI-9, [`chat.md`](./chat.md)). Sections §2.1, §2.2, §2.3,
+> §3, and §7 below describe functionality that **no longer exists** and are kept
+> only as historical record. See [ADR-0015](../../adr/0015-remove-optimize-enhance-endpoints.md).
+
+> **Contract note (ADR-0013 / ADR-0014).** Parts of this spec were written before
+> the canonical document model and the conversational-edit redesign. Where a
+> snippet shows the retired `ProfileInput` message, structured profile fields
+> (`title`/`summary`/`workExperience`/`skills`), or REST paths under
+> `/api/profiles/:id`, treat it as **historical narrative** — the boxed
+> "As shipped" notes in each section describe current behaviour. The canonical
+> model is `ProfileDocument { header, sections[] }` (proto `ProfileDocumentProto`,
+> flat title-anchored tree per ADR-0014); `Generate`/`Optimize`/`ExtractProfile`
+> take and return documents. The authoritative chat contract lives in
+> [`chat.md`](./chat.md). See also `ARCHITECTURE.md` (gRPC contract + REST routes).
 
 ## 1. Overview
 
-AI assistance is available at two levels:
+AI assistance on the profile page is delivered through the **in-editor AI chat** (US-AI-9, the `<ai-chat-widget>` embedded next to `<applysy-profile-builder>`). The user describes what they want in natural language; the AI proposes a structured edit to the open document, which is applied live to the builder for review and persisted only on Save. This covers both targeted tweaks and whole-document rewrites — there is no separate "Optimize" or per-field "Enhance" UI.
 
-- **Field-level enhancement (US-AI-1):** Improve a single text field in place. The user clicks "Enhance", the AI rewrites that field, and the result replaces the original. The original can be restored by typing or clearing.
-- **Profile-level optimization (US-AI-2):** Rewrite the entire profile for a specific target role. The user describes their target, the AI returns a full set of suggestions, and the user reviews and accepts or discards them field by field.
-
-Both features are **non-destructive** — factual data (company names, job titles, dates) is never altered, and the user always has the final say.
+> **History.** The original draft (below) imagined two dedicated UI affordances — a per-field "Enhance ✨" button (US-AI-1) and a modal-driven "Optimize for role" review flow (US-AI-2/3). Neither shipped as drawn, and both backends have now been **removed** (ADR-0015):
+> - **US-AI-1 field enhancement:** never had a UI; the `enhance-field` endpoint and `EnhanceField` RPC are deleted.
+> - **US-AI-2 optimize:** shipped briefly as a prompt → full-document rewrite (no ReviewModal); the toolbar button, the `optimize` endpoint, and the `Optimize` RPC are deleted.
+>
+> All AI edits remain **non-destructive** — factual data (company names, job titles, dates) is preserved, and nothing is saved until the user explicitly clicks Save.
 
 ---
 
 ## 2. Functional Requirements
 
-### 2.1 Enhance a Single Field (US-AI-1)
+### 2.1 Enhance a Single Field (US-AI-1) — *REMOVED (ADR-0015)*
 
-| # | Requirement |
+> **Removed.** No UI ever exposed this, and the backend (`POST /api/ai/enhance-field`,
+> `EnhanceField` gRPC RPC, llm-service `enhance_field` chain) has been **deleted**
+> (ADR-0015). The requirements below are historical only.
+
+| # | Requirement (intended UI — not implemented) |
 |---|-------------|
 | F-AI-1.1 | An "Enhance" button (✨ icon or label) is visible on all multi-line text inputs (work experience description, professional summary, etc.). |
 | F-AI-1.2 | Clicking "Enhance" calls the AI with the current field value; the field enters a loading state while waiting. |
@@ -37,21 +54,33 @@ Both features are **non-destructive** — factual data (company names, job title
 | F-AI-1.5 | The user can undo the enhancement by editing or clearing the field manually (standard form edit). |
 | F-AI-1.6 | If the request fails, an error toast is shown and the original text is restored unchanged. |
 
-### 2.2 Optimize Full Profile (US-AI-2)
+### 2.2 Optimize Full Profile (US-AI-2) — *REMOVED (ADR-0015)*
 
-| # | Requirement |
+> **Removed.** The optimize backend (`POST /api/job-profiles/:id/optimize`,
+> `Optimize` gRPC RPC, llm-service `optimize_profile` chain) has been **deleted**
+> (ADR-0015), along with the toolbar button that drove it. Dedicated whole-
+> document rewrites are no longer offered; targeted edits go through the in-editor
+> AI chat (US-AI-9, see [`chat.md`](./chat.md)). The requirements below are
+> historical only — they describe a modal/review UI that was never built as drawn.
+
+| # | Requirement (original draft — superseded by chat, US-AI-9) |
 |---|-------------|
-| F-AI-2.1 | An "Optimize for role" action is available on the profile editor page (e.g., in the toolbar). |
-| F-AI-2.2 | Clicking it opens a modal where the user enters a free-text description of their target role (e.g., _"Senior React developer at a fintech startup"_). |
-| F-AI-2.3 | The AI returns suggestions for: professional title, summary/overview, all work experience descriptions, and a prioritized skills list. |
+| F-AI-2.1 | ~~An "Optimize for role" action is available on the profile editor page (e.g., in the toolbar).~~ |
+| F-AI-2.2 | ~~Clicking it opens a modal where the user enters a free-text description of their target role.~~ |
+| F-AI-2.3 | The AI rewrites the relevant document sections (title, summary, experience descriptions, skills ordering). |
 | F-AI-2.4 | Factual data (company names, job titles, dates, degree names) must not be changed by the AI. |
-| F-AI-2.5 | After the AI responds, the user enters a review step to see each suggestion before applying. |
-| F-AI-2.6 | The user can accept or discard the entire set of changes. |
-| F-AI-2.7 | Discarding reverts all fields to their pre-optimization state with no data loss. |
+| F-AI-2.5 | ~~After the AI responds, the user enters a review step to see each suggestion before applying.~~ Review happens in the builder itself after the edit is applied. |
+| F-AI-2.6 | The user can accept (Save) or discard (reload / undo) the changes. |
+| F-AI-2.7 | Discarding before Save leaves the persisted profile untouched (no data loss). |
 
-### 2.3 Review Suggestions (US-AI-3)
+### 2.3 Review Suggestions (US-AI-3) — *not implemented*
 
-| # | Requirement |
+> **As shipped.** There is no side-by-side / diff review modal. Both chat edits
+> and the (former) optimize flow apply changes directly into the live builder
+> document, where the user reviews them inline and Saves or discards via the
+> editor's own undo / reload. The requirements below were never built.
+
+| # | Requirement (not implemented) |
 |---|-------------|
 | F-AI-3.1 | The review step presents each suggested change alongside the original text (side-by-side or sequential). |
 | F-AI-3.2 | The user can clearly distinguish original from suggested content (e.g., diff highlighting or labelled columns). |
@@ -63,53 +92,45 @@ Both features are **non-destructive** — factual data (company names, job title
 
 ### 3.1 API Endpoints
 
-#### `POST /api/profiles/:id/enhance-field`
+#### `POST /api/ai/enhance-field`
 
-Enhances a single text field.
+Enhances a single text field. Not profile-scoped (the field content is sent directly). Currently no UI calls this; documented for completeness.
 
-**Request body:**
+**Request body:** (`EnhanceFieldRequest`)
 ```json
 {
-  "field": "workExperience[0].description",
-  "value": "Worked on frontend features for the main product."
+  "content": "Worked on frontend features for the main product.",
+  "fieldPurpose": "work experience description"
 }
 ```
 
-**Response 200:**
+**Response 200:** (`EnhanceFieldResponse`)
 ```json
 { "enhanced": "Developed and shipped responsive frontend features for the core SaaS product, improving user engagement by 20%." }
 ```
 
-**Response 422:** Field path not recognised.  
-**Response 502:** Upstream AI error — client should display error toast and preserve original value.
+**Response 400:** `content` or `fieldPurpose` missing.  
+**Response 502 / 503:** Upstream AI error or temporarily unavailable.
 
 ---
 
-#### `POST /api/profiles/:id/optimize`
+#### `POST /api/job-profiles/:id/optimize`
 
-Optimizes the entire profile for a target role.
+Rewrites the entire profile document for a free-text goal / role (or a job-posting URL, see §7). Returns the full rewritten document; the client loads it into the builder for review and Save (no auto-save).
 
-**Request body:**
+**Request body:** (`OptimizeProfileRequest`)
 ```json
-{ "targetRole": "Senior React developer at a fintech startup" }
+{ "message": "Senior React developer at a fintech startup" }
 ```
 
-**Response 200:**
+**Response 200:** (`OptimizeProfileResponse`) — the canonical `ProfileDocument`:
 ```json
-{
-  "suggestions": {
-    "title": "Senior Frontend Engineer",
-    "summary": "...",
-    "workExperience": [
-      { "id": "entry-uuid", "description": "..." }
-    ],
-    "skills": ["React", "TypeScript", "Redux", "Node.js", "..."]
-  }
-}
+{ "document": { "header": { "...": "..." }, "sections": [ "..." ] } }
 ```
 
-**Response 422:** `targetRole` is empty.  
-**Response 502:** Upstream AI error.
+**Response 400:** `message` is empty.  
+**Response 422:** job-posting URL fetch failed (`{ "error": "..." }`, see §7).  
+**Response 502 / 503:** Upstream AI error or temporarily unavailable.
 
 ---
 
@@ -131,6 +152,12 @@ Field content:
 
 #### Profile Optimization Prompt
 
+> **Schema note (ADR-0013/0014).** The optimize chain operates on the canonical
+> `ProfileDocument` (`{ header, sections[] }`, flat title-anchored tree) and
+> returns a document — **not** the retired `{ title, summary, workExperience,
+> skills }` structure shown below. The prompt text lives in
+> `apps/llm-service/app/chains/cv_chain.py`; this snippet is illustrative history.
+
 ```
 You are an expert CV coach. Rewrite the following profile sections to be compelling for the target role described below.
 
@@ -140,73 +167,95 @@ Profile data (JSON):
 {{profileJson}}
 
 Rules:
-- Return a JSON object matching the schema: { title, summary, workExperience: [{id, description}], skills: [string] }
 - skills must be sorted with most relevant to the target role first.
 - Do NOT change company names, job titles, dates, degree names, or any other factual data.
 - Do NOT invent achievements or metrics not present in the original.
 ```
 
-Server must validate the AI response JSON against the expected schema before returning it to the client.
+### 3.3 Client-Side Optimization Flow (as shipped)
 
-### 3.3 Client-Side Optimization Review Flow
+There is no `ReviewModal`. The optimize request returns a full `ProfileDocument`,
+which the client loads directly into the live `<applysy-profile-builder>`:
 
 ```
-User clicks "Optimize for role"
-  → Modal: enter target role → Submit
-  → Loading state (spinner, "Optimizing your profile…")
-  → On success: navigate to ReviewModal component
-    → Show original vs. suggested for each changed field
-    → [Accept changes] → merge suggestions into form state → mark form dirty
-    → [Discard]        → close modal, form state unchanged
+User requests a rewrite (via the AI chat, US-AI-9)
+  → Loading state in the chat thread
+  → On success: rewritten document applied to the builder (unsaved)
+  → User reviews inline and clicks Save  → PUT /api/job-profiles/:id
+                            or undo/reload → discards, persisted profile untouched
 ```
 
-The `ReviewModal` does **not** trigger an API call on accept — it only updates local form state. The user must explicitly save the profile afterwards.
-
-### 3.4 Concurrency & Loading States
+### 3.4 Concurrency & Loading States (as shipped)
 
 | State | UI |
 |-------|----|
-| Field enhancement in progress | Field input is disabled; spinner icon replaces the Enhance button |
-| Profile optimization in progress | Full-screen overlay or modal loading state |
-| Another enhancement already running | Enhance buttons on other fields are disabled until first completes |
+| AI request in progress (chat / optimize / extract) | Inline busy indicator on the triggering control; the action is disabled until it resolves |
+
+> The original per-field "Enhance button spinner" / "full-screen optimize overlay"
+> states do not apply — those UIs were not built.
 
 ### 3.5 Error Handling
 
-| Error | HTTP Status | Client Behaviour |
+| Error | HTTP Status (actual) | Client Behaviour |
 |-------|------------|-----------------|
-| AI service unavailable | 502 | Toast: _"AI is temporarily unavailable. Please try again."_ |
-| AI returned invalid JSON | 502 | Same as above; server logs the raw response |
-| Rate limit exceeded | 429 | Toast: _"Too many requests. Please wait a moment."_ |
-| Target role field empty | 422 | Inline validation error in the optimize modal |
+| AI service unavailable / upstream failure | 502 | Error toast / chat note |
+| AI temporarily unavailable (circuit open) | 503 | Error toast: _"AI is temporarily unavailable. Please try again."_ |
+| Provider rate limit / quota exceeded | 503 | Error toast: _"AI is temporarily unavailable. Please try again later."_ |
+| Per-user cost limit reached | 402 | Usage-limit message (see §9) |
+| Empty / invalid input (`message`, `content`) | 400 | Inline validation |
+| Job-posting URL fetch failed | 422 | Error from `{ error }` body (see §7) |
+
+> Note: the provider rate-limit case surfaces as **503**, not 429 — there is no
+> dedicated per-minute request throttle (see §3.6).
 
 ### 3.6 Rate Limiting
 
-- Field enhancement: max **10 requests per profile per minute** per user.
-- Profile optimization: max **3 requests per profile per hour** per user.
-- Limits enforced server-side; client receives HTTP 429 and displays the appropriate message.
+> **As shipped.** There is **no** per-minute / per-hour request throttle. AI usage
+> is governed by the per-user **cost-based usage limit** (§8–§9): each call is
+> checked against the user's accrued estimated LLM cost and rejected once the limit
+> is reached. The fixed-window numbers below were never implemented.
+
+- ~~Field enhancement: max 10 requests per profile per minute per user.~~
+- ~~Profile optimization: max 3 requests per profile per hour per user.~~
 
 ---
 
 ## 4. Data Model
 
-AI suggestions are ephemeral (not persisted). The server acts as a pass-through to the AI provider; only the final accepted profile state is saved via `PUT /api/profiles/:id`.
+AI suggestions are ephemeral (not persisted). The server acts as a pass-through to the AI provider; only the final saved document is persisted via `PUT /api/job-profiles/:id`.
 
-No additional database tables are required for this feature.
+No additional database tables are required for this feature. (Per-user LLM cost accounting for the usage limit is covered in §8.)
 
 ---
 
 ## 5. Out of Scope (MVP)
 
-- Per-field accept/discard in the optimization review (MVP accepts or discards all at once)
-- Suggestion history / undo stack beyond the current session
-- Custom AI prompts or tone settings
-- AI-generated cover letters
+- Per-field "Enhance" UI in the builder (removed entirely — see §2.1, ADR-0015)
+- Side-by-side / diff review of AI suggestions (see §2.3)
+- Suggestion history / undo stack beyond the editor's own undo
+- Custom AI prompts or tone settings (global preferences are covered in `settings.md`)
 
 ---
 
 ## 6. Conversational Profile Chat — Web Component (US-AI-4)
 
-### 6.1 Functional Requirements
+> **Superseded — see [`chat.md`](./chat.md) (US-AI-9) for the authoritative,
+> as-shipped contract.** This section captures the original US-AI-4 design. The
+> shipped widget diverges in its integration contract:
+> - **Output event:** the widget emits an `edit` `CustomEvent` with detail
+>   `{ patchJson, description }` (bubbling, composed) — **not** `profile-change`
+>   with a `{ patch: ProfilePatch }` proposal card. The host applies it via
+>   `builder.applyEdit(patchJson)`; invalid edits are surfaced back through the
+>   widget's `addAssistantNote(text)` method.
+> - **No Accept/Reject proposal card:** the edit is applied live to the builder
+>   (unsaved) and reviewed inline; nothing persists until the user Saves.
+> - **gRPC:** `Chat` carries the canonical `ProfileDocumentProto` (not the retired
+>   `ProfileInput`); the per-profile chat receives the full open document.
+>
+> The element name (`<ai-chat-widget>`) and its `profile-id` / `auth-token` /
+> `api-base` attributes below are still accurate.
+
+### 6.1 Functional Requirements (original US-AI-4 design)
 
 | # | Requirement |
 |---|-------------|
@@ -390,20 +439,26 @@ No new DB tables. Chat history lives in the widget's component state. Accepted p
 
 ---
 
-## 7. Job-Posting URL Optimization (US-AI-5)
+## 7. Job-Posting URL Optimization (US-AI-5) — *REMOVED (ADR-0015)*
+
+> **Removed.** This was a server-side capability of the `Optimize` flow: the
+> `link_enricher` module detected a URL in the optimize `message`, fetched the
+> page, and extracted a job description before rewriting. With `Optimize` deleted
+> (§2.2, ADR-0015), `link_enricher` is gone too. The requirements below are
+> historical only.
 
 ### 7.1 Functional Requirements
 
 | # | Requirement |
 |---|-------------|
-| F-AI-7.1 | The user may type a plain-text role description **or** paste a job posting URL into the existing target-role field in the "Optimize with AI" dialog. |
+| F-AI-7.1 | The user may supply a plain-text role description **or** a job posting URL as the optimize `message` (originally the "Optimize with AI" dialog field; now the AI chat). |
 | F-AI-7.2 | The llm-service detects whether the `message` field of `OptimizeRequest` contains a URL (scheme `http://` or `https://`). |
 | F-AI-7.3 | When a URL is detected, the llm-service fetches the page and extracts a plain-text job description before running the optimize chain. |
 | F-AI-7.4 | The extracted job description is used as the optimization target in place of the raw URL string. |
 | F-AI-7.5 | If the fetch fails (network error, non-2xx status, timeout) or the extracted text is empty, the llm-service raises an error; optimization does **not** proceed. |
 | F-AI-7.6 | The cv-api translates the fetch error into HTTP 422 with a human-readable message. |
-| F-AI-7.7 | The Angular dialog displays the error message returned by the API so the user can correct the URL or switch to plain text. |
-| F-AI-7.8 | No changes to the proto/gRPC interface, Angular component structure, or data model. |
+| F-AI-7.7 | The client displays the error message returned by the API so the user can correct the URL or switch to plain text. |
+| F-AI-7.8 | No changes to the proto/gRPC interface or data model. |
 
 ### 7.2 Technical Specification
 
@@ -413,7 +468,7 @@ This feature is a **pure llm-service internal change**. No modifications are req
 
 - `proto/llm_service.proto` — `OptimizeRequest.message` already carries the free-text target.
 - `cv-api` — `POST /api/job-profiles/:id/optimize` is unchanged, except for mapping the new gRPC error (see below).
-- `apps/ui-angular` — the "Optimize with AI" dialog already handles error responses.
+- `apps/ui-angular` — the optimize caller already surfaces the API error message to the user (originally the "Optimize with AI" dialog; now the AI chat thread).
 
 #### Architecture: link pre-processing pipeline
 
@@ -500,14 +555,14 @@ beautifulsoup4 = ">=4.12"
 | Timeout (>10 s) | Raise `LinkFetchError("Timed out fetching URL")` | Same 422 pattern | Same |
 | Empty text after stripping | Raise `LinkFetchError("No readable content found at URL")` | Same 422 pattern | Same |
 
-`LinkFetchError` propagates as a gRPC `INVALID_ARGUMENT` status. cv-api catches that status code and maps it to HTTP 422. The Angular optimize dialog already handles non-2xx responses and displays the `error` field from the response body.
+`LinkFetchError` propagates as a gRPC `INVALID_ARGUMENT` status. cv-api catches that status code and maps it to HTTP 422. The Angular optimize caller (now the AI chat, US-AI-9) surfaces non-2xx responses and displays the `error` field from the response body.
 
 ### 7.3 Out of Scope (MVP)
 
 - Parsing structured job-posting schemas (JSON-LD, microdata)
 - Caching fetched pages
 - Handling multiple URLs in a single message (only the first URL is processed)
-- Link preview display in the optimize dialog (preview metadata is produced but only used by future chat feature)
+- Link preview display in the optimize UI (preview metadata is produced but not rendered)
 - Sanitising or validating URLs before fetching (internal/private URLs not blocked)
 
 ---
@@ -676,7 +731,7 @@ the current limit and a Save button that `PUT`s the new value. Shows success/err
 
 `api.interceptor.ts` (or a small shared error helper) maps a 402 with
 `code === 'usage_limit_exceeded'` to a distinct user-facing message reused by the
-AI entry points (optimize dialog, chat, field enhance, CV generation).
+AI entry points (AI chat, CV generation, and any other LLM-backed action).
 
 `GET /api/usage` is extended to include the effective limit:
 

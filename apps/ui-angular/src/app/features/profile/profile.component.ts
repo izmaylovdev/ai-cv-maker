@@ -16,7 +16,6 @@ import { AuthService } from '../../auth/auth.service';
 import { BuilderLoaderService } from '../../core/builder-loader.service';
 import { ChatLoaderService } from '../../core/chat-loader.service';
 import { NotifyService } from '../../shared/services/notify.service';
-import { isUsageLimitError, usageLimitMessage } from '../../core/usage-limit';
 import { environment } from '../../../environments/environment';
 import { ProfileDocument, emptyDocument } from '../../shared/models/profile.model';
 
@@ -56,7 +55,6 @@ export class ProfileComponent implements OnInit {
   readonly loading = signal(false);
   readonly loadError = signal(false);
   readonly saving = signal(false);
-  readonly optimizing = signal(false);
   readonly extracting = signal(false);
   readonly widgetReady = signal(false);
   readonly widgetError = signal(false);
@@ -71,7 +69,7 @@ export class ProfileComponent implements OnInit {
 
   // The document to push into the builder — the source of truth for save/PDF.
   // Held as a signal so an effect can (re)seed the element whenever either the
-  // document (load/optimize/extract) or the element (lazy render) changes, in
+  // document (load/extract/chat-edit) or the element (lazy render) changes, in
   // any order. User edits arrive via `documentchange` and update it in place.
   private readonly documentToSeed = signal<ProfileDocument>(emptyDocument());
 
@@ -172,39 +170,6 @@ export class ProfileComponent implements OnInit {
       .subscribe({
         next: () => this.notify.success('Profile saved successfully!'),
         error: () => this.notify.error('Failed to save profile.'),
-      });
-  }
-
-  // Optimize: AI rewrites the whole document; we load the result into the
-  // builder for the user to review and save (no auto-save).
-  optimize() {
-    const message = window.prompt(
-      'Describe the role or goal to optimize for (or paste a job posting URL):',
-    );
-    if (message == null) return;
-    const trimmed = message.trim();
-    if (!trimmed) return;
-
-    this.optimizing.set(true);
-    this.profileService
-      .optimizeProfile(this.profileId, trimmed)
-      .pipe(finalize(() => this.optimizing.set(false)))
-      .subscribe({
-        next: (result) => {
-          this.setBuilderDocument(result.document);
-          this.notify.success('Profile optimized! Review the changes and save when ready.');
-        },
-        error: (err: unknown) => {
-          if (isUsageLimitError(err)) {
-            this.notify.error(usageLimitMessage(err));
-            return;
-          }
-          const apiError =
-            err instanceof HttpErrorResponse
-              ? (err.error as { error?: string } | null)?.error
-              : null;
-          this.notify.error(apiError ?? 'Failed to optimize profile. Please try again.');
-        },
       });
   }
 

@@ -47,16 +47,3 @@ export const mockProfile = {
   name: 'Senior Backend Engineer',
   document: mockDocument,
 };
-
-// An AI-optimized document returned by the optimize endpoint.
-export const mockOptimizedDocument = {
-  header: { ...mockDocument.header, title: 'Senior TypeScript Engineer' },
-  sections: [
-    {
-      id: 'sec-summary',
-      template: 'free-form' as const,
-      heading: 'Summary',
-      body: 'Optimized overview targeting fintech.',
-    },
-  ],
-};

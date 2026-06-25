@@ -28,7 +28,7 @@ def test_load_cases_jsonl(tmp_path):
 
 
 def test_load_cases_pretty_printed_concatenated(tmp_path):
-    """enhance_cases.jsonl is pretty-printed multi-line objects, not true JSONL."""
+    """Some fixtures are pretty-printed multi-line objects, not true JSONL."""
     p = tmp_path / "cases.jsonl"
     p.write_text('{\n  "a": 1\n}\n{\n  "a": 2\n}\n', encoding="utf-8")
     assert datasets.load_cases(p) == [{"a": 1}, {"a": 2}]
@@ -77,7 +77,7 @@ def test_item_id_is_deterministic_and_namespaced():
 
 def test_item_id_differs_by_operation_and_content():
     base = {"x": 1}
-    assert datasets.item_id("generate", base) != datasets.item_id("optimize", base)
+    assert datasets.item_id("generate", base) != datasets.item_id("extract", base)
     assert datasets.item_id("generate", {"x": 1}) != datasets.item_id("generate", {"x": 2})
 
 

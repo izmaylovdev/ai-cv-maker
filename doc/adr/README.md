@@ -69,3 +69,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0012](0012-langfuse-evals.md) | Run LLM evals through Langfuse datasets and experiments | Accepted |
 | [0013](0013-canonical-profile-document-model.md) | Section-based ProfileDocument as the canonical profile model | Accepted (body amended by 0014) |
 | [0014](0014-lexical-block-tree-profile-model.md) | Lexical rich-text block tree as the canonical profile body | Accepted |
+| [0015](0015-remove-optimize-enhance-endpoints.md) | Remove the unused Optimize and EnhanceField AI endpoints | Accepted |

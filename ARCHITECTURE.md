@@ -114,7 +114,7 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
 
 **Key features**
-- Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Optimize / Import-from-CV / Open-PDF. The old reactive-form split-panel editor and its structured `Profile` model are removed.
+- Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Import-from-CV / Open-PDF. Whole-document AI rewrites are now driven through the in-editor AI chat (US-AI-9) rather than a dedicated toolbar button. The old reactive-form split-panel editor and its structured `Profile` model are removed.
 - In-editor AI editing (US-AI-9): `ProfileComponent` also embeds `<ai-chat-widget>` (via `ChatLoaderService`), keeps its `.document` synced to the live (possibly unsaved) document, and on the widget's `edit` event calls `builder.applyEdit(patchJson)`. Rejected/invalid edits are surfaced back into the chat thread via the widget's `addAssistantNote(...)`; nothing is persisted until the user Saves.
 - Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`); the profile page posts the current `{ name, document }` to `/api/cvs/draft-pdf`
 - Theme service (dark/light)
@@ -253,7 +253,6 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `GET /api/job-profiles/:id` | `JobProfileController` | Get full profile → `{ id, name, document }` (ADR-0013) |
 | `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content (`{ name, document }`) |
 | `DELETE /api/job-profiles/:id` | `JobProfileController` | Delete profile |
-| `POST /api/job-profiles/:id/optimize` | `JobProfileController` | AI-rewrite profile via LLM → `{ document }` |
 | `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat against the **saved** document (reply + optional patch proposal). Not used by the in-editor chat, which sends the live document to `/api/chat` (US-AI-9); retained for callers that want to edit by stored profile id |
 | `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) → `{ name, document }` |
 | `GET /api/job-profiles/:id/cvs` | `CvController` | List generated CVs |
@@ -265,7 +264,6 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `POST /api/cvs/draft-pdf` | `CvController` | Render an unsaved profile draft as PDF (live preview) |
 | `POST /api/chat` | `ChatController` | AI chat for `<ai-chat-widget>`. Without `document`: account-wide assistant over profile summaries (can update `GlobalPreferences`). With `document` (in-editor edit mode, US-AI-9): per-profile `Chat` agent returning `{ reply, proposal? }`; the document is taken from the request (live/unsaved) and nothing is persisted |
 | `POST /api/cover-letter` | `CoverLetterController` | Generate cover letter from job description (auto-selects profile) |
-| `POST /api/ai/enhance-field` | `AiController` | AI-enhance a single text field |
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
 | `GET /api/usage` | `UsageController` | Current user's token usage, estimated cost, and effective spending limit (`limitUsd`) |
@@ -276,7 +274,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
-- `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
+- `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `ExtractProfile`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
 - **Spending limit (US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches the effective limit; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }`. The limit is read from the `LlmUsageLimitUsd` row in `AppSettings`, falling back to `UsageLimit:MaxCostUsdPerUser` in config (default `$0.50`); admins change it via `PUT /api/admin/usage-limit`.
 - `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); walks `header` + the `body` block tree generically (ADR-0014)
 - `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
@@ -296,9 +294,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 | Operation | Description |
 |---|---|
 | `Generate` | Takes a profile document + optional notes → returns a tailored `ProfileDocument` (ADR-0013) |
-| `Optimize` | Takes a profile document + free-text instruction → returns a rewritten `ProfileDocument` |
 | `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) |
-| `EnhanceField` | Takes one text field + its purpose → returns an improved version |
 | `Chat` | Profile-scoped conversational assistant |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
 | `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover letter text |
@@ -387,7 +383,7 @@ GeneratedCv  (FK → Profile, cascade delete)
 LlmUsage  (no FK constraint; UserId nullable for system calls)
  ├── id (UUID PK)
  ├── userId (Guid, nullable, indexed)
- ├── operation  — "Generate" | "Optimize" | "Extract" | "EnhanceField" | "Chat" | "UserChat" | "CoverLetter" | "GenerateAuto"
+ ├── operation  — "Generate" | "Extract" | "Chat" | "UserChat" | "CoverLetter" | "GenerateAuto"
  ├── promptTokens, completionTokens (int)
  ├── modelName  — e.g. "claude-sonnet-4-6"
  └── createdAt (UTC, indexed)
@@ -420,9 +416,9 @@ Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persist
 
 Defined in `proto/llm_service.proto`. The C# stubs are generated at build time; the Python stubs are checked in under `apps/llm-service/app/grpc/`.
 
-Nine RPC methods: `Generate`, `Optimize`, `ExtractProfile`, `EnhanceField`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
+Seven RPC methods: `Generate`, `ExtractProfile`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
 
-The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + repeated `DocumentSectionProto sections`, each with `SectionItemProto` entries) — the wire mirror of the canonical `ProfileDocument` (ADR-0013). `Generate`, `Optimize`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`Optimize`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
+The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + a recursive `ProfileNode body` block tree, ADR-0014) — the wire mirror of the canonical `ProfileDocument`. `Generate`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
 
 ---
 

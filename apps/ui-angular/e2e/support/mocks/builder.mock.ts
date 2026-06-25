@@ -9,7 +9,7 @@ import { Page } from '@playwright/test';
  *
  * The stub:
  *  - reflects the seeded document's header into visible text and data-* attrs so
- *    tests can assert what was loaded (e.g. after optimize/import);
+ *    tests can assert what was loaded (e.g. after import/chat-edit);
  *  - exposes `__getDocument()` so tests can read the current document;
  *  - exposes `__edit(patch)` to simulate a user edit, which fires the
  *    `documentchange` event the host listens to.

@@ -135,15 +135,6 @@ class GenerateResponse(BaseModel):
     document: ProfileDocument
 
 
-class OptimizeRequest(BaseModel):
-    profile: ProfileDocument
-    message: str
-
-
-class OptimizeResponse(BaseModel):
-    document: ProfileDocument
-
-
 class ExtractRequest(BaseModel):
     cv_text: str
 

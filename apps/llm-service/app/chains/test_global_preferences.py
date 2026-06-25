@@ -116,50 +116,6 @@ async def test_generate_cv_foundry_raw_whitespace_only_preferences_not_injected(
 
 
 # ---------------------------------------------------------------------------
-# _optimize_profile_foundry_raw — system prompt injection
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_optimize_foundry_raw_injects_preferences_into_system_prompt(basic_profile):
-    from app.chains.cv_chain import _optimize_profile_foundry_raw, _build_optimize_inputs
-
-    fake_msg = _make_fake_message(_DOC_JSON)
-
-    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
-         patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=fake_msg)
-        mock_client_fn.return_value = mock_client
-
-        inputs = _build_optimize_inputs(basic_profile, "help me get a senior role")
-        await _optimize_profile_foundry_raw(inputs, global_preferences="Keep sentences under 20 words.")
-
-        call_kwargs = mock_client.messages.create.call_args[1]
-        assert "User preferences (apply to all output):" in call_kwargs["system"]
-        assert "Keep sentences under 20 words." in call_kwargs["system"]
-
-
-@pytest.mark.asyncio
-async def test_optimize_foundry_raw_no_preferences_leaves_system_prompt_unchanged(basic_profile):
-    from app.chains.cv_chain import _optimize_profile_foundry_raw, _build_optimize_inputs, _OPTIMIZE_SYSTEM_PROMPT
-
-    fake_msg = _make_fake_message(_DOC_JSON)
-
-    with patch("app.chains.cv_chain._build_anthropic_messages_client") as mock_client_fn, \
-         patch("app.chains.cv_chain.app_settings.foundry_model", return_value="claude-haiku-4-5"):
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=fake_msg)
-        mock_client_fn.return_value = mock_client
-
-        inputs = _build_optimize_inputs(basic_profile, "help me")
-        await _optimize_profile_foundry_raw(inputs, global_preferences="")
-
-        call_kwargs = mock_client.messages.create.call_args[1]
-        assert call_kwargs["system"] == _OPTIMIZE_SYSTEM_PROMPT
-        assert "User preferences" not in call_kwargs["system"]
-
-
-# ---------------------------------------------------------------------------
 # cover_letter _generate_with_llm — system prompt injection
 # ---------------------------------------------------------------------------
 
@@ -263,7 +219,7 @@ async def test_cover_letter_system_prompt_has_no_hardcoded_length():
 
 
 # ---------------------------------------------------------------------------
-# generate_cv / optimize_profile — preferences forwarded through dispatch
+# generate_cv — preferences forwarded through dispatch
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -296,20 +252,3 @@ async def test_generate_cv_forwards_empty_preferences_to_foundry(basic_profile):
         await generate_cv(basic_profile, message=None, global_preferences="")
         _, called_prefs, _ = mock_fn.call_args[0]
         assert called_prefs == ""
-
-
-@pytest.mark.asyncio
-async def test_optimize_profile_forwards_preferences_to_foundry(basic_profile):
-    from app.chains.cv_chain import optimize_profile
-    from app.schemas import OptimizeResponse, ProfileDocument
-    from app.chains.usage import TokenUsage
-
-    fake_response = OptimizeResponse(document=ProfileDocument())
-    fake_usage = TokenUsage(prompt_tokens=10, completion_tokens=20, model_name="claude-haiku-4-5")
-
-    with patch("app.chains.cv_chain._optimize_profile_foundry", new=AsyncMock(return_value=(fake_response, fake_usage))) as mock_fn, \
-         patch("app.chains.cv_chain.app_settings.llm_provider", return_value="foundry"), \
-         patch("app.preprocessing.link_enricher.enrich", new=AsyncMock(return_value=type("R", (), {"text": "improve"})())):
-        await optimize_profile(basic_profile, message="improve", global_preferences="Active voice only.")
-        _, called_prefs, _ = mock_fn.call_args[0]
-        assert called_prefs == "Active voice only."

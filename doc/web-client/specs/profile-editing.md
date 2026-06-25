@@ -209,7 +209,7 @@ Both lists must support keyboard accessibility (arrow keys to move, Enter/Space 
 > It has **replaced** the structured editor in sections 1–6. Persistence, the
 > REST API, the data model, and the CV-generation/AI/PDF wiring now all speak the
 > document model end to end (ADR-0013): cv-api stores it as a JSON column,
-> `GET/PUT /api/job-profiles/:id` exchange `{ id, name, document }`, optimize /
+> `GET/PUT /api/job-profiles/:id` exchange `{ id, name, document }`,
 > extract / chat operate on the document, and the PDF renders it. The widget
 > itself stays host-agnostic (no fetch/auth/routing): the host seeds the document
 > and listens for `documentchange`.
@@ -650,13 +650,14 @@ message ProfileDocument {
 }
 ```
 
-`Generate`, `Optimize`, `ExtractProfile`, `Chat`, `SelectBestProfile` exchange
-`ProfileDocument`. Chat proposals patch nodes by `id`.
+`Generate`, `ExtractProfile`, `Chat`, `SelectBestProfile` exchange
+`ProfileDocument`. Chat proposals patch nodes by `id`. (`Optimize` also exchanged
+documents but was removed — [ADR-0015](../../adr/0015-remove-optimize-enhance-endpoints.md).)
 
 #### llm-service
 
 - `app/schemas.py` gains the `BlockNode`/`ProfileDocument` Pydantic models;
-  extract/optimize chains return a tree; chat patches nodes by `id`.
+  the extract chain returns a tree; chat patches nodes by `id`.
 - Prompts describe the **node vocabulary and nesting rules** instead of fixed
   section templates.
 

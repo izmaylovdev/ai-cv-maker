@@ -110,31 +110,6 @@ public class LlmService(
         }
     }
 
-    public async Task<LlmOptimizeResponse> OptimizeAsync(LlmOptimizeRequest request)
-    {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
-        {
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.OptimizeAsync(new OptimizeRequest
-                {
-                    Profile = ToProto(request.Profile),
-                    Message = request.Message,
-                    GlobalPreferences = request.GlobalPreferences ?? string.Empty,
-                }, DefaultCallOptions));
-
-            AddSpan("LlmService/Optimize", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmOptimizeResponse(FromProto(reply.Document), MapUsage(reply.Usage));
-        }
-        catch
-        {
-            AddSpan("LlmService/Optimize", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
-    }
-
     public async Task<LlmExtractResponse> ExtractAsync(LlmExtractRequest request)
     {
         var sw = Stopwatch.StartNew();
@@ -154,30 +129,6 @@ public class LlmService(
         catch
         {
             AddSpan("LlmService/ExtractProfile", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
-    }
-
-    public async Task<LlmEnhanceFieldResponse> EnhanceFieldAsync(LlmEnhanceFieldRequest request)
-    {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
-        {
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.EnhanceFieldAsync(new CvApi.Grpc.EnhanceFieldRequest
-                {
-                    Content = request.Content,
-                    FieldPurpose = request.FieldPurpose,
-                }, DefaultCallOptions));
-
-            AddSpan("LlmService/EnhanceField", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmEnhanceFieldResponse(reply.Enhanced, MapUsage(reply.Usage));
-        }
-        catch
-        {
-            AddSpan("LlmService/EnhanceField", true, sw.ElapsedMilliseconds, startedAt);
             throw;
         }
     }

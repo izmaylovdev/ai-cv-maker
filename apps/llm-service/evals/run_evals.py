@@ -2,7 +2,6 @@
 
 Usage:
     cd apps/llm-service
-    python -m evals.run_evals --operation enhance
     python -m evals.run_evals --operation generate
     python -m evals.run_evals --operation all
     python -m evals.run_evals --operation all --sync-only   # push fixtures, don't run
@@ -37,12 +36,9 @@ from evals.evaluators import (
 from evals.targets import (
     chat_target,
     cover_letter_with_prefs_target,
-    enhance_target,
     extract_target,
     generate_target,
     generate_with_prefs_target,
-    optimize_target,
-    optimize_with_prefs_target,
 )
 
 _EVALS_DIR = pathlib.Path(__file__).parent
@@ -54,18 +50,11 @@ _LANGFUSE_ENV = ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST")
 # op -> (target, fixtures file, [evaluator instances])
 _OPERATIONS: dict[str, tuple] = {
     "generate": (generate_target, _FIXTURES_DIR / "generate_cases.jsonl", [CVQualityEvaluator()]),
-    "optimize": (optimize_target, _FIXTURES_DIR / "optimize_cases.jsonl", [CVQualityEvaluator()]),
-    "enhance":  (enhance_target,  _FIXTURES_DIR / "enhance_cases.jsonl",  [CVQualityEvaluator()]),
     "extract":  (extract_target,  _FIXTURES_DIR / "extract_cases.jsonl",  [CVQualityEvaluator(), ExtractAccuracyEvaluator()]),
     "security": (chat_target, _FIXTURES_DIR / "security_cases.jsonl", [OnTaskEvaluator()]),
     "generate_with_prefs": (
         generate_with_prefs_target,
         _FIXTURES_DIR / "generate_with_prefs_cases.jsonl",
-        [CVQualityEvaluator(), PreferencesAdherenceEvaluator()],
-    ),
-    "optimize_with_prefs": (
-        optimize_with_prefs_target,
-        _FIXTURES_DIR / "optimize_with_prefs_cases.jsonl",
         [CVQualityEvaluator(), PreferencesAdherenceEvaluator()],
     ),
     "cover_letter_with_prefs": (
@@ -78,8 +67,6 @@ _OPERATIONS: dict[str, tuple] = {
 # Minimum acceptable aggregate score per metric. Process exits non-zero if any threshold is breached.
 _THRESHOLDS: dict[str, dict[str, float]] = {
     "generate": {"quality.coherence": 3.5, "quality.professionalism": 4.0, "quality.relevance": 3.5},
-    "optimize": {"quality.coherence": 3.5, "quality.professionalism": 4.0, "quality.relevance": 3.5},
-    "enhance":  {"quality.coherence": 3.5, "quality.professionalism": 4.0, "quality.relevance": 3.5},
     "extract":  {
         "quality.coherence": 3.0,
         "quality.relevance": 3.0,
@@ -93,12 +80,6 @@ _THRESHOLDS: dict[str, dict[str, float]] = {
         "quality.professionalism": 4.0,
         "quality.relevance": 3.5,
         "adherence.adherence": 3.5,  # average adherence ≥3.5/5 across all pref-cases
-    },
-    "optimize_with_prefs": {
-        "quality.coherence": 3.5,
-        "quality.professionalism": 4.0,
-        "quality.relevance": 3.5,
-        "adherence.adherence": 3.5,
     },
     "cover_letter_with_prefs": {
         "quality.coherence": 3.5,
@@ -334,7 +315,7 @@ def main() -> None:
     elif args.operation == "quality":
         ops = [op for op in _OPERATIONS if op != "security" and not op.endswith("_with_prefs")]
     elif args.operation == "preferences":
-        ops = ["generate_with_prefs", "optimize_with_prefs"]
+        ops = ["generate_with_prefs", "cover_letter_with_prefs"]
     else:
         ops = [args.operation]
 

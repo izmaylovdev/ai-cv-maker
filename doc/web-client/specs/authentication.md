@@ -244,7 +244,7 @@ New config key `LlmService:AuthMode` — `none` (default) | `google` (set by Ter
 | Check | Expected |
 |---|---|
 | `grpcurl <llm-service-url>:443 list` from a laptop | connection rejected (404/blocked by Google front end) |
-| App smoke test: generate CV, optimize, extract, chat, cover letter | all work |
+| App smoke test: generate CV, extract, chat, cover letter | all work |
 | `psql -h <db-public-ip>` from a laptop | no route/refused |
 | `cloud-sql-proxy` connection | works (admin path preserved) |
 | Grafana dashboards (DB + Prometheus datasources) | load |

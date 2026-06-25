@@ -24,7 +24,6 @@ describe('ProfileComponent (builder-based)', () => {
   let profileService: {
     getProfile: ReturnType<typeof vi.fn>;
     updateProfile: ReturnType<typeof vi.fn>;
-    optimizeProfile: ReturnType<typeof vi.fn>;
     extractFromCv: ReturnType<typeof vi.fn>;
   };
   let notify: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
@@ -34,7 +33,6 @@ describe('ProfileComponent (builder-based)', () => {
     profileService = {
       getProfile: vi.fn().mockReturnValue(of(LOADED)),
       updateProfile: vi.fn().mockReturnValue(of(LOADED)),
-      optimizeProfile: vi.fn().mockReturnValue(of({ document: doc('Optimized') })),
       extractFromCv: vi.fn().mockReturnValue(of({ name: 'From CV', document: doc('From CV') })),
     };
     notify = { success: vi.fn(), error: vi.fn() };
@@ -85,26 +83,6 @@ describe('ProfileComponent (builder-based)', () => {
       document: doc('Edited'),
     });
     expect(notify.success).toHaveBeenCalled();
-  });
-
-  it('optimize loads the returned document and notifies', () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('Senior role');
-    const component = create();
-    component.optimize();
-    expect(profileService.optimizeProfile).toHaveBeenCalledWith('1', 'Senior role');
-    // The returned document becomes the source of truth for the next save.
-    component.save();
-    expect(profileService.updateProfile).toHaveBeenCalledWith('1', {
-      name: 'My Profile',
-      document: doc('Optimized'),
-    });
-  });
-
-  it('optimize is a no-op when the prompt is cancelled', () => {
-    vi.spyOn(window, 'prompt').mockReturnValue(null);
-    const component = create();
-    component.optimize();
-    expect(profileService.optimizeProfile).not.toHaveBeenCalled();
   });
 
   it('extract imports the document and adopts the suggested name', () => {

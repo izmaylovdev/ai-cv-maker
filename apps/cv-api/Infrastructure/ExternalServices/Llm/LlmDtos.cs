@@ -8,20 +8,14 @@ public record LlmTokenUsage(int PromptTokens, int CompletionTokens, string Model
 }
 
 // All AI operations speak the canonical ProfileDocument (ADR-0013): the profile
-// goes in as a document, and Generate/Optimize/Extract return the AI-authored
+// goes in as a document, and Generate/Extract return the AI-authored
 // document back.
 
 public record LlmGenerateRequest(ProfileDocument Profile, string? Message = null, string? GlobalPreferences = null);
 public record LlmGenerateResponse(ProfileDocument Document, LlmTokenUsage Usage);
 
-public record LlmOptimizeRequest(ProfileDocument Profile, string Message, string? GlobalPreferences = null);
-public record LlmOptimizeResponse(ProfileDocument Document, LlmTokenUsage Usage);
-
 public record LlmExtractRequest(string CvText);
 public record LlmExtractResponse(ProfileDocument Document, LlmTokenUsage Usage);
-
-public record LlmEnhanceFieldRequest(string Content, string FieldPurpose);
-public record LlmEnhanceFieldResponse(string Enhanced, LlmTokenUsage Usage);
 
 public record LlmChatMessage(string Role, string Content);
 public record LlmChatRequest(ProfileDocument Profile, string Message, List<LlmChatMessage> History);

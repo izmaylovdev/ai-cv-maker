@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Polly.CircuitBreaker;
@@ -50,41 +49,6 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
     {
         var deleted = await jobProfileService.DeleteAsync(id, UserId);
         return deleted ? NoContent() : NotFound();
-    }
-
-    [HttpPost("{id:guid}/optimize")]
-    public async Task<ActionResult<OptimizeProfileResponse>> Optimize(Guid id, OptimizeProfileRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest("Message is required.");
-
-        OptimizeProfileResponse? result;
-        try
-        {
-            result = await jobProfileService.OptimizeAsync(id, UserId, request);
-        }
-        catch (RpcException ex) when (ex.StatusCode == global::Grpc.Core.StatusCode.InvalidArgument)
-        {
-            return UnprocessableEntity(new { error = ex.Status.Detail });
-        }
-        catch (BrokenCircuitException)
-        {
-            return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service is unreachable. Please try again later.");
-        }
-        catch (LlmRateLimitException)
-        {
-            return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-        {
-            return StatusCode(503, "Profile optimization is temporarily unavailable: the AI service has exceeded its quota. Please try again later.");
-        }
-        catch (HttpRequestException ex)
-        {
-            return StatusCode(502, $"Profile optimization failed: {ex.Message}");
-        }
-
-        return result is null ? NotFound() : Ok(result);
     }
 
     [HttpPost("{id:guid}/chat")]

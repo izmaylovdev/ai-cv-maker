@@ -2,19 +2,25 @@
 
 ## Overview
 
-The application embeds AI assistance at two levels: fine-grained (improve a single text field) and holistic (rewrite the entire profile for a specific target role). Both features are non-destructive — the user reviews suggestions and decides whether to accept them.
+The application embeds AI assistance through the **in-editor AI chat** (US-AI-9): the user asks for changes in natural language — from a single field to a whole-profile rewrite for a target role — and the proposed edit is applied live to the document for review before Save. All edits are non-destructive (factual data preserved, nothing persisted until the user Saves).
+
+> **Note on this document.** The original stories below split AI assistance into a per-field "Enhance" button (US-AI-1), a modal "Optimize" flow with a side-by-side review step (US-AI-2/3), and a separate chat (US-AI-4). In the shipped product the in-editor chat (US-AI-9) is the single entry point; the dedicated Enhance/Optimize UIs and diff-review modal were never built, and their backends (Optimize + EnhanceField endpoints/RPCs and the US-AI-5 URL-fetch path) have since been **removed** ([ADR-0015](../../adr/0015-remove-optimize-enhance-endpoints.md)). US-AI-1/2/3/5 are retained as history. Per-story status notes are inline.
 
 ---
 
 ## User Stories
 
-### US-AI-1 — Enhance a single text field
+### US-AI-1 — Enhance a single text field — *REMOVED (ADR-0015)*
+
+> **Status:** No UI ever invoked this; the `enhance-field` endpoint and
+> `EnhanceField` RPC have been deleted (ADR-0015). Field-level editing is done
+> through the in-editor AI chat (US-AI-9). Retained as history.
 
 **As a** user editing a text field (e.g., a work experience description or professional summary),
 **I want to** click an "Enhance" button next to the field and have the AI improve the text,
 **so that** my content sounds more professional without me having to rewrite it from scratch.
 
-**Acceptance criteria:**
+**Acceptance criteria:** *(intended — not implemented)*
 - An enhance button is visible on all multi-line text inputs.
 - The AI rewrites the field content while preserving all factual information (dates, company names, technologies).
 - The enhanced text replaces the original in the field; I can undo by typing or clearing.
@@ -23,13 +29,17 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 
 ---
 
-### US-AI-2 — Optimize the full profile for a target role
+### US-AI-2 — Optimize the full profile for a target role — *REMOVED (ADR-0015)*
+
+> **Status:** The optimize endpoint, `Optimize` RPC, and toolbar action have all
+> been deleted (ADR-0015). Targeted rewrites go through the in-editor AI chat
+> (US-AI-9). Retained as history.
 
 **As a** user who knows the type of role I am applying for,
 **I want to** describe my target (e.g., "Senior React developer at a fintech startup") and have the AI rewrite my entire profile to highlight the most relevant aspects,
 **so that** my CV resonates with that specific audience without me having to manually edit every field.
 
-**Acceptance criteria:**
+**Acceptance criteria:** *(historical)*
 - A dedicated "Optimize" or "Optimize for role" action is available on the profile page.
 - I enter a free-text description of my target role/goal.
 - The AI returns:
@@ -43,7 +53,11 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 
 ---
 
-### US-AI-3 — See AI suggestions without losing original content
+### US-AI-3 — See AI suggestions without losing original content — *not implemented*
+
+> **Status:** No side-by-side / diff review was built. AI edits apply directly to
+> the live builder document and are reviewed inline, then kept (Save) or dropped
+> (undo / reload). Superseded by the US-AI-9 chat-edit flow.
 
 **As a** user reviewing AI-optimized content,
 **I want to** compare the AI suggestion with my original text,
@@ -56,6 +70,12 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 ---
 
 ### US-AI-4 — Chat with AI to edit profile and ask questions
+
+> **Status:** Delivered, but evolved into the per-profile **in-editor** chat
+> (US-AI-9, see `specs/chat.md`) rather than the standalone "Chat page" described
+> here. The widget proposes a structured `edit` applied live to the open builder
+> document; there is no separate Accept/Reject proposal card — the user reviews in
+> the builder and Saves. The acceptance criteria below reflect the original design.
 
 **As a** user managing my CV profile,
 **I want to** open a chat interface where I can ask questions about my profile and instruct the AI to make edits through natural conversation,
@@ -74,14 +94,18 @@ The application embeds AI assistance at two levels: fine-grained (improve a sing
 
 ---
 
-### US-AI-5 — Optimize profile for a specific job posting via URL
+### US-AI-5 — Optimize profile for a specific job posting via URL — *REMOVED (ADR-0015)*
+
+> **Status:** This was the URL-fetch path of `Optimize` (the `link_enricher`
+> module). With `Optimize` deleted, `link_enricher` was removed too (ADR-0015).
+> Retained as history.
 
 **As a** job seeker who has found a specific job posting I want to apply for,
 **I want to** paste the URL of the job posting into the optimize prompt and have the AI fetch and use the actual job description for optimization,
 **so that** my CV is tailored precisely to that vacancy rather than a generic role description I type by hand.
 
 **Acceptance criteria:**
-- The user types or pastes their target into the existing free-text field in the "Optimize with AI" dialog — either a plain role description (e.g. "Senior React developer at a fintech startup") or a job posting URL.
+- The user types or pastes their target — either a plain role description (e.g. "Senior React developer at a fintech startup") or a job posting URL — into the optimize entry point. (The dedicated "Optimize with AI" dialog has been removed; this is now the in-editor AI chat, US-AI-9.)
 - The LLM inspects the input: if it contains a URL, it calls a fetch tool to retrieve the page and extract the job description before running optimization.
 - The AI uses the extracted job description (title, responsibilities, required skills) as the optimization target.
 - If the fetch fails or the page contains no recognizable job content, the AI proceeds using the raw input text as the role description.

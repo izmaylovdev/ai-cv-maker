@@ -6,9 +6,7 @@ option csharp_namespace = "CvApi.Grpc";
 
 service LlmService {
   rpc Generate (GenerateRequest) returns (GenerateResponse);
-  rpc Optimize (OptimizeRequest) returns (OptimizeResponse);
   rpc ExtractProfile (ExtractProfileRequest) returns (ExtractProfileResponse);
-  rpc EnhanceField (EnhanceFieldRequest) returns (EnhanceFieldResponse);
   rpc Chat (ChatRequest) returns (ChatResponse);
   rpc UserChat (UserChatRequest) returns (UserChatResponse);
   rpc Health (HealthRequest) returns (HealthResponse);
@@ -65,33 +63,12 @@ message GenerateResponse {
   UsageMetadata usage = 2;
 }
 
-message OptimizeRequest {
-  ProfileDocumentProto profile = 1;
-  string message = 2;
-  string global_preferences = 3;
-}
-
-message OptimizeResponse {
-  ProfileDocumentProto document = 1;
-  UsageMetadata usage = 2;
-}
-
 message ExtractProfileRequest {
   string cv_text = 1;
 }
 
 message ExtractProfileResponse {
   ProfileDocumentProto document = 1;
-  UsageMetadata usage = 2;
-}
-
-message EnhanceFieldRequest {
-  string content = 1;
-  string field_purpose = 2;
-}
-
-message EnhanceFieldResponse {
-  string enhanced = 1;
   UsageMetadata usage = 2;
 }
 

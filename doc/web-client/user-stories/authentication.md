@@ -76,7 +76,7 @@ Users must be authenticated to access any part of the application. Two sign-in m
 
 **Acceptance criteria:**
 - Requests to the llm-service URL from the public internet fail; only cv-api can call it.
-- All AI features (CV generation, optimize, extract, chat, cover letter) keep working in production.
+- All AI features (CV generation, extract, chat, cover letter) keep working in production.
 - The production database does not accept connections from arbitrary internet hosts.
 - Local development via docker-compose works unchanged.
 

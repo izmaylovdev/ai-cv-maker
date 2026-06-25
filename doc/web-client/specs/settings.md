@@ -59,6 +59,11 @@ Add `GlobalPreferences string?` column to the `Users` table (nullable). EF Core 
 
 ### 2.2 Technical Specification
 
+> **Note (ADR-0015).** The `Optimize` RPC and its `OptimizeRequest` /
+> `LlmOptimizeRequest` were later removed; ignore the `Optimize*` rows below.
+> Global preferences still apply to the remaining flows (`Generate`,
+> `CoverLetter`).
+
 #### gRPC proto changes
 
 Add an optional `global_preferences` field to `GenerateRequest`, `OptimizeRequest`, and `CoverLetterRequest` in `proto/llm_service.proto`:

@@ -1,34 +1,5 @@
 import { Page } from '@playwright/test';
 import { API_URL } from '../constants';
-import { mockOptimizedDocument } from '../fixtures/profile.fixture';
-
-// US-AI-2 — Full profile optimization. Returns a rewritten ProfileDocument.
-export async function mockOptimizeApi(page: Page, profileId: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({ json: { document: mockOptimizedDocument } });
-  });
-}
-
-export async function mockOptimizeFailApi(page: Page, profileId: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({ status: 502, body: 'Optimization failed' });
-  });
-}
-
-export async function mockOptimizeLimitApi(page: Page, profileId: string, message: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({
-      status: 402,
-      json: { code: 'usage_limit_exceeded', message, limitUsd: 0.5 },
-    });
-  });
-}
-
-export async function mockOptimizeUrlFetchErrorApi(page: Page, profileId: string, errorMessage: string) {
-  await page.route(`${API_URL}/job-profiles/${profileId}/optimize`, (route) => {
-    route.fulfill({ status: 422, json: { error: errorMessage } });
-  });
-}
 
 // US-AI-4 — Conversational profile chat (web component on the /chat page).
 export async function mockChatApi(

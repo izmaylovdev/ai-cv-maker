@@ -10,8 +10,7 @@ from app.chains.user_chat_chain import (
     ProfileSummary,
     user_chat_reply,
 )
-from app.chains.cv_chain import enhance_field, extract_profile, generate_cv, optimize_profile
-from app.preprocessing.link_enricher import LinkFetchError
+from app.chains.cv_chain import extract_profile, generate_cv
 from app.grpc import llm_service_pb2, llm_service_pb2_grpc
 from app.guards import InputTooLongError, InvalidInputError
 from app.schemas import (
@@ -20,7 +19,7 @@ from app.schemas import (
     ProfileHeader,
 )
 
-_INVALID_ARG_EXCEPTIONS = (ValidationError, InputTooLongError, InvalidInputError, LinkFetchError)
+_INVALID_ARG_EXCEPTIONS = (ValidationError, InputTooLongError, InvalidInputError)
 
 
 def _proto_node_to_block(node) -> BlockNode:
@@ -100,21 +99,6 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
         except Exception as exc:
             await context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
-    async def Optimize(self, request, context):
-        try:
-            profile = _proto_to_document(request.profile)
-            result, usage = await optimize_profile(
-                profile, request.message, getattr(request, "global_preferences", "") or ""
-            )
-            return llm_service_pb2.OptimizeResponse(
-                document=_document_to_proto(result.document),
-                usage=_usage_proto(usage),
-            )
-        except _INVALID_ARG_EXCEPTIONS as exc:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
-        except Exception as exc:
-            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
-
     async def ExtractProfile(self, request, context):
         try:
             result, usage = await extract_profile(request.cv_text)
@@ -122,15 +106,6 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
                 document=_document_to_proto(result.document),
                 usage=_usage_proto(usage),
             )
-        except _INVALID_ARG_EXCEPTIONS as exc:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
-        except Exception as exc:
-            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
-
-    async def EnhanceField(self, request, context):
-        try:
-            enhanced, usage = await enhance_field(request.content, request.field_purpose)
-            return llm_service_pb2.EnhanceFieldResponse(enhanced=enhanced, usage=_usage_proto(usage))
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except Exception as exc:

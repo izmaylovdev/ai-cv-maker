@@ -74,26 +74,6 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         return true;
     }
 
-    public async Task<OptimizeProfileResponse?> OptimizeAsync(Guid id, Guid userId, OptimizeProfileRequest request)
-    {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
-        if (profile is null) return null;
-
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
-
-        var llmRequest = new LlmOptimizeRequest(
-            profile.Document,
-            request.Message,
-            string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
-        );
-
-        await usageService.EnsureWithinLimitAsync(userId);
-        var llmResponse = await llmService.OptimizeAsync(llmRequest);
-        await usageService.RecordAsync(userId, "Optimize", llmResponse.Usage);
-
-        return new OptimizeProfileResponse(llmResponse.Document);
-    }
-
     public async Task<UpdateProfileRequest?> ExtractAsync(Guid id, Guid userId, IFormFile file)
     {
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);

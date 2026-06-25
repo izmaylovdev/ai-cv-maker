@@ -169,7 +169,7 @@ page (`/job-profiles/:id`), next to `<applysy-profile-builder>`. Unlike the glob
 `/chat` page (which sees lossy summaries of all profiles), this instance is given
 the **full open document** as context and can return a **structured edit** that is
 applied **live** to the builder. Nothing is auto-saved — an applied edit is an
-unsaved change in the builder exactly like a manual edit or an Optimize/Import
+unsaved change in the builder exactly like a manual edit or an Import-from-CV
 result, and persists only when the user clicks Save.
 
 This reuses the already-present-but-unused per-profile `Chat` gRPC path
@@ -311,7 +311,7 @@ contract.
 #### Out of scope (this iteration)
 
 - Editing from the global `/chat` page (deferred; `UserChat` stays Q&A).
-- Whole-document free-form rewrites via chat (use the existing Optimize flow).
+- Whole-document free-form rewrites (the dedicated `Optimize` endpoint/RPC was removed — see [ADR-0015](../../adr/0015-remove-optimize-enhance-endpoints.md); chat edits are patch-based, scoped per turn).
 - Multi-profile or batch edits in one message.
 - Undo-via-chat (the editor's own undo applies to chat edits like any other).
 - Server-side validation/application of the patch (frontend is the single apply + validate site).

@@ -35,11 +35,6 @@ export class ProfileService {
     return this.http.put<JobProfile>(`${BASE}/${id}`, update);
   }
 
-  /** AI-rewrites the profile for the given goal; returns the new document for review. */
-  optimizeProfile(id: string, message: string) {
-    return this.http.post<{ document: ProfileDocument }>(`${BASE}/${id}/optimize`, { message });
-  }
-
   /** Extracts a document (and a suggested name) from an uploaded CV file. */
   extractFromCv(id: string, file: File) {
     const formData = new FormData();
