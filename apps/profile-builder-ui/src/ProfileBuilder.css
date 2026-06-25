@@ -33,13 +33,16 @@
   justify-content: center;
   gap: 20px;
   margin: 32px auto;
-  max-width: 920px;
+  max-width: 1180px;
   padding: 0 16px;
 }
 
-/* The sheet — a single piece of paper, edited in place. */
+/* The sheet — a single piece of paper, edited in place. The 945px width is sized
+   so body paragraphs wrap onto the same number of lines as the PDF export (the
+   PDF renders 10pt Arial in an A4 column; the editor's larger 15px system font
+   needs a proportionally wider sheet to break text at the same points). */
 .pb-sheet {
-  flex: 0 1 760px;
+  flex: 0 1 945px;
   min-width: 0;
   padding: 64px 72px 96px;
   background: var(--pb-paper);
