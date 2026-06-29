@@ -2,14 +2,14 @@
 
 ## Overview
 
-Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with ten apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), the document-builder widget that is the canonical profile editor (`profile-builder-ui`, embedded in `ui-angular`; ADR-0013), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
+Applysy is a web application that lets users manage job profiles and generate AI-tailored CVs and cover letters as PDF files. The system is organized as an Nx monorepo with nine apps: a public marketing site (`landing`), the user-facing plane (`ui-angular`, `chat-ui`, `cv-api`, `llm-service`), the document-builder widget that is the canonical profile editor (`profile-builder-ui`, embedded in `ui-angular`; ADR-0013), an admin plane (`admin-api`, `admin-ui`), a Chrome extension (`chrome-extension`), and a monitoring stack (Prometheus + Grafana).
 
 ```
 Browser ──────────────────────────────┐        Chrome extension (job auto-fill)
   └─ ui-angular (Angular 21 SPA)      │          └─ REST/HTTP ─────────┐
        └─ <ai-chat-widget>  ← chat-ui │                                │
             │                         ▼                                ▼
-            └─ REST/HTTP ──→ cv-api (ASP.NET Core 8) ◄─────────────────┘
+            └─ REST/HTTP ──→ cv-api (ASP.NET Core 9) ◄─────────────────┘
                                  ├─ PostgreSQL (EF Core, main DB)
                                  └─ gRPC ──→ llm-service (Python, grpc.aio)
                                                   └─ LLM provider (Google, OpenAI-compat, Azure AI Foundry)
@@ -233,7 +233,7 @@ The dev server also serves the IIFE bundle at `GET /profile-builder.js` (an on-d
 
 ---
 
-### `apps/cv-api` — REST API (ASP.NET Core 8)
+### `apps/cv-api` — REST API (ASP.NET Core 9)
 
 The central backend. Exposes a JSON REST API, owns the database, generates PDFs, and orchestrates all LLM calls via gRPC.
 
@@ -367,7 +367,7 @@ User
 Profile  (FK → User, cascade delete)
  ├── id, userId
  ├── name          — internal label (e.g. "Senior Dev Profile")
- ├── document      — JSON column: the canonical ProfileDocument { header, sections[] } (ADR-0013).
+ ├── document      — JSON column: the canonical ProfileDocument { header, body } (ADR-0013, body amended by ADR-0014 to a flat BlockNode tree).
  │                   Replaces the former fullName/title/overview/location/contactEmail/contactPhone/
  │                   sectionOrder columns and the WorkExperiences/Educations/Skills child tables,
  │                   which were backfilled into the document and dropped.

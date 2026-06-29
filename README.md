@@ -9,13 +9,13 @@ An AI-powered CV generation platform built as an Nx monorepo. Users authenticate
 | `landing` | Static HTML + Vite + Nginx | Public marketing landing page |
 | `ui-angular` | Angular + Nginx | Frontend SPA (auth, profile, CV pages) |
 | `cv-api` | ASP.NET Core 9 + PostgreSQL | REST API — auth, user profiles, CV management, PDF export |
-| `llm-service` | Python / FastAPI + LangChain | AI microservice — generates CV content via a configurable LLM |
+| `llm-service` | Python / gRPC + LangChain | AI microservice — generates CV content via a configurable LLM |
 | `infra` | Terraform | Cloud infrastructure |
 
 ```
 Browser → ui-angular (Nginx) → cv-api (.NET) → PostgreSQL
-                                     ↓
-                              llm-service (Python/FastAPI)
+                                     ↓ gRPC
+                              llm-service (Python / grpc.aio)
 ```
 
 ## Getting started
@@ -43,7 +43,7 @@ docker compose up --build
 |---------|-----|
 | UI | http://localhost:4200 |
 | CV API | http://localhost:5050 |
-| LLM service | http://localhost:8080 |
+| LLM service | gRPC localhost:50051 (metrics on http://localhost:8080) |
 | PostgreSQL | localhost:5433 |
 
 ### One-line dev environment

@@ -6,6 +6,18 @@
 
 ---
 
+> **Partially superseded (ADR-0013 / ADR-0014).** Sections below that describe
+> the old **reactive-form / structured-profile** editor — "work experiences,
+> educations, skills, `sectionOrder`", `Profile.sectionOrder` section ordering,
+> and mapping a "reactive-form value" to the draft payload — predate the
+> canonical `ProfileDocument { header, body }` model. The profile is now one
+> rich-text document; `POST /api/cvs/draft-pdf` takes `{ name, document }`, and
+> the PDF walks the `body` block tree in document order (no `sectionOrder`). See
+> `ARCHITECTURE.md` and ADR-0013/0014; the structured details below are kept for
+> history.
+
+---
+
 ## 1. Overview
 
 From a saved profile a user can generate one or more tailored CV versions. Each generation invokes the AI with optional per-generation notes (e.g., a job description) and produces a structured CV document. All versions are stored with timestamps, can be previewed inline, and downloaded as PDF. A "raw export" path allows downloading the profile as PDF without any AI rewriting.

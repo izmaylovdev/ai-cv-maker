@@ -162,10 +162,11 @@ All three steps should run in a single database transaction.
 > **Superseded (ADR-0013).** The structured `Profile` shape below — `fullName`/
 > `title`/`summary`/contacts plus `workExperience`/`education`/`skills`/
 > `sectionOrder` — has been **retired**. A profile now stores a canonical
-> `ProfileDocument { header, sections[] }` (cv-api persists it as a jsonb
+> `ProfileDocument { header, body }` (a flat title-anchored `BlockNode` tree,
+> ADR-0013 with the body amended by ADR-0014; cv-api persists it as a jsonb
 > `document` column; `GET/PUT /api/job-profiles/:id` speak `{ id, name,
-> document }`). See `ARCHITECTURE.md` and ADR-0013; the model below is kept for
-> history only.
+> document }`). See `ARCHITECTURE.md` and ADR-0013/0014; the model below is kept
+> for history only.
 
 ```ts
 interface Profile {
