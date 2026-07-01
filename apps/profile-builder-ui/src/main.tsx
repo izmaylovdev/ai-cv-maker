@@ -66,14 +66,18 @@ class ProfileBuilderWidget extends HTMLElement {
     }
     const { document, result } = applyPatch(this._document, patch);
     if (!result.valid) return { ok: false, errors: result.errors };
-    this._document = document;
-    this.renderWidget();
+    // handleChange seeds the editor (re-render) and fires `documentchange`.
     this.handleChange(document);
     return { ok: true, errors: [] };
   }
 
   private handleChange = (doc: ProfileDocument) => {
     this._document = doc;
+    // Re-render so the React-controlled header inputs reflect the new value —
+    // without this, typing into a header field is reverted to the stale prop
+    // (the Lexical body is uncontrolled, so it's unaffected). LoadBodyPlugin
+    // guards against reloading the editor on these no-op body re-renders.
+    this.renderWidget();
     this.dispatchEvent(
       new CustomEvent<ProfileDocument>('documentchange', {
         detail: doc,

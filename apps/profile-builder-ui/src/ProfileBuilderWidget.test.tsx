@@ -5,7 +5,7 @@
 // microtask as connectedCallback, before React's first commit.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { waitFor } from '@testing-library/dom';
+import { waitFor, fireEvent } from '@testing-library/dom';
 import './main';  // registers <applysy-profile-builder>
 import { ProfileDocument, TitleNode, FlowNode, emptyHeader } from './model';
 import { paragraphNode, rootNode, titleNode, timelineNode, entryNode, chipsNode } from './nodes';
@@ -104,6 +104,33 @@ describe('ProfileBuilderWidget — web component seeding (regression: body-not-r
       expect(events.length).toBeGreaterThan(0);
       expect(events[0]).toHaveProperty('header');
       expect(events[0]).toHaveProperty('body');
+    });
+  });
+
+  it('keeps typed edits in the header fields (regression: header inputs frozen)', async () => {
+    // The header inputs are React-controlled (value={header.fullName}). When the
+    // host's handleChange updated _document without re-rendering, React restored
+    // the stale prop value and the field appeared uneditable. Typing must now
+    // both persist in the DOM and surface via documentchange.
+    const el = mount();
+    el.document = makeDoc();
+
+    const nameInput = await waitFor(() => {
+      const input = el.querySelector('.pb-header__name') as HTMLInputElement | null;
+      expect(input?.value).toBe('Jane Doe');
+      return input as HTMLInputElement;
+    });
+
+    const events: ProfileDocument[] = [];
+    el.addEventListener('documentchange', (e) => {
+      events.push((e as CustomEvent<ProfileDocument>).detail);
+    });
+
+    fireEvent.input(nameInput, { target: { value: 'Jane Q. Doe' } });
+
+    await waitFor(() => {
+      expect((el.querySelector('.pb-header__name') as HTMLInputElement).value).toBe('Jane Q. Doe');
+      expect(events.at(-1)?.header.fullName).toBe('Jane Q. Doe');
     });
   });
 

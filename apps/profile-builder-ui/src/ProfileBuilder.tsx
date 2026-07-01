@@ -73,8 +73,15 @@ export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
   const rootIdRef = useRef<string>(document.body.id);
   rootIdRef.current = document.body.id;
 
+  // Emit the latest editor body alongside the new header. Before LoadBodyPlugin's
+  // first effect runs, the sentinel ref is still '' (not valid JSON) — fall back
+  // to the incoming document.body so a header edit made early never crashes on
+  // JSON.parse('') and silently drops the change.
   const emitHeader = (next: ProfileHeaderModel) =>
-    onChange?.({ header: next, body: parse(bodyJsonRef.current) });
+    onChange?.({
+      header: next,
+      body: bodyJsonRef.current ? parse(bodyJsonRef.current) : document.body,
+    });
 
   const emitBody = (body: RootNode) => {
     const json = JSON.stringify(body);
