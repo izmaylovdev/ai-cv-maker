@@ -1,5 +1,11 @@
 import { clearAuthMethod, clearToken, generateCoverLetter, generateAndDownloadCv, getSelectedProfile, getToken } from "./popup/api";
 
+// US-EXT-4 — clicking the toolbar icon opens the side panel (the popup is gone).
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+});
+chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 async function ensureContentScript(tabId: number): Promise<boolean> {
   try {
     await chrome.tabs.sendMessage(tabId, { type: "PING" });
@@ -25,7 +31,9 @@ async function sendToTab(
   options?: chrome.tabs.MessageSendOptions
 ): Promise<void> {
   try {
-    await chrome.tabs.sendMessage(tabId, message, options);
+    await (options
+      ? chrome.tabs.sendMessage(tabId, message, options)
+      : chrome.tabs.sendMessage(tabId, message));
   } catch { /* tab may have navigated away */ }
 }
 
@@ -35,7 +43,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (!tab?.id) return;
 
     const token = await getToken();
-    if (!token) { chrome.action.openPopup(); return; }
+    if (!token) { await chrome.sidePanel?.open({ tabId: tab.id }).catch(() => {}); return; }
 
     const ready = await ensureContentScript(tab.id);
     if (!ready) return;
@@ -84,7 +92,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   const tabId = tab.id;
   const token = await getToken();
   if (!token) {
-    chrome.action.openPopup();
+    await chrome.sidePanel?.open({ tabId }).catch(() => {});
     return;
   }
 
@@ -149,4 +157,67 @@ chrome.commands.onCommand.addListener(async (command) => {
       variant: "error",
     });
   }
+});
+
+// ── Side-panel relay (US-EXT-4) ────────────────────────────────────────────
+// The side panel runs in the extension context and has no direct page access, so
+// it asks the background to read job context from / write text into the active
+// tab. Reuses the content script's GET_PAGE_CONTEXT / INSERT_TEXT handlers.
+
+interface PanelPageContext {
+  jobTitle: string;
+  jobDescription: string;
+  fieldContext: string;
+  tabId: number;
+  frameId: number;
+}
+
+async function getPageContextAcrossFrames(tabId: number): Promise<PanelPageContext | null> {
+  let frameIds: number[] = [0];
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId });
+    if (frames?.length) frameIds = frames.map((f) => f.frameId);
+  } catch { /* webNavigation unavailable — top frame only */ }
+
+  for (const frameId of frameIds) {
+    try {
+      const result = await chrome.tabs.sendMessage(tabId, { type: "GET_PAGE_CONTEXT" }, { frameId });
+      if (result) {
+        return { ...result, tabId, frameId };
+      }
+    } catch { /* frame may not have the content script */ }
+  }
+  return null;
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "PANEL_GET_PAGE_CONTEXT") {
+    (async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) { sendResponse(null); return; }
+      const ready = await ensureContentScript(tab.id);
+      if (!ready) { sendResponse(null); return; }
+      sendResponse(await getPageContextAcrossFrames(tab.id));
+    })();
+    return true; // async response
+  }
+
+  if (message?.type === "PANEL_INSERT_TEXT") {
+    (async () => {
+      const { text, tabId, frameId } = message;
+      if (typeof tabId !== "number") { sendResponse({ ok: false }); return; }
+      const insert = { type: "INSERT_TEXT", text, fieldIndex: 0 };
+      try {
+        await (typeof frameId === "number"
+          ? chrome.tabs.sendMessage(tabId, insert, { frameId })
+          : chrome.tabs.sendMessage(tabId, insert));
+        sendResponse({ ok: true });
+      } catch {
+        sendResponse({ ok: false });
+      }
+    })();
+    return true; // async response
+  }
+
+  return undefined;
 });

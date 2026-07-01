@@ -10,7 +10,7 @@ import grpc.aio
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from prometheus_client import start_http_server
 
-from app import observability
+from app import observability, tracing
 from app.grpc.metrics_interceptor import MetricsInterceptor
 from app.grpc.trace_interceptor import TraceInterceptor
 from app.grpc.servicer import LlmServiceImpl
@@ -31,9 +31,14 @@ class _AsyncHealthServicer(health_pb2_grpc.HealthServicer):
 
 
 async def serve():
-    # TraceInterceptor runs first so the Langfuse root trace wraps the whole RPC,
-    # including the metrics timing. Both are no-ops when their backend is absent.
-    server = grpc.aio.server(interceptors=[TraceInterceptor(), MetricsInterceptor()])
+    # OpenTelemetry server interceptor runs outermost (ADR-0016) so the Tempo
+    # span extracted from cv-api's traceparent parents everything below, then the
+    # Langfuse root trace (TraceInterceptor) and metrics timing. Each is a no-op
+    # when its backend is absent.
+    otel_interceptor = tracing.configure_tracing()
+    interceptors = [otel_interceptor] if otel_interceptor is not None else []
+    interceptors += [TraceInterceptor(), MetricsInterceptor()]
+    server = grpc.aio.server(interceptors=interceptors)
 
     add_LlmServiceServicer_to_server(LlmServiceImpl(), server)
 
@@ -58,6 +63,7 @@ async def serve():
         # Flush buffered traces on shutdown (SIGTERM on Cloud Run) so nothing is
         # lost when the instance is frozen/stopped (ADR-0008).
         observability.flush()
+        tracing.shutdown()
 
 
 if __name__ == "__main__":

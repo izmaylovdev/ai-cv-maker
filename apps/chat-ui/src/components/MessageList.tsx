@@ -4,9 +4,11 @@ import type { Message } from '../ChatApp';
 
 interface Props {
   messages: Message[];
+  /** US-EXT-4 — accept a fillable draft (renders a "Use this" action). */
+  onFill?: (text: string) => void;
 }
 
-export function MessageList({ messages }: Props) {
+export function MessageList({ messages, onFill }: Props) {
   if (messages.length === 0) {
     return (
       <div className="chat-empty">
@@ -34,6 +36,15 @@ export function MessageList({ messages }: Props) {
               >
                 {msg.content}
               </ReactMarkdown>
+              {msg.fillText !== undefined && onFill && (
+                <button
+                  type="button"
+                  className="chat-fill-action"
+                  onClick={() => onFill(msg.fillText!)}
+                >
+                  Use this
+                </button>
+              )}
             </div>
           ) : (
             // user / error messages are literal text with newlines preserved

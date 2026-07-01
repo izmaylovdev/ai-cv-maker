@@ -1,0 +1,33 @@
+# Grafana Tempo — local single-binary trace store (ADR-0016).
+#
+# Dev only: local block storage with short retention; trace data is disposable.
+# Receives OTLP from cv-api and llm-service on 4317 (gRPC) / 4318 (HTTP) and is
+# queried by Grafana on 3200.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  # Flush blocks quickly so traces show up promptly in dev.
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # Disposable dev data — keep one day and let Tempo reclaim space.
+    block_retention: 24h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks

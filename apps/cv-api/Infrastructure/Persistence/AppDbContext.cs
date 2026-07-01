@@ -10,7 +10,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Profile> Profiles => Set<Profile>();
     public DbSet<GeneratedCv> GeneratedCvs => Set<GeneratedCv>();
-    public DbSet<RequestSpan> RequestSpans => Set<RequestSpan>();
     public DbSet<LlmUsage> LlmUsages => Set<LlmUsage>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -66,16 +65,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(p => p.GeneratedCvs)
                 .HasForeignKey(g => g.ProfileId)
                 .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<RequestSpan>(e =>
-        {
-            e.HasKey(s => s.Id);
-            e.Property(s => s.Service).HasMaxLength(20).IsRequired();
-            e.Property(s => s.SpanKind).HasMaxLength(10).IsRequired();
-            e.Property(s => s.Operation).HasMaxLength(300).IsRequired();
-            e.HasIndex(s => s.TraceId);
-            e.HasIndex(s => s.StartedAt);
         });
 
         modelBuilder.Entity<LlmUsage>(e =>

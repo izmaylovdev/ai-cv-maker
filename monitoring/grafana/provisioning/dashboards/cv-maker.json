@@ -40,14 +40,14 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Error Rate (1h)",
+      "title": "Error Rate 4xx+5xx (1h)",
       "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
       "datasource": { "type": "prometheus", "uid": "prom-cv-maker" },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prom-cv-maker" },
-          "expr": "sum(increase(http_requests_received_total{job=\"cv-api\",statusCode=~\"5..\"}[1h])) / sum(increase(http_requests_received_total{job=\"cv-api\"}[1h])) * 100",
+          "expr": "sum(increase(http_requests_received_total{job=\"cv-api\",code=~\"4..|5..\"}[1h])) / sum(increase(http_requests_received_total{job=\"cv-api\"}[1h])) * 100",
           "instant": true
         }
       ],
@@ -244,89 +244,64 @@
       }
     },
     {
-      "id": 8,
-      "type": "table",
-      "title": "Slowest Endpoints (24h avg)",
-      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 10 },
-      "datasource": { "type": "postgres", "uid": "pg-cv-maker" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "pg-cv-maker" },
-          "format": "table",
-          "rawSql": "SELECT \"Operation\", COUNT(*) AS requests, ROUND(AVG(\"DurationMs\")::numeric, 0)::int AS avg_ms, ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY \"DurationMs\")::numeric, 0)::int AS p95_ms, SUM(CASE WHEN \"IsError\" THEN 1 ELSE 0 END) AS errors FROM \"RequestSpans\" WHERE \"SpanKind\" = 'http' AND \"StartedAt\" > NOW() - INTERVAL '24 hours' GROUP BY \"Operation\" ORDER BY avg_ms DESC LIMIT 20"
-        }
-      ],
-      "options": { "sortBy": [{ "displayName": "avg_ms", "desc": true }] },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "avg_ms" },
-            "properties": [{ "id": "unit", "value": "ms" }, { "id": "displayName", "value": "Avg (ms)" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "p95_ms" },
-            "properties": [{ "id": "unit", "value": "ms" }, { "id": "displayName", "value": "P95 (ms)" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "requests" },
-            "properties": [{ "id": "displayName", "value": "Requests" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "errors" },
-            "properties": [
-              { "id": "displayName", "value": "Errors" },
-              { "id": "custom.displayMode", "value": "color-background" },
-              {
-                "id": "thresholds",
-                "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
-              },
-              { "id": "color", "value": { "mode": "thresholds" } }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "id": 9,
       "type": "table",
-      "title": "Recent End-to-End Traces",
-      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 10 },
-      "datasource": { "type": "postgres", "uid": "pg-cv-maker" },
+      "title": "Recent Traces",
+      "description": "End-to-end traces from Tempo (ADR-0016). Click a Trace ID to open the full cross-service waterfall (cv-api HTTP → gRPC → llm-service → LLM call).",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "pg-cv-maker" },
-          "format": "table",
-          "rawSql": "SELECT TO_CHAR(h.\"StartedAt\" AT TIME ZONE 'UTC', 'HH24:MI:SS') AS time, h.\"Operation\" AS endpoint, h.\"StatusCode\" AS status_code, h.\"DurationMs\" AS total_ms, g.\"Operation\" AS grpc_method, g.\"DurationMs\" AS grpc_ms, h.\"IsError\" AS error FROM \"RequestSpans\" h LEFT JOIN \"RequestSpans\" g ON g.\"TraceId\" = h.\"TraceId\" AND g.\"SpanKind\" = 'grpc' WHERE h.\"SpanKind\" = 'http' AND h.\"StartedAt\" > NOW() - INTERVAL '1 hour' ORDER BY h.\"StartedAt\" DESC LIMIT 50"
+          "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
+          "queryType": "traceql",
+          "query": "{}",
+          "tableType": "traces",
+          "limit": 20
         }
       ],
       "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "total_ms" },
-            "properties": [{ "id": "unit", "value": "ms" }, { "id": "displayName", "value": "Total (ms)" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "grpc_ms" },
-            "properties": [{ "id": "unit", "value": "ms" }, { "id": "displayName", "value": "gRPC (ms)" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "error" },
-            "properties": [
-              { "id": "custom.displayMode", "value": "color-background" },
-              {
-                "id": "thresholds",
-                "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
-              },
-              { "id": "color", "value": { "mode": "thresholds" } }
-            ]
-          }
-        ]
-      }
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Recent Errored Traces",
+      "description": "Traces containing a span with status=error (5xx / gRPC faults). Click a Trace ID to open the waterfall and find the failing span.",
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
+          "queryType": "traceql",
+          "query": "{ status = error }",
+          "tableType": "traces",
+          "limit": 20
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Slow cv-api Traces (>500ms)",
+      "description": "cv-api-rooted traces slower than 500ms. Click a Trace ID to open the waterfall and see where the time goes.",
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name = \"cv-api\" && duration > 500ms }",
+          "tableType": "traces",
+          "limit": 20
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": {}, "overrides": [] }
     }
   ]
 }

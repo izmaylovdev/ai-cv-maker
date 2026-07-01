@@ -172,6 +172,57 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - If an edit cannot be applied (ambiguous target, request fails), the assistant says so in its reply and the document is left unchanged.
 - Edits respect the document schema (ADR-0014 block-tree nesting rules); an edit that would produce an invalid document is rejected rather than applied.
 
+### US-AI-11 — See why a chat request failed
+
+**As a** user talking to the AI chat assistant,
+**I want to** see a clear, specific reason when my message can't be answered or applied,
+**so that** I know what went wrong and what to do next, instead of a generic "something went wrong".
+
+**Acceptance criteria:**
+- When a chat request fails, the assistant shows a specific, plain-language message describing the cause — never an opaque generic error and never a raw technical/stack string.
+- Distinct failure causes produce distinct messages, each with a next step where one exists:
+  - The AI's edit was too large to apply (the response was cut off) → tells me to try a smaller or more specific edit.
+  - I've reached my usage limit → tells me I've hit the limit, rather than looking like a system fault.
+  - The AI service is temporarily unavailable or timed out → tells me it's temporary and to try again.
+  - My request was rejected as invalid or out of scope → shows the assistant's own explanation.
+- The failure message is visually distinguishable from a normal assistant reply (it reads as an error, not advice).
+- A failed request never partially applies an edit — the open document is left unchanged.
+- I can continue the conversation after a failure — sending another message works normally.
+
+---
+
+### US-AI-10 — Show/hide the in-editor AI chat as a slide-in sidebar
+
+**As a** user editing one of my CV profiles,
+**I want to** open the AI chat as a panel that slides in from the right edge and dismiss it back out of the way,
+**so that** I can give the profile document the full width when I'm just editing, and summon the assistant only when I need it.
+
+**Acceptance criteria:**
+- The profile editor shows a toggle control (an "AI Editor" button) that opens and closes the chat sidebar.
+- When opened, the chat panel slides in from the right edge with a brief animation; when closed, it slides back out and is fully hidden.
+- On large screens the panel pushes the editor: the document column shrinks to the left to make room (no overlay/scrim). On small screens the panel slides over the (near-)full width.
+- The chat keeps its conversation and its live link to the open document across open/close cycles — closing only hides it, it does not reset the thread or lose context.
+- A close (✕) control inside the panel, the toggle button, or pressing Escape all dismiss it.
+- The open/closed state is remembered between visits (persisted in localStorage) and restored on load.
+- The toggle indicates whether the chat is currently open.
+- Works in both light and dark themes; the chat's editing behavior (US-AI-9) is unchanged.
+
+---
+
+### US-AI-12 — Open the in-editor AI chat directly in conversation view
+
+**As a** user editing one of my CV profiles,
+**I want to** see the AI assistant in its normal chat layout as soon as I open it — with the message input anchored at the bottom — even before I've sent anything,
+**so that** it reads as a ready-to-use conversation panel consistent with how it looks once messages exist, rather than a separate centered splash screen.
+
+**Acceptance criteria:**
+- When the in-editor AI chat (the one bound to the open profile document) is opened with no messages yet, it shows the standard chat layout: an empty conversation area above and the message input anchored at the bottom edge of the panel.
+- The centered "How can I help you?" landing splash is no longer shown for the in-editor chat.
+- The empty conversation area shows a brief, unobtrusive greeting/hint, but the layout (input at the bottom) matches the post-message state.
+- Sending the first message keeps the input in the same position — no layout jump from "landing" to "conversation".
+- The global read-only `/chat` assistant is out of scope and keeps its current landing behavior.
+- Works in both light and dark themes; the chat's editing behavior (US-AI-9) is unchanged.
+
 ---
 
 ### US-AI-13 — Let the in-editor AI Editor see my other profiles when needed

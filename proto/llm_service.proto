@@ -12,6 +12,7 @@ service LlmService {
   rpc Health (HealthRequest) returns (HealthResponse);
   rpc GenerateCoverLetter (CoverLetterRequest) returns (CoverLetterResponse);
   rpc SelectBestProfile (SelectBestProfileRequest) returns (SelectBestProfileResponse);
+  rpc JobChat (JobChatRequest) returns (JobChatResponse);
 }
 
 // Canonical profile model (ADR-0014, amends ADR-0013): a fixed identity/contact
@@ -95,8 +96,10 @@ message ChatRequest {
 message ChatProposal {
   string type        = 1;
   string description = 2;
-  // JSON string describing a document patch.
+  // JSON string describing a document patch (type "edit").
   string patch_json  = 3;
+  // Plain text to fill into a page field (type "fill", US-EXT-4).
+  string text        = 4;
 }
 
 message ChatResponse {
@@ -153,4 +156,22 @@ message SelectBestProfileRequest {
 
 message SelectBestProfileResponse {
   string profile_id = 1;
+}
+
+// US-EXT-4 — side-panel chat about an open job posting. Profile summaries + the
+// posting are context; the assistant can answer questions or return a "fill"
+// proposal (a cover-letter draft) in ChatProposal.text.
+message JobChatRequest {
+  repeated ProfileSummary profiles = 1;
+  string               job_title       = 2;
+  string               job_description = 3;
+  string               field_context   = 4;
+  string               message         = 5;
+  repeated ChatMessage history         = 6;
+}
+
+message JobChatResponse {
+  string        reply    = 1;
+  ChatProposal  proposal = 2;
+  UsageMetadata usage    = 3;
 }

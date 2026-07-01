@@ -395,3 +395,120 @@ No schema changes.
 - Streaming PDF generation progress.
 - Storing or reviewing extension-initiated CV generations separately from web-app generations.
 - Support for non-Chrome browsers.
+
+---
+
+## 4. Side-Panel Chat with Accept-to-Fill (US-EXT-4)
+
+### 4.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EXT-4.1 | Clicking the extension toolbar icon opens a Chrome side panel. The action popup is removed (`action.default_popup` deleted from the manifest). |
+| F-EXT-4.2 | The side panel hosts the existing `<ai-chat-widget>` (the `apps/chat-ui` IIFE bundle), bundled into the extension's own assets (no network dependency on the chat-ui dev server). |
+| F-EXT-4.3 | On panel open (and on active-tab change while open), the panel pulls the current page's job context (`GET_PAGE_CONTEXT`/`GET_JOB_CONTEXT`, reused from `content.ts`) and provides it to the chat as conversation context. |
+| F-EXT-4.4 | The user can ask free-text questions about the job posting; the assistant answers using the job context plus the user's profile summaries. |
+| F-EXT-4.5 | When the user asks for a cover letter, the assistant returns a draft rendered **inside the chat thread**; nothing is written to the page automatically. |
+| F-EXT-4.6 | A cover-letter draft is accompanied by a "Use this" action in the thread. Activating it sends the draft text to the page via the existing `INSERT_TEXT`/`insertText` path and the chat then confirms ("Filled the cover letter field."). |
+| F-EXT-4.7 | If the user does not activate "Use this", nothing is written to the page. |
+| F-EXT-4.8 | If no candidate field is detected on the page when "Use this" is activated, the chat shows a clear note ("Couldn't find a field to fill on this page.") and writes nothing. |
+| F-EXT-4.9 | Authentication reuses the existing stored JWT and Google/email flows; when unauthenticated (or on 401) the panel shows the existing login UI (moved out of the popup) instead of the chat. |
+| F-EXT-4.10 | The panel supports client-side navigation between views. **Chat** is the default view. **Settings** and **Hotkeys** views are scaffolded as routes; Settings hosts the existing optimised-CV profile picker (relocated from the popup), and Hotkeys is a placeholder for future shortcut configuration. |
+| F-EXT-4.11 | The existing hotkey flows (`Alt+Shift+F` quick fill, `Alt+Shift+D` optimised-CV download) continue to work unchanged. |
+
+### 4.2 Technical Specification
+
+#### Extension — `manifest.json`
+
+- Remove `action.default_popup`; keep `action` (icon + title) for the toolbar button.
+- Add `"side_panel": { "default_path": "panel/index.html" }`.
+- Add `"sidePanel"` to `permissions`.
+- All other permissions/commands unchanged.
+
+#### Extension — `apps/chrome-extension/src/background.ts`
+
+- On install/startup: `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` so the toolbar icon opens the panel.
+- Add a message relay used by the panel (which has no direct page access):
+  - `PANEL_GET_PAGE_CONTEXT` → resolves the active tab, `ensureContentScript`, queries `GET_PAGE_CONTEXT` across frames (reusing the existing frame-walk in the `fill-fields` handler), returns `{ jobTitle, jobDescription, fieldContext, tabId, frameId }`.
+  - `PANEL_INSERT_TEXT { text, tabId, frameId }` → sends the existing `INSERT_TEXT` message to that tab/frame. **Reuses `content.ts` `insertText` unchanged.**
+- Existing `fill-fields` / `download-optimised-cv` command handlers are unchanged.
+
+#### Extension — new `apps/chrome-extension/src/panel/`
+
+A React app (mirrors the popup's stack), built by Vite as a second HTML entry (`panel/index.html`).
+
+```
+src/panel/
+  index.html
+  main.tsx          — mounts <Panel/>
+  Panel.tsx         — auth gate + router shell (view switch)
+  routes.ts         — minimal hash/state router: "chat" | "settings" | "hotkeys"
+  views/
+    ChatView.tsx    — hosts <ai-chat-widget>, wires context in + accept out
+    SettingsView.tsx— relocated ProfilePicker (optimised-CV profile selection)
+    HotkeysView.tsx — placeholder (lists current Alt+Shift+F / +D, links to chrome://extensions/shortcuts)
+```
+
+- **Routing** is intentionally tiny (a `useState<Route>` + a small nav), not a router library — enough to add views later without re-architecting.
+- **Auth:** `Panel.tsx` reuses `popup/api.ts` (`getToken`, login helpers). No token → render the existing login UI (extracted from `Popup.tsx` into a shared `LoginForm`).
+- **Chat hosting:** `ChatView` loads the bundled `chat-widget.js`, renders `<ai-chat-widget auth-token api-base>`, and:
+  - sets the new `jobContext` property (below) from `PANEL_GET_PAGE_CONTEXT` on mount and on `chrome.tabs.onActivated`/`onUpdated`;
+  - listens for the widget's new `fill` event → sends `PANEL_INSERT_TEXT` → on success calls the widget's `addAssistantNote("Filled the cover letter field.")`, on missing field `addAssistantNote("Couldn't find a field to fill on this page.")`.
+
+#### `apps/chat-ui` — additive widget changes
+
+The widget today supports `document` (edit mode, auto-applied) and the `edit` event. Add a **separate, review-then-accept** path for fillable text so the auto-apply edit flow is untouched:
+
+- New optional **`jobContext` property** `{ jobTitle, jobDescription, fieldContext }`. When set (and `document` is not), it is sent in the `POST /api/chat` body as `jobContext`. Mutually exclusive with `document`.
+- The response `proposal` may have `type: "fill"` carrying `text`. For a `fill` proposal the widget does **not** auto-emit; instead it renders the assistant message with a **"Use this" button** beneath the draft.
+- New **`fill` `CustomEvent`** (detail `{ text }`) dispatched when the user clicks "Use this".
+- `addAssistantNote` (already present) reports the fill outcome.
+
+`main.tsx` exposes `jobContext` as a property and re-renders on set, mirroring the existing `document` property handling.
+
+#### API — `POST /api/chat` (additive)
+
+Add optional `jobContext` to the request (mutually exclusive with `document`):
+
+Request (job-chat mode):
+```json
+{
+  "message": "Write a cover letter for this role",
+  "history": [ … ],
+  "jobContext": { "jobTitle": "…", "jobDescription": "…", "fieldContext": "cover letter" }
+}
+```
+
+Response 200 (cover-letter draft):
+```json
+{
+  "reply": "Here's a draft cover letter tailored to the role:",
+  "proposal": { "type": "fill", "description": "Cover letter draft", "text": "Dear …" }
+}
+```
+
+Response 200 (question): `{ "reply": "…", "proposal": null }`.
+
+`ChatController` wiring (`Features/Chat/ChatController.cs`):
+- `UserChatRequest` gains `JobContextDto? JobContext`.
+- Branch order: `Document is not null` → existing edit path; **else if `JobContext is not null`** → new `JobChatAsync` (profile summaries + job context); else → existing global `UserChat`.
+- `ChatProposalDto` gains a nullable `Text` (used for `type:"fill"`; `PatchJson` stays for `type:"edit"`).
+- Errors reuse the existing US-AI-11 classified `{ code, message }` handlers and usage limits.
+
+#### gRPC + llm-service
+
+- `proto/llm_service.proto`: add a `JobChat` rpc (or extend `UserChat` with optional job-context + a `fill` proposal). New messages: `JobChatRequest { repeated ProfileSummary profiles; string job_title; string job_description; string field_context; repeated ChatMessage history; }` → `JobChatResponse { string reply; ChatProposal proposal; }`, where `ChatProposal` gains a `text` field. Regenerate with `npm run grpc:generate`.
+- New chain `apps/llm-service/app/chains/job_chat_chain.py`: given profile summaries + job posting + history, answers questions and, on cover-letter intent, returns `{ reply, proposal: { type:"fill", text } }`. Cover-letter prompt logic reuses/adapts `cover_letter_chain.py`. Register the handler in `grpc/servicer.py`. Add `app/chains/test_job_chat_chain.py`.
+
+#### Data model
+
+No schema changes.
+
+### 4.3 Out of scope (this iteration)
+
+- Settings/Hotkeys view **content** beyond the relocated profile picker (Hotkeys is a stub linking to `chrome://extensions/shortcuts`; in-app rebinding is later).
+- Streaming cover-letter generation into the thread.
+- Click-to-target field selection / per-site field adapters (keeps the existing heuristic `findCandidateFields`).
+- Filling fields other than the first detected candidate (`fieldIndex: 0`, unchanged).
+- Persisting chat history across panel open/close.
+- Firefox/Edge side-panel equivalents.

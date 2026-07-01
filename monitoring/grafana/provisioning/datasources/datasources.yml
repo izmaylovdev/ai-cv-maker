@@ -5,20 +5,39 @@ datasources:
     uid: prom-cv-maker
     type: prometheus
     access: proxy
-    url: ${PROMETHEUS_URL:-http://prometheus:9090}
+    # NOTE: Grafana provisioning only supports plain ${VAR} substitution — it has
+    # NO bash-style ${VAR:-default} fallback. Defaults are supplied by the grafana
+    # service env in docker-compose.yml. Reintroducing :-default here resolves the
+    # url to empty and silently blanks every panel.
+    url: ${PROMETHEUS_URL}
     isDefault: true
     jsonData:
       timeInterval: "15s"
+
+  - name: Tempo
+    uid: tempo-cv-maker
+    type: tempo
+    access: proxy
+    # Default supplied by the grafana service env in docker-compose.yml — see the
+    # note above; provisioning has no ${VAR:-default} fallback.
+    url: ${TEMPO_URL}
+    jsonData:
+      # Jump from a Prometheus exemplar/metric to its trace, and back to request
+      # metrics from a trace's service/span.
+      tracesToMetrics:
+        datasourceUid: prom-cv-maker
+      serviceMap:
+        datasourceUid: prom-cv-maker
 
   - name: PostgreSQL
     uid: pg-cv-maker
     type: postgres
     access: proxy
-    url: ${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}
+    url: ${POSTGRES_HOST}:${POSTGRES_PORT}
     database: ${POSTGRES_DB}
     user: ${POSTGRES_USER}
     secureJsonData:
       password: ${POSTGRES_PASSWORD}
     jsonData:
-      sslmode: ${POSTGRES_SSL_MODE:-disable}
+      sslmode: ${POSTGRES_SSL_MODE}
       postgresVersion: 1600

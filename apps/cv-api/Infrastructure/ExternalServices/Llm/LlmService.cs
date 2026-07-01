@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Security.Claims;
 using CvApi.Domain.Entities;
 using CvApi.Grpc;
-using CvApi.Infrastructure.Services;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
 using Polly;
@@ -12,7 +11,6 @@ namespace CvApi.Infrastructure.ExternalServices.Llm;
 
 public class LlmService(
     CvApi.Grpc.LlmService.LlmServiceClient grpcClient,
-    TraceContext trace,
     IHttpContextAccessor httpContextAccessor,
     ResiliencePipelineProvider<string> pipelineProvider) : ILlmService
 {
@@ -25,14 +23,19 @@ public class LlmService(
 
     /// <summary>
     /// Per-call options carrying the deadline plus Langfuse trace-context headers
-    /// (ADR-0010): the cv-api request correlation id and the authenticated user id,
-    /// so the llm-service trace links back to this request's <see cref="RequestSpan"/> rows.
+    /// (ADR-0010): the active OpenTelemetry trace id and the authenticated user id,
+    /// so the llm-service Langfuse trace correlates with the Tempo trace (ADR-0016)
+    /// for the same request. The gRPC client instrumentation separately injects the
+    /// W3C <c>traceparent</c> that nests llm-service's spans under this trace.
     /// </summary>
     private CallOptions DefaultCallOptions
     {
         get
         {
-            var metadata = new Metadata { { "x-trace-id", trace.TraceId.ToString() } };
+            var metadata = new Metadata();
+            var traceId = Activity.Current?.TraceId.ToString();
+            if (!string.IsNullOrEmpty(traceId))
+                metadata.Add("x-trace-id", traceId);
             var userId = httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!string.IsNullOrEmpty(userId))
                 metadata.Add("x-user-id", userId);
@@ -45,18 +48,6 @@ public class LlmService(
         usage is null
             ? LlmTokenUsage.Empty
             : new LlmTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.ModelName);
-
-    private void AddSpan(string operation, bool isError, long durationMs, DateTime startedAt) =>
-        trace.PendingSpans.Add(new RequestSpan
-        {
-            TraceId = trace.TraceId,
-            Service = "cv-api",
-            SpanKind = "grpc",
-            Operation = operation,
-            IsError = isError,
-            DurationMs = (int)durationMs,
-            StartedAt = startedAt,
-        });
 
     /// <summary>
     /// Executes <paramref name="grpcCall"/> inside the Polly resilience pipeline and
@@ -83,208 +74,191 @@ public class LlmService(
             throw new LlmUnavailableException(
                 "The AI service is currently unreachable. Please try again later.", ex);
         }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.InvalidArgument)
+        {
+            // Guard / scope / validation rejection from llm-service. The status
+            // detail is the assistant's own explanation — surface it verbatim
+            // (US-AI-11 llm_invalid_request).
+            throw new LlmInvalidRequestException(ex.Status.Detail, ex);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Internal)
+        {
+            // The service ran but could not produce a usable result — commonly an
+            // edit response truncated at the model's output-token cap, so the JSON
+            // failed to parse (US-AI-11 llm_edit_failed).
+            throw new LlmEditFailedException(
+                "The assistant couldn't produce a valid edit — its response may have been too long. " +
+                "Try a smaller or more specific change.", ex);
+        }
     }
 
     public async Task<LlmGenerateResponse> GenerateAsync(LlmGenerateRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
-        {
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.GenerateAsync(new GenerateRequest
-                {
-                    Profile = ToProto(request.Profile),
-                    Message = request.Message ?? string.Empty,
-                    GlobalPreferences = request.GlobalPreferences ?? string.Empty,
-                }, DefaultCallOptions));
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.GenerateAsync(new GenerateRequest
+            {
+                Profile = ToProto(request.Profile),
+                Message = request.Message ?? string.Empty,
+                GlobalPreferences = request.GlobalPreferences ?? string.Empty,
+            }, DefaultCallOptions));
 
-            AddSpan("LlmService/Generate", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmGenerateResponse(FromProto(reply.Document), MapUsage(reply.Usage));
-        }
-        catch
-        {
-            AddSpan("LlmService/Generate", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
+        return new LlmGenerateResponse(FromProto(reply.Document), MapUsage(reply.Usage));
     }
 
     public async Task<LlmExtractResponse> ExtractAsync(LlmExtractRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
-        {
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.ExtractProfileAsync(new ExtractProfileRequest
-                {
-                    CvText = request.CvText,
-                }, DefaultCallOptions));
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.ExtractProfileAsync(new ExtractProfileRequest
+            {
+                CvText = request.CvText,
+            }, DefaultCallOptions));
 
-            AddSpan("LlmService/ExtractProfile", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage));
-        }
-        catch
-        {
-            AddSpan("LlmService/ExtractProfile", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
+        return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage));
     }
 
     public async Task<LlmChatResponse> ChatAsync(LlmChatRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
+        var grpcRequest = new CvApi.Grpc.ChatRequest
         {
-            var grpcRequest = new CvApi.Grpc.ChatRequest
+            Profile = ToProto(request.Profile),
+            Message = request.Message,
+        };
+        grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
+        {
+            Role = h.Role,
+            Content = h.Content,
+        }));
+        // US-AI-13 — pass the user's other saved profiles for on-demand tool reads.
+        if (request.OtherProfiles is not null)
+        {
+            grpcRequest.OtherProfiles.AddRange(request.OtherProfiles.Select(p => new CvApi.Grpc.OtherProfile
             {
-                Profile = ToProto(request.Profile),
-                Message = request.Message,
-            };
-            grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
-            {
-                Role = h.Role,
-                Content = h.Content,
+                Id = p.Id,
+                Name = p.Name,
+                Document = ToProto(p.Document),
             }));
-            // US-AI-13 — pass the user's other saved profiles for on-demand tool reads.
-            if (request.OtherProfiles is not null)
-            {
-                grpcRequest.OtherProfiles.AddRange(request.OtherProfiles.Select(p => new CvApi.Grpc.OtherProfile
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Document = ToProto(p.Document),
-                }));
-            }
-
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.ChatAsync(grpcRequest, DefaultCallOptions));
-
-            AddSpan("LlmService/Chat", false, sw.ElapsedMilliseconds, startedAt);
-
-            LlmChatProposal? proposal = null;
-            if (!string.IsNullOrEmpty(reply.Proposal?.Type))
-            {
-                proposal = new LlmChatProposal(
-                    reply.Proposal.Type,
-                    reply.Proposal.Description,
-                    reply.Proposal.PatchJson
-                );
-            }
-
-            return new LlmChatResponse(reply.Reply, proposal, MapUsage(reply.Usage));
         }
-        catch
+
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.ChatAsync(grpcRequest, DefaultCallOptions));
+
+        LlmChatProposal? proposal = null;
+        if (!string.IsNullOrEmpty(reply.Proposal?.Type))
         {
-            AddSpan("LlmService/Chat", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
+            proposal = new LlmChatProposal(
+                reply.Proposal.Type,
+                reply.Proposal.Description,
+                reply.Proposal.PatchJson
+            );
         }
+
+        return new LlmChatResponse(reply.Reply, proposal, MapUsage(reply.Usage));
     }
 
     public async Task<LlmUserChatResponse> UserChatAsync(LlmUserChatRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
+        var grpcRequest = new CvApi.Grpc.UserChatRequest
         {
-            var grpcRequest = new CvApi.Grpc.UserChatRequest
-            {
-                Message = request.Message,
-                GlobalPreferences = request.GlobalPreferences ?? string.Empty,
-            };
-            grpcRequest.Profiles.AddRange(request.Profiles.Select(p => new CvApi.Grpc.ProfileSummary
-            {
-                Name = p.Name,
-                Title = p.Title,
-                Overview = p.Overview,
-                Skills = { p.Skills },
-            }));
-            grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
-            {
-                Role = h.Role,
-                Content = h.Content,
-            }));
+            Message = request.Message,
+            GlobalPreferences = request.GlobalPreferences ?? string.Empty,
+        };
+        grpcRequest.Profiles.AddRange(request.Profiles.Select(p => new CvApi.Grpc.ProfileSummary
+        {
+            Name = p.Name,
+            Title = p.Title,
+            Overview = p.Overview,
+            Skills = { p.Skills },
+        }));
+        grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
+        {
+            Role = h.Role,
+            Content = h.Content,
+        }));
 
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.UserChatAsync(grpcRequest, DefaultCallOptions));
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.UserChatAsync(grpcRequest, DefaultCallOptions));
 
-            AddSpan("LlmService/UserChat", false, sw.ElapsedMilliseconds, startedAt);
+        return new LlmUserChatResponse(
+            reply.Reply,
+            string.IsNullOrEmpty(reply.PreferencesUpdate) ? null : reply.PreferencesUpdate,
+            MapUsage(reply.Usage)
+        );
+    }
 
-            return new LlmUserChatResponse(
-                reply.Reply,
-                string.IsNullOrEmpty(reply.PreferencesUpdate) ? null : reply.PreferencesUpdate,
-                MapUsage(reply.Usage)
+    public async Task<LlmJobChatResponse> JobChatAsync(LlmJobChatRequest request)
+    {
+        var grpcRequest = new CvApi.Grpc.JobChatRequest
+        {
+            JobTitle = request.JobTitle,
+            JobDescription = request.JobDescription,
+            FieldContext = request.FieldContext,
+            Message = request.Message,
+        };
+        grpcRequest.Profiles.AddRange(request.Profiles.Select(p => new CvApi.Grpc.ProfileSummary
+        {
+            Name = p.Name,
+            Title = p.Title,
+            Overview = p.Overview,
+            Skills = { p.Skills },
+        }));
+        grpcRequest.History.AddRange(request.History.Select(h => new CvApi.Grpc.ChatMessage
+        {
+            Role = h.Role,
+            Content = h.Content,
+        }));
+
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.JobChatAsync(grpcRequest, DefaultCallOptions));
+
+        LlmChatProposal? proposal = null;
+        if (!string.IsNullOrEmpty(reply.Proposal?.Type))
+        {
+            proposal = new LlmChatProposal(
+                reply.Proposal.Type,
+                reply.Proposal.Description,
+                reply.Proposal.PatchJson,
+                reply.Proposal.Text
             );
         }
-        catch
-        {
-            AddSpan("LlmService/UserChat", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
+
+        return new LlmJobChatResponse(reply.Reply, proposal, MapUsage(reply.Usage));
     }
 
     public async Task<LlmCoverLetterResponse> GenerateCoverLetterAsync(LlmCoverLetterRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
+        var grpcRequest = new CvApi.Grpc.CoverLetterRequest
         {
-            var grpcRequest = new CvApi.Grpc.CoverLetterRequest
-            {
-                JobTitle = request.JobTitle,
-                JobDescription = request.JobDescription,
-                FieldContext = request.FieldContext,
-                GlobalPreferences = request.GlobalPreferences ?? string.Empty,
-            };
-            grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
+            JobTitle = request.JobTitle,
+            JobDescription = request.JobDescription,
+            FieldContext = request.FieldContext,
+            GlobalPreferences = request.GlobalPreferences ?? string.Empty,
+        };
+        grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.GenerateCoverLetterAsync(grpcRequest, DefaultCallOptions));
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.GenerateCoverLetterAsync(grpcRequest, DefaultCallOptions));
 
-            AddSpan("LlmService/GenerateCoverLetter", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmCoverLetterResponse(
-                reply.Text,
-                Guid.TryParse(reply.SelectedProfileId, out var id) ? id : Guid.Empty,
-                MapUsage(reply.Usage)
-            );
-        }
-        catch
-        {
-            AddSpan("LlmService/GenerateCoverLetter", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
+        return new LlmCoverLetterResponse(
+            reply.Text,
+            Guid.TryParse(reply.SelectedProfileId, out var id) ? id : Guid.Empty,
+            MapUsage(reply.Usage)
+        );
     }
 
     public async Task<LlmSelectBestProfileResponse> SelectBestProfileAsync(LlmSelectBestProfileRequest request)
     {
-        var sw = Stopwatch.StartNew();
-        var startedAt = DateTime.UtcNow;
-        try
+        var grpcRequest = new CvApi.Grpc.SelectBestProfileRequest
         {
-            var grpcRequest = new CvApi.Grpc.SelectBestProfileRequest
-            {
-                JobDescription = request.JobDescription,
-            };
-            grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
+            JobDescription = request.JobDescription,
+        };
+        grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
-            var reply = await ExecuteAsync(async _ =>
-                await grpcClient.SelectBestProfileAsync(grpcRequest, DefaultCallOptions));
+        var reply = await ExecuteAsync(async _ =>
+            await grpcClient.SelectBestProfileAsync(grpcRequest, DefaultCallOptions));
 
-            AddSpan("LlmService/SelectBestProfile", false, sw.ElapsedMilliseconds, startedAt);
-
-            return new LlmSelectBestProfileResponse(
-                Guid.TryParse(reply.ProfileId, out var id) ? id : Guid.Empty
-            );
-        }
-        catch
-        {
-            AddSpan("LlmService/SelectBestProfile", true, sw.ElapsedMilliseconds, startedAt);
-            throw;
-        }
+        return new LlmSelectBestProfileResponse(
+            Guid.TryParse(reply.ProfileId, out var id) ? id : Guid.Empty
+        );
     }
 
     private static ProfileDocumentProto ToProto(LlmProfileWithId p)

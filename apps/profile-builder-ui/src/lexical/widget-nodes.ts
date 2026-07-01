@@ -13,7 +13,7 @@
 //   • paragraph / text / list / listItem reuse Lexical (+ @lexical/list)
 //     built-ins, subclassed only to thread the stable id.
 
-import { LinkNode } from '@lexical/link';
+import { LinkNode as LexicalLinkNode, LinkAttributes, SerializedLinkNode as SerializedLexicalLinkNode } from '@lexical/link';
 import {
   DecoratorNode,
   EditorConfig,
@@ -472,6 +472,56 @@ export function $isLinkNode(node: LexicalNode | null | undefined): node is LinkW
   return node instanceof LinkWidgetNode;
 }
 
+// ---- PbInlineLinkNode (inline mark) ---------------------------------------
+
+export type SerializedPbInlineLinkNode = Spread<{ nodeId: string }, SerializedLexicalLinkNode>;
+
+/**
+ * An inline hyperlink run inside running text (spec §15 / US-EDIT-21). Subclasses
+ * `@lexical/link`'s LinkNode purely to thread the neutral tree's stable id, so the
+ * serializer can round-trip an `inlineLink` node's id. URL lives on the Lexical
+ * node; the label is its (editable) text children. target/rel are unused — the
+ * model exposes a URL only. Distinct from the block {@link LinkWidgetNode} (a
+ * standalone link *line*); this one wraps text inline.
+ */
+export class PbInlineLinkNode extends LexicalLinkNode {
+  __nodeId: string;
+  static getType(): string {
+    return 'pb-inline-link';
+  }
+  static clone(node: PbInlineLinkNode): PbInlineLinkNode {
+    return new PbInlineLinkNode(
+      node.__url,
+      node.__nodeId,
+      { rel: node.__rel, target: node.__target, title: node.__title },
+      node.__key,
+    );
+  }
+  constructor(url = '', nodeId?: string, attributes: LinkAttributes = {}, key?: string) {
+    super(url, attributes, key);
+    this.__nodeId = nodeId ?? ephemeralId('inline-link');
+  }
+  afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__nodeId = prevNode.__nodeId;
+  }
+  getNodeId(): string {
+    return this.getLatest().__nodeId;
+  }
+  exportJSON(): SerializedPbInlineLinkNode {
+    return { ...super.exportJSON(), type: PbInlineLinkNode.getType(), version: 1, nodeId: this.__nodeId };
+  }
+  static importJSON(json: SerializedPbInlineLinkNode): PbInlineLinkNode {
+    return new PbInlineLinkNode(json.url, json.nodeId).updateFromJSON(json);
+  }
+}
+export function $createInlineLinkNode(url = '', nodeId?: string): PbInlineLinkNode {
+  return new PbInlineLinkNode(url, nodeId);
+}
+export function $isInlineLinkNode(node: LexicalNode | null | undefined): node is PbInlineLinkNode {
+  return node instanceof PbInlineLinkNode;
+}
+
 // ---- Id-carrying built-in subclasses --------------------------------------
 // paragraph / text / list / listItem reuse Lexical (+ @lexical/list) behaviour
 // but carry the neutral tree's stable id so serialization round-trips it.
@@ -628,7 +678,8 @@ export function $isPbListItemNode(node: LexicalNode | null | undefined): node is
 
 /** All custom nodes for the editor's `nodes` config. */
 export const WIDGET_NODES = [
-  LinkNode,
+  LexicalLinkNode,
+  PbInlineLinkNode,
   PbTitleNode,
   SectionNode,
   SectionHeadingNode,
@@ -643,6 +694,12 @@ export const WIDGET_NODES = [
   PbListItemNode,
   // Override the built-ins so editor commands that create paragraphs/lists use
   // our id-carrying variants.
+  {
+    replace: LexicalLinkNode,
+    with: (n: LexicalLinkNode) =>
+      new PbInlineLinkNode(n.getURL(), undefined, { rel: n.getRel(), target: n.getTarget(), title: n.getTitle() }),
+    withKlass: PbInlineLinkNode,
+  },
   { replace: LexicalParagraphNode, with: () => new PbParagraphNode(), withKlass: PbParagraphNode },
   { replace: LexicalTextNode, with: (n: LexicalTextNode) => new PbTextNode(undefined, n.__text), withKlass: PbTextNode },
   { replace: LexicalListNode, with: () => new PbListNode(), withKlass: PbListNode },

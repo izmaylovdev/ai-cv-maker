@@ -10,7 +10,7 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { mergeRegister } from '@lexical/utils';
-import { $isLinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
+import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import {
   $createParagraphNode,
   $getNodeByKey,
@@ -38,11 +38,12 @@ import {
 import {
   WIDGET_NODES,
   $isTitleNode,
-  $isEntryNode, $isEntryFieldNode, $isTimelineNode, $isPbListNode,
-  $createEntryNode, $createEntryFieldNode, $createPbTextNode, $createPbParagraphNode,
+  $isEntryNode, $isEntryFieldNode, $isTimelineNode, $isPbListNode, $isPbTextNode, $isInlineLinkNode,
+  $createEntryNode, $createEntryFieldNode, $createPbTextNode, $createPbParagraphNode, $createInlineLinkNode,
 } from './lexical/widget-nodes';
 import { $createLexicalNode, $readBody, loadDocument } from './serialize';
-import { WIDGETS, WidgetDescriptor } from './nodes';
+import { WIDGETS, WidgetDescriptor, widgetsAllowedIn } from './nodes';
+import type { NodeType } from './model';
 import { ProfileHeader } from './components/ProfileHeader';
 
 // Document builder root (spec §13 / ADR-0014). The whole profile body is ONE
@@ -222,10 +223,18 @@ function EntryStructureGuardPlugin() {
   return null;
 }
 
+// Seed URL/label for a link before the user supplies a real URL. The floating
+// editor treats it as "empty" (shows a blank input), and a caret-inserted link
+// whose label still equals this placeholder gets removed if the user cancels.
+const LINK_URL_PLACEHOLDER = 'https://';
+
 /**
- * Floating URL bar for inline links (created via selection → Link).
- * Appears below the link when the caret is inside a LinkNode; disappears otherwise.
- * Enter commits the URL; Escape closes without saving; Remove unlinks.
+ * Floating URL bar for inline links (spec §15). Appears below the link while the
+ * caret is inside one; ✓/Enter commits the URL, Escape closes without saving, ✕
+ * removes the link. All commits target the link by its node key captured when the
+ * bar opened — NOT the live selection — because focusing the URL input blurs the
+ * editor (clearing the selection), and an earlier version then dropped the typed
+ * URL on the floor (US-EDIT-21 / F-EDIT-21.4).
  */
 function InlineLinkEditorPlugin() {
   const [editor] = useLexicalComposerContext();
@@ -240,17 +249,20 @@ function InlineLinkEditorPlugin() {
     return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
         const sel = $getSelection();
-        if (!$isRangeSelection(sel)) { activeNodeKey.current = null; setOpen(false); return; }
+        // No range selection means the editor blurred — typically because focus
+        // moved to our URL input. Keep the bar (and its target link) intact so a
+        // pending commit still lands; do NOT clear activeNodeKey here.
+        if (!$isRangeSelection(sel)) return;
         const node = sel.anchor.getNode();
         const parent = node.getParent();
-        const linkNode = $isLinkNode(parent) ? parent : $isLinkNode(node) ? node : null;
+        const linkNode = $isInlineLinkNode(parent) ? parent : $isInlineLinkNode(node) ? node : null;
         if (!linkNode) { activeNodeKey.current = null; setOpen(false); return; }
         const key = linkNode.getKey();
         // Only reset the input when entering a *different* link — don't clobber what the user is typing.
         if (key !== activeNodeKey.current) {
           const url = linkNode.getURL();
           originalUrl.current = url;
-          setInputVal(url === 'https://' ? '' : url);
+          setInputVal(url === LINK_URL_PLACEHOLDER ? '' : url);
           activeNodeKey.current = key;
         }
         setOpen(true);
@@ -267,54 +279,80 @@ function InlineLinkEditorPlugin() {
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  const discardLink = () => {
-    setOpen(false);
-    activeNodeKey.current = null;
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, null);
+  // Place the caret just after the link (or at the end of its block) once a
+  // commit/restore finishes, so typing continues in the running text.
+  const caretAfter = (node: LexicalNode) => {
+    const next = node.getNextSibling();
+    if (next) next.selectStart();
+    else (node.getParent() as ElementNode | null)?.selectEnd();
   };
 
-  const applyUrl = (url: string) => {
-    if (!url.trim()) { discardLink(); return; }
-    const key = activeNodeKey.current;
-    if (!key) return;
+  // Remove the link by key. A link whose label still mirrors its URL (a freshly
+  // caret-inserted placeholder) is deleted outright; otherwise it is unwrapped,
+  // keeping its visible text in the running prose.
+  const removeByKey = (key: string) => {
     setOpen(false);
     activeNodeKey.current = null;
     editor.update(() => {
       const node = $getNodeByKey(key);
-      if (!$isLinkNode(node)) return;
-      node.setURL(url);
+      if (!$isInlineLinkNode(node)) return;
+      const label = node.getFirstChild();
+      const mirrored = $isPbTextNode(label) && label.getTextContent() === node.getURL();
+      const prev = node.getPreviousSibling();
       const next = node.getNextSibling();
-      if (next) {
-        next.selectStart();
+      if (mirrored) {
+        node.remove();
+        if (next) next.selectStart();
+        else if (prev && $isTextNode(prev)) prev.selectEnd();
       } else {
-        node.getParent()?.selectEnd();
+        let last: LexicalNode | null = null;
+        for (const child of node.getChildren()) { node.insertBefore(child); last = child; }
+        node.remove();
+        last?.selectEnd();
       }
     });
   };
 
-  const closeWithoutSaving = () => {
-    if (!inputVal.trim()) { discardLink(); return; }
+  const applyUrl = (url: string) => {
     const key = activeNodeKey.current;
     if (!key) return;
+    if (!url.trim()) { removeByKey(key); return; }
+    setOpen(false);
+    activeNodeKey.current = null;
+    editor.update(() => {
+      const node = $getNodeByKey(key);
+      if (!$isInlineLinkNode(node)) return;
+      const oldUrl = node.getURL();
+      node.setURL(url);
+      // A caret-inserted link mirrors its URL as the visible label (F-EDIT-21.3);
+      // a selection-wrapped link keeps the selected text, so only rewrite the
+      // label when it still equals the previous URL.
+      const label = node.getFirstChild();
+      if ($isPbTextNode(label) && label.getTextContent() === oldUrl) {
+        label.setTextContent(url);
+      }
+      caretAfter(node);
+    });
+  };
+
+  const closeWithoutSaving = () => {
+    const key = activeNodeKey.current;
+    if (!key) return;
+    if (!inputVal.trim()) { removeByKey(key); return; }
     const saved = originalUrl.current;
     setOpen(false);
     activeNodeKey.current = null;
     editor.update(() => {
       const node = $getNodeByKey(key);
-      if (!$isLinkNode(node)) return;
+      if (!$isInlineLinkNode(node)) return;
       node.setURL(saved);
-      const next = node.getNextSibling();
-      if (next) {
-        next.selectStart();
-      } else {
-        node.getParent()?.selectEnd();
-      }
+      caretAfter(node);
     });
   };
 
   const removeLink = () => {
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, null);
-    setOpen(false);
+    const key = activeNodeKey.current;
+    if (key) removeByKey(key);
   };
 
   if (!open || pos === null) return null;
@@ -479,21 +517,65 @@ function hotkeyAriaLabel(kind: WidgetDescriptor['kind']): string {
  */
 function ControlRail() {
   const [editor] = useLexicalComposerContext();
+  // The flow container that holds the caret, used to scope the rail to widgets
+  // valid there (US-EDIT-20 / F-EDIT-14.3). Only 'entry' diverges from the
+  // historical root-level behaviour; everything else falls back to 'root'.
+  const [containerType, setContainerType] = useState<NodeType>('root');
+
+  useEffect(() => {
+    return editor.registerUpdateListener(() => {
+      editor.getEditorState().read(() => {
+        setContainerType(caretContainerType());
+      });
+    });
+  }, [editor]);
 
   const insertWidget = (widget: WidgetDescriptor) => {
-    // Link with a text selection → wrap the selection as an inline link.
+    // Link → always an inline link (spec §15 / US-EDIT-21), never a block line.
     if (widget.kind === 'link') {
-      const hasSelection = editor.getEditorState().read(() => {
+      const { hasSelection, allowed } = editor.getEditorState().read(() => {
         const sel = $getSelection();
-        return $isRangeSelection(sel) && !sel.isCollapsed();
+        if (!$isRangeSelection(sel)) return { hasSelection: false, allowed: false };
+        // Inline links belong in running prose only — not in single-line title or
+        // entry title/dates fields (spec §15 out of scope).
+        return { hasSelection: !sel.isCollapsed(), allowed: caretAllowsInlineLink(sel.anchor.getNode()) };
       });
+      if (!allowed) return;
       if (hasSelection) {
-        editor.dispatchCommand(TOGGLE_LINK_COMMAND, 'https://');
+        // Wrap the selection; its text becomes the link label.
+        editor.dispatchCommand(TOGGLE_LINK_COMMAND, LINK_URL_PLACEHOLDER);
+      } else {
+        // Collapsed caret → insert an inline link at the caret. The label mirrors
+        // the URL (F-EDIT-21.3): seed both with the placeholder so the floating
+        // editor (which shows the placeholder as empty) can rewrite the label
+        // when a real URL is committed.
+        editor.update(() => {
+          const sel = $getSelection();
+          if (!$isRangeSelection(sel)) return;
+          const link = $createInlineLinkNode(LINK_URL_PLACEHOLDER);
+          const label = $createPbTextNode(undefined, LINK_URL_PLACEHOLDER);
+          link.append(label);
+          sel.insertNodes([link]);
+          label.selectEnd();
+        });
+      }
+      return;
+    }
+    editor.update(() => {
+      // When the caret is inside a timeline entry, insert into the entry's
+      // content (F-EDIT-14.1) — but only widgets the entry accepts; a
+      // timeline/title hotkey fired there is a no-op (F-EDIT-14.3).
+      const entry = entryContentAnchor();
+      if (entry) {
+        const allowed = new Set(widgetsAllowedIn('entry').map((w) => w.kind));
+        if (!allowed.has(widget.kind)) return;
+        const newNode = $createLexicalNode(widget.make());
+        if (entry.after) entry.after.insertAfter(newNode);
+        else entry.node.append(newNode);
+        if (newNode instanceof ElementNode) newNode.selectStart();
         return;
       }
-    }
-    // Default: insert the block widget at the root-level anchor.
-    editor.update(() => {
+      // Default: insert the block widget at the root-level anchor.
       const newNode = $createLexicalNode(widget.make());
       const anchor = rootLevelAnchor();
       if (anchor) {
@@ -527,9 +609,12 @@ function ControlRail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
+  const visibleWidgets =
+    containerType === 'entry' ? widgetsAllowedIn('entry') : WIDGETS;
+
   return (
     <div className="pb-rail" role="toolbar" aria-label="Insert controls" aria-orientation="vertical">
-      {WIDGETS.map((w) => (
+      {visibleWidgets.map((w) => (
         <button
           key={w.kind}
           type="button"
@@ -551,6 +636,20 @@ function ControlRail() {
 }
 
 /**
+ * Whether an inline link may be created at `node`'s position. Links belong in
+ * running prose (paragraphs, list items), not in the single-line title or entry
+ * title/dates fields (spec §15 out of scope). Must be called inside read/update.
+ */
+function caretAllowsInlineLink(node: LexicalNode): boolean {
+  let cur: LexicalNode | null = node;
+  while (cur) {
+    if ($isTitleNode(cur) || $isEntryFieldNode(cur)) return false;
+    cur = cur.getParent();
+  }
+  return true;
+}
+
+/**
  * The root-level node that contains (or precedes) the current selection, used
  * as the insertion point for new widgets. Must be called inside editor.update/read.
  */
@@ -563,6 +662,50 @@ function rootLevelAnchor(): LexicalNode | null {
   }
   const children = $getRoot().getChildren();
   return children.length ? children[children.length - 1] : null;
+}
+
+/**
+ * If the caret sits inside a timeline entry, return that entry's lexical node
+ * plus the entry-content block after which a new widget should be inserted
+ * (US-EDIT-20 / F-EDIT-14.1). `after` is the entry's direct child holding the
+ * caret; when the caret is in the title/dates field it is the entry's last
+ * content block (or null → append). Returns null when the caret is not in an
+ * entry. Must be called inside editor.update/read.
+ */
+function entryContentAnchor(): { node: ElementNode; after: LexicalNode | null } | null {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return null;
+  let node: LexicalNode | null = selection.anchor.getNode();
+  while (node) {
+    const parent: LexicalNode | null = node.getParent();
+    if (parent && $isEntryNode(parent)) {
+      // `node` is the entry's direct child containing the caret.
+      if ($isEntryFieldNode(node)) {
+        // Caret in the title/dates row → append after the last content block.
+        const content = parent.getChildren().filter((c) => !$isEntryFieldNode(c));
+        return { node: parent, after: content.length ? content[content.length - 1] : null };
+      }
+      return { node: parent, after: node };
+    }
+    node = parent;
+  }
+  return null;
+}
+
+/**
+ * The flow-container type holding the caret, for scoping the insert rail.
+ * Currently only distinguishes 'entry' (timeline entry content) from 'root';
+ * any other location falls back to 'root'. Must be called inside read/update.
+ */
+function caretContainerType(): NodeType {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return 'root';
+  let node: LexicalNode | null = selection.anchor.getNode();
+  while (node) {
+    if ($isEntryNode(node)) return 'entry';
+    node = node.getParent();
+  }
+  return 'root';
 }
 
 /** One positioned button per timeline, rendered as an overlay below the last entry. */

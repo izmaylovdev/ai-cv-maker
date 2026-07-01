@@ -24,6 +24,10 @@ LANGFUSE_PUBLIC_KEY_LOCAL=pk-lf-local-dev
 LANGFUSE_SECRET_KEY_LOCAL=sk-lf-local-dev
 LANGFUSE_HOST_LOCAL=http://localhost:3030
 
+# Tempo OTLP endpoint for distributed tracing (ADR-0016). The Tempo container
+# publishes 4317, so host-run cv-api/llm-service export to localhost.
+OTEL_ENDPOINT_LOCAL=http://localhost:4317
+
 WITH_ADMIN=0
 WITH_OBS=0
 for arg in "$@"; do
@@ -58,8 +62,12 @@ if [[ "$WITH_OBS" == "1" ]]; then
   compose_files+=(-f docker-compose.langfuse.yml -f docker-compose.obs-dev.yml)
   # langfuse depends_on pulls in clickhouse, redis, minio (and the langfuse
   # postgres DB). prometheus + grafana come from the obs-dev overlay, scraping
-  # the host-run cv-api/llm-service (their depends_on is cleared there).
-  deps+=(langfuse-web langfuse-worker prometheus grafana)
+  # the host-run cv-api/llm-service (their depends_on is cleared there). tempo
+  # receives OTLP traces (ADR-0016) from the same host servers on localhost:4317.
+  deps+=(langfuse-web langfuse-worker prometheus grafana tempo)
+  # Enable OpenTelemetry export for the host-run cv-api/llm-service. Gated on
+  # this endpoint, so it's a no-op without --with-obs.
+  export OTEL_EXPORTER_OTLP_ENDPOINT="$OTEL_ENDPOINT_LOCAL"
 fi
 
 pids=()
@@ -97,6 +105,10 @@ port_for() {
 extra_env_for() {
   case "$1" in
     admin-ui) echo "ADMIN_API_URL=http://localhost:3001" ;;
+    # OTEL_SERVICE_NAME labels the service in Tempo; harmless without an
+    # OTLP endpoint set (tracing stays off — see --with-obs).
+    cv-api)   echo "OTEL_SERVICE_NAME=cv-api" ;;
+    llm)      echo "OTEL_SERVICE_NAME=llm-service" ;;
     *)        echo "" ;;
   esac
 }
@@ -156,6 +168,7 @@ if [[ "$WITH_OBS" == "1" ]]; then
   echo "[dev] │ Langfuse UI             ${LANGFUSE_HOST_LOCAL} (admin@example.com / changeme-langfuse)"
   echo "[dev] │ Grafana                 http://localhost:3003 (admin / admin)"
   echo "[dev] │ Prometheus              http://localhost:9091"
+  echo "[dev] │ Tempo (traces)          via Grafana Explore → Tempo datasource"
 fi
 echo "[dev] └─────────────────────────────────────────────────────────"
 echo ""

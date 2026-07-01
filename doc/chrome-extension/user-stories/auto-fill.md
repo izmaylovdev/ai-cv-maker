@@ -44,3 +44,20 @@
 - The popup shows a progress indicator while the CV is being generated.
 - When the PDF is ready it downloads automatically, named `[FullName]_[JobTitle]_CV.pdf`.
 - If no meaningful job description can be extracted (< 100 characters and no text selected), the button is disabled and a hint is shown: "Could not detect a job description. Select the job text on the page and try again."
+
+### US-EXT-4 — Chat about a job posting in a side panel and accept a cover letter into the page
+
+**As a** job seeker using the Applysy Chrome extension,
+**I want to** open a chat side panel from the toolbar icon that already knows about the job posting on the current tab, ask it questions, have it draft a cover letter I can review, and — only when I accept — fill it into the application field on the page,
+**so that** I stay in control of what gets written into a form while still getting fast, tailored, context-aware help without leaving the job page.
+
+**Acceptance criteria:**
+- Clicking the extension toolbar icon opens a Chrome side panel (the previous popup no longer appears).
+- The side panel hosts the Applysy AI chat; on open it has the current page's job posting (title + description) available as context, so the user can immediately ask questions about the role.
+- The user can ask the chat to write a cover letter; the draft is shown inside the chat thread for review, not written to the page automatically.
+- Each cover-letter draft offers a "Use this" action. Choosing it fills the detected application field on the page; the chat then confirms success (or reports that no field was found).
+- If the user does not accept, nothing is written to the page.
+- When no application field is detected on the page, accepting reports a clear message in the chat instead of silently failing.
+- The user remains authenticated using the same stored credentials/token as before; an expired session prompts re-login from within the panel.
+- The side panel can navigate between views; the chat is the default view, and the layout supports adding Settings and Hotkeys views later without re-architecting.
+- The existing hotkey-driven flows (quick fill, optimised-CV download) continue to work.

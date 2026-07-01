@@ -5,10 +5,12 @@ import { loadDocument, readDocument } from './serialize';
 import {
   chipsNode,
   entryNode,
+  inlineLinkNode,
   linkNode,
   listItemNode,
   listNode,
   paragraphNode,
+  textNode,
   rootNode,
   timelineNode,
   titleNode,
@@ -103,6 +105,34 @@ describe('serialize round-trip (ADR-0014 §9.4 / US-EDIT-19 §13)', () => {
     expect(outLink.type).toBe('link');
     expect(outLink.attrs).toEqual({ text: 'Portfolio', url: 'https://example.com' });
     expect(outLink.id).toBe(link.id);
+  });
+
+  it('round-trips an inline link inside a paragraph, preserving runs + ids (US-EDIT-21)', () => {
+    const para = paragraphNode('');
+    para.children = [
+      textNode('See my '),
+      inlineLinkNode('portfolio', 'https://me.dev'),
+      textNode(' here.'),
+    ];
+    const body = rootNode([titleNode('Summary'), para]);
+    const out = roundTrip(body);
+    expect(out).toEqual(body);
+    const outPara = out.children[1];
+    expect(outPara.children?.map((c) => c.type)).toEqual(['text', 'inlineLink', 'text']);
+    const link = outPara.children?.[1];
+    expect(link?.attrs).toEqual({ text: 'portfolio', url: 'https://me.dev' });
+  });
+
+  it('round-trips an inline link inside a list item (US-EDIT-21)', () => {
+    const item = listItemNode('');
+    item.children = [
+      { ...paragraphNode(''), children: [textNode('Built '), inlineLinkNode('the API', 'https://api.dev')] },
+    ];
+    const list = listNode();
+    list.children = [item];
+    const body = rootNode([list]);
+    const out = roundTrip(body);
+    expect(out).toEqual(body);
   });
 
   it('round-trips orphan flow nodes (no title before them)', () => {

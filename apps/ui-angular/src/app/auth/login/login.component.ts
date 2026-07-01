@@ -2,6 +2,7 @@ import { Component, ElementRef, NgZone, OnInit, ViewChild, inject, signal } from
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../auth.service';
+import { loadGoogleIdentity } from '../google-identity';
 import { environment } from '../../../environments/environment';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,8 +32,9 @@ export class LoginComponent implements OnInit {
 
   toggleHidePassword() { this.hidePassword.update(v => !v); }
 
-  ngOnInit() {
-    if (typeof google !== 'undefined' && environment.googleClientId) {
+  async ngOnInit() {
+    if (!environment.googleClientId) return;
+    if (await loadGoogleIdentity()) {
       google.accounts.id.initialize({
         client_id: environment.googleClientId,
         callback: (response: { credential: string }) => {

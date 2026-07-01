@@ -259,6 +259,21 @@
 
 .proposal-card__btn--reject:hover { background: #e2e8f0; }
 
+/* US-EXT-4 — "Use this" action under a cover-letter draft in the thread. */
+.chat-fill-action {
+  margin-top: 8px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  background: #2563eb;
+  color: #fff;
+}
+
+.chat-fill-action:hover { background: #1d4ed8; }
+
 .chat-input {
   display: flex;
   align-items: flex-end;

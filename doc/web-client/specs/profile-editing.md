@@ -1033,3 +1033,171 @@ The migration is **client-side and lazy**: `$writeBody` converts any `section` n
 - Server-side bulk migration of stored documents.
 - Drag reordering of individual non-title root blocks (they have no drag handle).
 - Nested titles (a `title` is always a root-level node; it cannot appear inside a timeline entry or list).
+
+## 14. Insert Elements Inside Timeline Entries (US-EDIT-20)
+
+Timeline entries previously accepted only flow content that happened to be
+inserted at root and never reached them: the insert rail's `rootLevelAnchor()`
+always anchored to the nearest **root-level** node, so List/Link/Chips landed
+between timelines, never inside an entry. This section makes insertion
+caret-aware and adds `chips` to the entry schema.
+
+### 14.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-14.1 | When the caret is inside a timeline entry's content, inserting **List**, **Link**, or **Chips** (rail click or hotkey) inserts the new node inside that entry, immediately after the entry-content block containing the caret (or at the end of the entry content if the caret is in a title/dates field). |
+| F-EDIT-14.2 | `chips` is added to the allowed children of `entry` in the nesting matrix, mirrored in all three implementations: `apps/profile-builder-ui/src/model.ts` (`ALLOWED_CHILDREN`), `apps/cv-api/Domain/Entities/ProfileDocumentSchema.cs` (`AllowedChildren`), and `apps/llm-service/app/schemas.py` (`ALLOWED_CHILDREN`). |
+| F-EDIT-14.3 | When the caret is inside an entry, the insert rail is scoped to widgets valid there (`text`, `list`, `link`, `chips`) via `widgetsAllowedIn('entry')`; `timeline` and `title` are not offered and their hotkeys are no-ops in that context. |
+| F-EDIT-14.4 | An entry containing list/link/chips round-trips: editor → neutral `ProfileDocument` → cv-api validation/persistence → PDF render, with no loss and `validateDocument` valid (depth unaffected — `entry` is not a depth-incrementing container). |
+| F-EDIT-14.5 | Behavior at root level is unchanged: with the caret outside any entry, insertion anchors to root level exactly as before, and existing paragraph-only entries are untouched. |
+
+### 14.2 Technical Specification
+
+#### Data model
+
+`ALLOWED_CHILDREN['entry']` changes from `['paragraph', 'list', 'link']` to
+`['paragraph', 'list', 'chips', 'link']` in TS, C#, and Python. No new node
+types, no `attrs` changes, no DB migration (the `Document` JSON column is schema-
+less; validation is code-level). Existing documents remain valid.
+
+#### Angular / React editor (`apps/profile-builder-ui/src/`)
+
+- **`nodes.ts`** — `widgetsAllowedIn('entry')` already derives from the matrix and
+  will include `chips` once F-EDIT-14.2 lands; no change needed beyond the matrix.
+- **`ProfileBuilder.tsx`** —
+  - Generalize `rootLevelAnchor()` into a caret-aware `insertionTarget(kind)` that
+    walks up from the caret: if the nearest container that *allows* `kind` is an
+    `EntryNode` (chips/list/link), return an anchor **inside** the entry content;
+    otherwise fall back to the existing root-level anchor.
+  - `insertWidget()` uses this target so List/Link/Chips insert into the entry; the
+    caret-in-title/dates case appends to the end of entry content.
+  - Scope the rendered rail buttons and the hotkey handler to
+    `widgetsAllowedIn(currentContainerType)` so `timeline`/`title` are inert inside
+    an entry.
+
+#### Serialization, cv-api, PDF
+
+- **Serialization** — no change: `serialize.ts` `appendChildren`/`readChildren`
+  are generic over the matrix, so chips inside an entry round-trip automatically.
+- **cv-api validation** — no change: it reads the shared `AllowedChildren` matrix.
+- **PDF** — `PdfService.RenderTimeline` rendered only `paragraph`/`list`/`link`
+  in an entry's description and silently dropped anything else; its filter and
+  per-block switch gain a `chips` branch (reusing the existing `RenderChips`) so
+  chips inside an entry appear in the PDF. The `EntryNode` TS model type's
+  `children` union also gains `ChipsNode`.
+
+#### Out of scope (MVP)
+
+- Nesting a `timeline` inside an entry.
+- Inserting a `title` inside an entry.
+- Drag-and-drop reordering of content *between* an entry and root (existing drag
+  rules unchanged).
+- ~~Inline (mark-style) links inside entry paragraphs — standalone `link` lines
+  only.~~ — **superseded by §15 (US-EDIT-21)**: inline links inside running text
+  are now in scope.
+
+---
+
+## 15. Inline Links in Running Text (US-EDIT-21)
+
+This section makes hyperlinks a real **inline mark** inside paragraph text,
+superseding two earlier decisions: the §9.6 "marks out of scope" note (for links
+specifically) and the §10 F-EDIT-15.7 "inline link on selection" feature, which
+created an `@lexical/link` node that **was never serialized** — the neutral model
+had no inline representation, so `serialize.ts` dropped it (and the text inside
+it) on the next save. The standalone block `link` line (§10, `type: "link"`)
+remains valid in the model and PDF for back-compat and AI-authored content, but
+the insert rail / `mod+K` now produces **inline** links.
+
+### 15.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-21.1 | Inserting **Link** (insert rail or `mod+K`) with a **non-empty text selection** wraps the selection as an inline link and opens the floating URL editor below it. |
+| F-EDIT-21.2 | Inserting **Link** with a **collapsed caret** inserts an inline link *at the caret*, inline with the surrounding text (never on its own line), and opens the floating URL editor. |
+| F-EDIT-21.3 | For a caret-inserted link the visible text mirrors the URL: committing `example.com` shows `example.com` as the link label. |
+| F-EDIT-21.4 | Committing the URL (Enter or ✓) reliably saves it to the link; the editor never silently discards a typed URL because the caret/selection moved while typing. Committing an **empty** URL removes the link. |
+| F-EDIT-21.5 | The floating editor exposes a single **URL** field — no "open in new tab" control. |
+| F-EDIT-21.6 | An inline link round-trips: editor → neutral `ProfileDocument` → cv-api validation/persistence → PDF, with no loss. The PDF renders it as an underlined hyperlink inline within the paragraph text. |
+| F-EDIT-21.7 | Inline links are valid only inside `paragraph` (running text, including list-item and entry paragraphs). They are not valid as a direct child of `root`, `listItem`, `entry`, `chips`, etc. |
+
+### 15.2 Technical Specification
+
+#### Data model (`model.ts` — the reference)
+
+- New `NodeType` member `inlineLink`.
+- New alias `export type InlineLinkNode = BlockNode & { type: 'inlineLink'; attrs: { text: string; url: string } }` — an inline leaf run.
+- `ParagraphNode.children` widens from `TextNode[]` to `(TextNode | InlineLinkNode)[]`.
+- `ALLOWED_CHILDREN`: `paragraph: ['text', 'inlineLink']`; add `inlineLink: []`.
+- `REQUIRED_ATTRS`: `inlineLink: ['text', 'url']`.
+- `inlineLink` is a leaf — it does **not** introduce a flow level, so depth math is unchanged.
+
+Example paragraph "See my portfolio here." with "portfolio" linked:
+
+```json
+{ "type": "paragraph", "id": "p1", "children": [
+  { "type": "text", "id": "t1", "attrs": { "text": "See my " } },
+  { "type": "inlineLink", "id": "l1", "attrs": { "text": "portfolio", "url": "https://me.dev" } },
+  { "type": "text", "id": "t2", "attrs": { "text": " here." } }
+]}
+```
+
+#### Serialization (`serialize.ts`)
+
+- **Lexical → model**: when reading a paragraph's (or list item's) inline
+  children, an `@lexical/link` `LinkNode` becomes
+  `{ type: 'inlineLink', attrs: { text: <its text content>, url: <its url> } }`.
+  Its child text nodes are *not* emitted separately (the link's text is its
+  label). Plain `PbTextNode` runs continue to serialize as `text`.
+- **model → Lexical**: an `inlineLink` child of a paragraph becomes an
+  `@lexical/link` `LinkNode` containing one `PbTextNode` (the label). A new
+  `case 'inlineLink'` is added to `$createLexicalNode` and the paragraph/list-item
+  builders thread it in.
+- The `@lexical/link` `LinkNode` is already registered in `WIDGET_NODES`; no node
+  registration change is needed. Import its `$createLinkNode`/`$isLinkNode` under
+  aliases (e.g. `$createInlineLinkNode`/`$isInlineLinkNode`) to avoid clashing
+  with the existing block `LinkWidgetNode` helpers of the same name.
+
+#### Editor wiring (`ProfileBuilder.tsx`)
+
+- `insertWidget` for `kind === 'link'`: with a selection → `TOGGLE_LINK_COMMAND`
+  (unchanged); with a collapsed caret → insert an inline `LinkNode` at the caret
+  whose initial label is the URL placeholder, then open the floating editor.
+- `InlineLinkEditorPlugin` bug fix: the apply/commit must not depend on the live
+  Lexical selection (focusing the URL input blurs the editor, which previously
+  cleared `activeNodeKey` and made ✓ a no-op). Track the target link by node key
+  captured at open time and keep it until the editor is explicitly dismissed.
+- For a caret-inserted link, committing the URL also sets the link's label to the
+  URL (F-EDIT-21.3).
+
+#### cv-api (`ProfileDocumentSchema.cs`)
+
+- `AllowedChildren["paragraph"]` gains `"inlineLink"`; add `["inlineLink"] = []`.
+  (The C# validator checks types/depth only; no required-attrs change needed.)
+
+#### PDF (`PdfService.cs`)
+
+- `RenderParagraph` switches from a single concatenated `.Text(string)` to the
+  QuestPDF rich `.Text(t => …)` form, emitting a `t.Span(...)` per `text` run and
+  a `t.Hyperlink(label, href).FontColor(Blue).Underline()` per `inlineLink` run
+  (falling back to a plain span when the href is unsafe). The same inline-run
+  rendering is applied to a list item's leading paragraph.
+
+#### llm-service (`schemas.py`)
+
+- `ALLOWED_CHILDREN["paragraph"]` gains `"inlineLink"`; add `"inlineLink": []`;
+  `REQUIRED_ATTRS["inlineLink"] = ["text", "url"]`.
+
+#### gRPC
+
+- No proto change: `ProfileNode` is a generic recursive `{type,id,attrs,children}`;
+  `inlineLink` is just another `type` string.
+
+#### Out of scope (MVP)
+
+- Other inline marks (bold/italic) — still out of scope per §9.6; only links.
+- Inline links inside chips, titles, or entry title/dates fields (single-line
+  plain fields).
+- Editing a link's *label* in the floating editor (URL only); caret-inserted
+  links show the URL as the label, selection links keep the selected text.

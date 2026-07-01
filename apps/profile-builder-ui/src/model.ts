@@ -14,6 +14,7 @@ export type NodeType =
   | 'title'
   | 'paragraph'
   | 'text'
+  | 'inlineLink'
   | 'link'
   | 'list'
   | 'listItem'
@@ -41,9 +42,11 @@ export type RootNode = BlockNode & { type: 'root'; children: (TitleNode | FlowNo
 /** A section heading. Leaf — no children. Groups all non-title blocks that follow it until the next TitleNode. */
 export type TitleNode = BlockNode & { type: 'title'; attrs: { text: string } };
 export type FlowNode = ParagraphNode | ListNode | ChipsNode | TimelineNode | LinkNode;
-export type ParagraphNode = BlockNode & { type: 'paragraph'; children: TextNode[] };
-/** Leaf; plain string (marks are out of scope, spec §9.6). */
+export type ParagraphNode = BlockNode & { type: 'paragraph'; children: (TextNode | InlineLinkNode)[] };
+/** Leaf; plain string (non-link marks are out of scope, spec §9.6). */
 export type TextNode = BlockNode & { type: 'text'; attrs: { text: string } };
+/** Inline leaf; a hyperlink run inside running text — display label + url (spec §15). */
+export type InlineLinkNode = BlockNode & { type: 'inlineLink'; attrs: { text: string; url: string } };
 /** Leaf; a standalone link line with display text + url (spec §10, NOT an inline mark). */
 export type LinkNode = BlockNode & { type: 'link'; attrs: { text: string; url: string } };
 export type ListNode = BlockNode & { type: 'list'; children: ListItemNode[] };
@@ -58,7 +61,7 @@ export type TimelineNode = BlockNode & { type: 'timeline'; children: EntryNode[]
 export type EntryNode = BlockNode & {
   type: 'entry';
   attrs: { title: string; dates: string };
-  children: (ParagraphNode | ListNode | LinkNode)[];
+  children: (ParagraphNode | ListNode | ChipsNode | LinkNode)[];
 };
 
 export interface ProfileDocument {
@@ -111,21 +114,23 @@ export function emptyDocument(): ProfileDocument {
 export const ALLOWED_CHILDREN: Record<NodeType, NodeType[]> = {
   root: ['title', 'paragraph', 'list', 'chips', 'timeline', 'link'],
   title: [],
-  paragraph: ['text'],
+  paragraph: ['text', 'inlineLink'],
   text: [],
+  inlineLink: [],
   link: [],
   list: ['listItem'],
   listItem: ['paragraph', 'list', 'chips', 'link'],
   chips: ['chip'],
   chip: [],
   timeline: ['entry'],
-  entry: ['paragraph', 'list', 'link'],
+  entry: ['paragraph', 'list', 'chips', 'link'],
 };
 
 /** Required `attrs` keys per node type (each value must be a string). */
 const REQUIRED_ATTRS: Partial<Record<NodeType, string[]>> = {
   title: ['text'],
   text: ['text'],
+  inlineLink: ['text', 'url'],
   link: ['text', 'url'],
   chip: ['text'],
   entry: ['title', 'dates'],
@@ -284,7 +289,7 @@ function leadingText(item: BlockNode): string {
   const paragraph = (item.children ?? []).find((c) => c.type === 'paragraph');
   if (!paragraph) return '';
   return (paragraph.children ?? [])
-    .filter((c) => c.type === 'text')
+    .filter((c) => c.type === 'text' || c.type === 'inlineLink')
     .map((c) => c.attrs?.text ?? '')
     .join('');
 }

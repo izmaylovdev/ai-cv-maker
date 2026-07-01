@@ -24,7 +24,6 @@ describe('ProfileComponent (builder-based)', () => {
   let profileService: {
     getProfile: ReturnType<typeof vi.fn>;
     updateProfile: ReturnType<typeof vi.fn>;
-    extractFromCv: ReturnType<typeof vi.fn>;
   };
   let notify: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
   let router: { navigate: ReturnType<typeof vi.fn> };
@@ -33,7 +32,6 @@ describe('ProfileComponent (builder-based)', () => {
     profileService = {
       getProfile: vi.fn().mockReturnValue(of(LOADED)),
       updateProfile: vi.fn().mockReturnValue(of(LOADED)),
-      extractFromCv: vi.fn().mockReturnValue(of({ name: 'From CV', document: doc('From CV') })),
     };
     notify = { success: vi.fn(), error: vi.fn() };
     router = { navigate: vi.fn() };
@@ -83,15 +81,6 @@ describe('ProfileComponent (builder-based)', () => {
       document: doc('Edited'),
     });
     expect(notify.success).toHaveBeenCalled();
-  });
-
-  it('extract imports the document and adopts the suggested name', () => {
-    const component = create();
-    const file = new File(['x'], 'cv.pdf');
-    const input = { files: [file], value: '' } as unknown as HTMLInputElement;
-    component.onExtractFileChange({ target: input } as unknown as Event);
-    expect(profileService.extractFromCv).toHaveBeenCalledWith('1', file);
-    expect(component.profileName()).toBe('From CV');
   });
 
   it('openPdf navigates with the current document as draft state', () => {

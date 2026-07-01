@@ -753,6 +753,186 @@ at 0) next to the accrued cost.
 
 ---
 
+## 10. Collapsible Slide-in AI Chat Sidebar (US-AI-10)
+
+Purely a presentation change to the in-editor chat from §6 / US-AI-9: the chat
+moves from a always-visible static side column to a togglable panel that slides
+in from the right edge of the screen and can be hidden back. The chat web
+component, its conversation thread, and its live document binding are unchanged
+— only its host layout on the profile page changes.
+
+### 10.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-10.1 | The profile editor renders a toggle button ("AI Editor") that opens and closes the chat sidebar; the button reflects the current open/closed state (`aria-expanded`, pressed styling). |
+| F-AI-10.2 | Opening animates the panel sliding in from the right edge; closing slides it back out until fully hidden (`translateX(100%)` + width/visibility), with a CSS transition. |
+| F-AI-10.3 | On large screens (`lg+`) the open panel **pushes** the document column: the builder column shrinks to the left to make room; there is no overlay or scrim. On small screens the panel slides over the (near-)full viewport width. |
+| F-AI-10.4 | The chat web component stays mounted across open/close cycles — closing only hides the panel (CSS), it does not destroy the element, reset the thread, or drop the live document binding. |
+| F-AI-10.5 | A close (✕) control in the panel header, the toggle button, and the Escape key all close the panel. |
+| F-AI-10.6 | The open/closed state is persisted to `localStorage` and restored on load; default is closed when no stored value exists. |
+| F-AI-10.7 | Works in light and dark themes; the chat's editing behavior (US-AI-9, `edit` event handling, live document sync) is unchanged. |
+
+### 10.2 Technical Specification
+
+#### Angular (`apps/ui-angular/src/app/features/profile/`)
+
+`ProfileComponent`:
+- New `chatOpen` signal, initialized from `localStorage` (key `applysy.profile.chatOpen`, default `false`).
+- `toggleChat()` flips `chatOpen` and writes it back to `localStorage`; an `effect` (or the setter) keeps storage in sync.
+- A host `@HostListener('document:keydown.escape')` (or `(keydown.escape)` on the panel) closes the panel when open.
+- The existing `chatRef` `viewChild` and the `currentDocument` → `chat.document` seeding `effect` are preserved; the `<ai-chat-widget>` element must remain in the DOM while merely hidden, so the panel is toggled with CSS classes rather than `@if`. (`@if (chatReady())` still gates initial mount once the widget script has loaded.)
+
+`profile.component.html`:
+- Add a toggle button to the header actions row (and the mobile actions row) bound to `chatOpen()` / `toggleChat()`.
+- Replace the static `<aside>` flex column with a fixed-position panel that
+  tucks **below the full-width page header** rather than over it:
+  - Panel: `fixed right-0 bottom-0 w-full sm:w-96`, anchored under the header —
+    `top-14` on mobile (below the app's top bar) and `md:top-[var(--chat-top)]`
+    where `--chat-top` is the measured `#pageHeader` height. It slides via
+    `transform: translateX(...)`.
+  - Closed: `translate-x-full` + `invisible` + `pointer-events-none`; Open:
+    `translate-x-0`. `transition-[transform,visibility] duration-300` so the
+    slide-out stays visible until it settles.
+  - Header inside the panel keeps the "AI Editor" title + helper text and adds the ✕ close button.
+  - The page header stays full width (`#pageHeader`); a small `effect` tracks its
+    height via `ResizeObserver` and exposes it as the `headerHeight` signal.
+- Push behavior on `lg+`: the document column gets a right margin when
+  `chatOpen()` so it visually shrinks rather than being overlaid
+  (`lg:mr-96` on the editor column). No scrim element.
+
+No API, data-model, gRPC, or backend changes.
+
+### 10.3 Out of Scope (MVP)
+
+- Resizable / draggable panel width.
+- Sliding the chat in from the left, or a bottom-sheet variant.
+- Remembering panel state per-profile (state is a single global preference).
+- Animating the editor column reflow beyond the panel's own slide transition.
+
+## 11. Specific Chat Error Messages (US-AI-11)
+
+When an in-editor chat request fails, the chat widget must show a specific,
+plain-language reason for the failure instead of the current generic
+`"Something went wrong. Please try again."`. The cause is classified server-side
+into a stable machine-readable `code` plus a user-facing `message`, and the
+widget renders that `message` verbatim in an error bubble.
+
+This mirrors the existing pattern for the spending limit (§9 / `UsageLimitExceptionHandler`,
+HTTP 402 `usage_limit_exceeded`), which already returns `{ code, message }` but
+whose `message` the chat widget currently discards.
+
+### 11.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-11.1 | `POST /api/chat` returns failures as a structured JSON body `{ code, message }` with an appropriate HTTP status; `message` is always a clean, user-facing sentence — never a raw exception/`RpcException` string or stack text. |
+| F-AI-11.2 | The cv-api `ChatController` no longer wraps LLM calls in a catch-all that returns `502 "Chat failed: {ex.Message}"`; LLM/domain exceptions propagate to dedicated `IExceptionHandler`s that produce the structured body. |
+| F-AI-11.3 | gRPC `StatusCode.Internal` from llm-service (e.g. a truncated/unparseable edit response) is classified as `code = "llm_edit_failed"` → HTTP 502, message: the assistant couldn't produce a valid edit (response may have been too long); try a smaller or more specific edit. |
+| F-AI-11.4 | gRPC `StatusCode.InvalidArgument` (guard / scope / validation rejection) is classified as `code = "llm_invalid_request"` → HTTP 422, message: the assistant's own explanation (the gRPC status detail), e.g. message-too-long or out-of-scope. |
+| F-AI-11.5 | `LlmRateLimitException` (gRPC `ResourceExhausted`) → `code = "llm_rate_limited"` → HTTP 429; `LlmUnavailableException` (gRPC `Unavailable`/`DeadlineExceeded`) → `code = "llm_unavailable"` → HTTP 503. Each with its existing user-facing message. |
+| F-AI-11.6 | The usage-limit failure keeps its current contract: `code = "usage_limit_exceeded"` → HTTP 402; the chat widget now renders its `message` like any other classified error. |
+| F-AI-11.7 | The chat widget reads the error response body and renders `message` in an `error`-role bubble, visually distinct from assistant replies. If the body is missing/unparseable, it falls back to a single generic sentence. |
+| F-AI-11.8 | A failed request leaves the open document unchanged (no partial edit applied) and the conversation remains usable — the user can send another message. |
+
+### 11.2 Technical Specification
+
+#### API
+
+`POST /api/chat` — success contract unchanged (`{ reply, proposal? }`).
+
+Error response (all failure statuses), body:
+```json
+{ "code": "llm_edit_failed", "message": "I couldn't produce a valid edit for that — my response may have been too long. Try a smaller or more specific change." }
+```
+
+Status ↔ code map:
+
+| HTTP | `code` | Cause |
+|---|---|---|
+| 402 | `usage_limit_exceeded` | Per-user spending limit reached (existing). |
+| 422 | `llm_invalid_request` | gRPC `InvalidArgument` — message too long / out of scope / guard rejection. `message` = gRPC status detail. |
+| 429 | `llm_rate_limited` | gRPC `ResourceExhausted` — provider quota. |
+| 502 | `llm_edit_failed` | gRPC `Internal` — edit response truncated/unparseable. |
+| 503 | `llm_unavailable` | gRPC `Unavailable` / `DeadlineExceeded` — service unreachable/timeout. |
+
+#### cv-api
+
+- `Infrastructure/ExternalServices/Llm/LlmService.cs` — extend `ExecuteAsync` to translate two more statuses: `StatusCode.Internal` → new `LlmEditFailedException`; `StatusCode.InvalidArgument` → new `LlmInvalidRequestException` (carries the gRPC status detail as its message).
+- Two new exception types alongside `LlmRateLimitException` / `LlmUnavailableException`.
+- `Features/Chat/ChatController.cs` — remove the `try/catch (Exception) → StatusCode(502, ...)` in both `Chat` and `EditAsync`; let exceptions surface.
+- New `IExceptionHandler`s (mirroring `UsageLimitExceptionHandler`) for `LlmInvalidRequestException` (422), `LlmRateLimitException` (429), `LlmEditFailedException` (502), `LlmUnavailableException` (503), each writing `{ code, message }`. Registered in `Program.cs` via `AddExceptionHandler<...>()` before `AddProblemDetails()`/`UseExceptionHandler()`.
+
+#### chat-ui (`apps/chat-ui/src/ChatApp.tsx`)
+
+- On `!res.ok`, parse the JSON body; push an `error`-role message with `body.message`. Only fall back to a generic sentence when the body is absent or unparseable.
+- No new message roles or styling needed — the `error` role and its bubble styling already exist.
+
+#### gRPC
+
+No proto changes. llm-service already aborts with `INVALID_ARGUMENT` (guards) and `INTERNAL` (parse failure); this feature classifies the statuses it already emits.
+
+#### Out of scope (MVP)
+
+- Hardening llm-service so oversized edits don't fail in the first place (raise the chat `max_tokens`, make `_parse_response` tolerant of truncation / detect `stop_reason == "max_tokens"`). Tracked separately — this story is about surfacing the failure clearly, not preventing it.
+- Automatic retry/backoff on `llm_unavailable`.
+- Per-code styling/iconography beyond the existing error-bubble treatment.
+
+## 12. In-Editor Chat Opens in Conversation View (US-AI-12)
+
+Purely a presentation change to the chat web component (§6 / US-AI-9). Today the
+`ChatApp` has two layouts: a centered **landing** splash ("How can I help you?"
+with the input floating mid-panel) shown while `messages` is empty, and the
+normal **conversation** layout (scrolling thread on top, input pinned to the
+bottom) once a message exists. For the **in-editor** chat — the instance bound to
+the open profile document — the empty state should use the conversation layout
+directly, so opening the panel and sending the first message no longer swap
+layouts. The global read-only `/chat` assistant keeps the landing splash.
+
+The in-editor instance is already distinguished by the presence of the
+`document` prop (it is the only caller that passes a document; the global chat
+omits it — see `ChatApp.test.tsx` "does not send a document on the global chat").
+That same prop gates this layout choice — no new prop is introduced.
+
+### 12.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-12.1 | When `ChatApp` is rendered **with** a `document` and has no messages yet, it renders the conversation layout (scrollable thread area on top, `MessageInput` anchored at the bottom) — not the centered landing splash. |
+| F-AI-12.2 | The empty thread area shows a brief, unobtrusive greeting/hint (e.g. "Ask me to edit your CV — add a role, rewrite a summary, turn a list into chips.") styled as muted helper text, not as an assistant message bubble. |
+| F-AI-12.3 | Sending the first message does not move the input: it stays pinned at the bottom before and after, with the greeting replaced by the growing thread. |
+| F-AI-12.4 | When `ChatApp` is rendered **without** a `document` (global assistant) and has no messages, the existing centered landing splash is unchanged. |
+| F-AI-12.5 | Works in light and dark themes; US-AI-9 editing behavior, error handling (US-AI-11), and history/scroll behavior are unchanged. |
+
+### 12.2 Technical Specification
+
+#### chat-ui (`apps/chat-ui/src/ChatApp.tsx`, `ChatApp.css`)
+
+- Replace the `isEmpty` branch with a layout decision that also considers the
+  `document` prop. The landing splash renders only for the **global** empty case
+  (`messages.length === 0 && !document`). In every other case — any in-editor
+  state, and any chat with messages — render the conversation layout
+  (`.chat-messages` + bottom `MessageInput`).
+- In the conversation layout, when `messages.length === 0`, render a muted
+  greeting element inside `.chat-messages` (reuse/extend the existing
+  `.chat-empty` class, which already has light/dark muted styling) instead of an
+  empty list. It is plain helper text, not a `.chat-message` bubble, so it is not
+  part of `messages` and is not sent as history.
+- The `loading` typing indicator, `bottomRef` auto-scroll, and `MessageInput`
+  (non-`landing` variant) are reused as-is.
+
+No API, data-model, gRPC, or backend changes. No new props.
+
+### 12.3 Out of Scope (MVP)
+
+- Changing the global `/chat` assistant's landing splash, or making the greeting
+  configurable/role-aware.
+- Suggested-prompt chips or any interactive empty-state affordances beyond the
+  static hint.
+- Animating the transition from greeting to first message.
+
+---
+
 ## 13. In-Editor AI Editor Cross-Profile Reads (US-AI-13)
 
 ### 13.1 Functional Requirements

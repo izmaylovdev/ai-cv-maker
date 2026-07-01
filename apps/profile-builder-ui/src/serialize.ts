@@ -17,6 +17,7 @@ import {
   ChipsNode as ChipsModel,
   EntryNode as EntryModel,
   FlowNode,
+  InlineLinkNode as InlineLinkModel,
   LinkNode as LinkModel,
   ListItemNode as ListItemModel,
   ListNode as ListModel,
@@ -30,6 +31,7 @@ import {
   $createChipsNode,
   $createEntryFieldNode,
   $createEntryNode,
+  $createInlineLinkNode,
   $createLinkNode,
   $createPbListItemNode,
   $createPbListNode,
@@ -39,6 +41,7 @@ import {
   $isChipsNode,
   $isEntryFieldNode,
   $isEntryNode,
+  $isInlineLinkNode,
   $isLinkNode,
   $isPbListItemNode,
   $isPbListNode,
@@ -49,6 +52,7 @@ import {
   $createTimelineNode,
   ChipsNode as LexChipsNode,
   EntryFieldNode,
+  PbInlineLinkNode,
   PbTextNode,
 } from './lexical/widget-nodes';
 
@@ -71,6 +75,11 @@ export function $createLexicalNode(node: BlockNode): LexicalNode {
     }
     case 'text':
       return $createPbTextNode(node.id, node.attrs?.['text'] ?? '');
+    case 'inlineLink': {
+      const link = $createInlineLinkNode(node.attrs?.['url'] ?? '', node.id);
+      link.append($createPbTextNode(undefined, node.attrs?.['text'] ?? ''));
+      return link;
+    }
     case 'link':
       return $createLinkNode(node.id, node.attrs?.['text'] ?? '', node.attrs?.['url'] ?? '');
     case 'list': {
@@ -82,9 +91,13 @@ export function $createLexicalNode(node: BlockNode): LexicalNode {
       const children = node.children ?? [];
       const [first, ...rest] = children;
       if (first && first.type === 'paragraph') {
-        const textChild = first.children?.[0];
-        const el = $createPbListItemNode(node.id, first.id, textChild?.id);
-        el.append($createPbTextNode(textChild?.id, textChild?.attrs?.['text'] ?? ''));
+        // Lexical holds a bullet's inline content directly on the list item (no
+        // paragraph wrapper); flatten the leading paragraph's runs (text +
+        // inline links) onto the item, then append any nested blocks.
+        const runs = first.children ?? [];
+        const firstRun = runs[0];
+        const el = $createPbListItemNode(node.id, first.id, firstRun?.type === 'text' ? firstRun.id : undefined);
+        appendChildren(el, runs);
         appendChildren(el, rest);
         return el;
       }
@@ -173,6 +186,15 @@ function readChildren(node: LexicalNode, skip?: (n: LexicalNode) => boolean): Bl
   return out;
 }
 
+/** An inline link node → its neutral `inlineLink` run (label = its text content). */
+function inlineLinkToModel(node: PbInlineLinkNode): InlineLinkModel {
+  return {
+    type: 'inlineLink',
+    id: node.getNodeId(),
+    attrs: { text: node.getTextContent(), url: node.getURL() },
+  };
+}
+
 /** Read a single Lexical node into a neutral BlockNode (or null to skip it). */
 function readLexicalNode(node: LexicalNode): BlockNode | null {
   if ($isTitleNode(node)) {
@@ -186,12 +208,15 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
     return {
       type: 'paragraph',
       id: node.getNodeId(),
-      children: readChildren(node) as TextModel[],
+      children: readChildren(node) as ParagraphModel['children'],
     } satisfies ParagraphModel;
   }
   if ($isPbTextNode(node)) {
     const n = node as PbTextNode;
     return { type: 'text', id: n.getNodeId(), attrs: { text: n.getTextContent() } } satisfies TextModel;
+  }
+  if ($isInlineLinkNode(node)) {
+    return inlineLinkToModel(node);
   }
   if ($isPbListNode(node)) {
     return {
@@ -202,23 +227,23 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
   }
   if ($isPbListItemNode(node)) {
     const out: ListItemModel['children'] = [];
-    const inlineText: string[] = [];
+    const inlineRuns: ParagraphModel['children'] = [];
     let hasInline = false;
     for (const child of node.getChildren()) {
       if ($isPbTextNode(child)) {
         hasInline = true;
-        inlineText.push(child.getTextContent());
+        inlineRuns.push({ type: 'text', id: child.getNodeId(), attrs: { text: child.getTextContent() } });
+      } else if ($isInlineLinkNode(child)) {
+        hasInline = true;
+        inlineRuns.push(inlineLinkToModel(child));
       } else {
         const mapped = readLexicalNode(child);
         if (mapped) out.push(mapped as ListItemModel['children'][number]);
       }
     }
     if (hasInline) {
-      out.unshift({
-        type: 'paragraph',
-        id: node.getParaId(),
-        children: [{ type: 'text', id: node.getParaTextId(), attrs: { text: inlineText.join('') } }],
-      });
+      // Re-wrap the item's inline runs in the neutral model's paragraph→text shape.
+      out.unshift({ type: 'paragraph', id: node.getParaId(), children: inlineRuns });
     }
     return { type: 'listItem', id: node.getNodeId(), children: out } satisfies ListItemModel;
   }

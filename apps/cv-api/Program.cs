@@ -6,14 +6,17 @@ using CvApi.Features.JobProfiles;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
 using CvApi.Infrastructure.Json;
-using CvApi.Infrastructure.Middleware;
 using CvApi.Infrastructure.Persistence;
-using CvApi.Infrastructure.Services;
 using Grpc.Core;
+// Disambiguate from OpenTelemetry.Trace.StatusCode pulled in by the tracing setup.
+using StatusCode = Grpc.Core.StatusCode;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Polly;
 using Polly.CircuitBreaker;
 using Prometheus;
@@ -125,8 +128,22 @@ builder.Services.AddCors(opt =>
               .AllowAnyMethod()
               .AllowCredentials()));
 
-// Tracing
-builder.Services.AddScoped<TraceContext>();
+// Distributed tracing to Tempo via OpenTelemetry (ADR-0016). Gated on
+// OTEL_EXPORTER_OTLP_ENDPOINT: with no endpoint the exporter is not registered,
+// so tracing is a no-op (plain local dev, CI and tests are unaffected). The
+// gRPC client instrumentation injects W3C traceparent into call metadata, so the
+// trace propagates to llm-service automatically.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r.AddService(
+            builder.Configuration["OTEL_SERVICE_NAME"] ?? "cv-api"))
+        .WithTracing(t => t
+            .AddAspNetCoreInstrumentation()
+            .AddGrpcClientInstrumentation()
+            .AddOtlpExporter());
+}
+
 // Needed by LlmService to read the authenticated user id for Langfuse trace
 // context propagated to llm-service (ADR-0010).
 builder.Services.AddHttpContextAccessor();
@@ -197,6 +214,12 @@ builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
 // Map the per-user spending-limit guard (US-AI-7) to HTTP 402.
 builder.Services.AddExceptionHandler<CvApi.Features.Usage.UsageLimitExceptionHandler>();
+// Classify LLM failures into specific { code, message } responses (US-AI-11) so
+// the chat widget can show a precise reason instead of a generic error.
+builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmInvalidRequestExceptionHandler>();
+builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmRateLimitExceptionHandler>();
+builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmEditFailedExceptionHandler>();
+builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmUnavailableExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 // Admin plane (ADR-0005): admin-api reads the user list through this endpoint
@@ -222,7 +245,6 @@ app.UseExceptionHandler();
 app.UseCors();
 app.UseMetricServer("/metrics");
 app.UseHttpMetrics();
-app.UseMiddleware<RequestTracingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");

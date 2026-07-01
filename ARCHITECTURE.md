@@ -114,7 +114,7 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
 
 **Key features**
-- Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Import-from-CV / Open-PDF. Whole-document AI rewrites are now driven through the in-editor AI chat (US-AI-9) rather than a dedicated toolbar button. The old reactive-form split-panel editor and its structured `Profile` model are removed.
+- Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Import-from-CV / Open-PDF. Whole-document AI rewrites are now driven through the in-editor AI chat (US-AI-9) rather than a dedicated toolbar button. The chat lives in a collapsible sidebar that slides in from the right and pushes the editor on large screens (US-AI-10); it stays mounted while hidden so the thread and live document binding survive open/close, and its open/closed state persists in `localStorage`. The old reactive-form split-panel editor and its structured `Profile` model are removed.
 - In-editor AI editing (US-AI-9): `ProfileComponent` also embeds `<ai-chat-widget>` (via `ChatLoaderService`), keeps its `.document` synced to the live (possibly unsaved) document, and on the widget's `edit` event calls `builder.applyEdit(patchJson)`. Rejected/invalid edits are surfaced back into the chat thread via the widget's `addAssistantNote(...)`; nothing is persisted until the user Saves.
 - Inline PDF preview (`PdfPreviewComponent` wraps a blob URL in an `<iframe>`); the profile page posts the current `{ name, document }` to `/api/cvs/draft-pdf`
 - Theme service (dark/light)
@@ -166,13 +166,14 @@ The widget has no auth of its own. `ChatPageComponent` passes the current JWT as
 
 | Method | Endpoint | Body | Purpose |
 |---|---|---|---|
-| `POST` | `/api/chat` | `{ message, history[], document? }` | Send a message; receive `{ reply, proposal? }` |
+| `POST` | `/api/chat` | `{ message, history[], document? \| jobContext? }` | Send a message; receive `{ reply, proposal? }` |
 
 `history` is the in-memory conversation array (filtered to `user`/`assistant` roles), sent with every request so `cv-api` can forward full context to the LLM.
 
-The same widget serves two modes, switched by whether `document` is present (US-AI-9):
-- **Global assistant** (the `/chat` page) omits `document` → `cv-api` answers from profile *summaries* (read-only, `UserChat`).
-- **In-editor editor** (embedded in `ProfileComponent`, see below) sends the open profile `document` as context → `cv-api` routes to the per-profile `Chat` agent, which may return a `proposal` (`{ type, description, patchJson }`). The widget raises an `edit` CustomEvent; the host applies the patch live to `<applysy-profile-builder>` (unsaved) and never persists — the normal Save flow does. The patch is an ordered op list (`convertNode`/`setAttrs`/`addChild`/`removeNode`/`updateHeader`) addressed by `BlockNode.id`, applied and schema-validated by `applyPatch` in `profile-builder-ui/src/model.ts`.
+The same widget serves three modes, switched by which optional context is present:
+- **Global assistant** (the `/chat` page) sends neither → `cv-api` answers from profile *summaries* (read-only, `UserChat`).
+- **In-editor editor** (embedded in `ProfileComponent`, see below) sends the open profile `document` as context (US-AI-9) → `cv-api` routes to the per-profile `Chat` agent, which may return a `proposal` (`{ type: "edit", description, patchJson }`). The widget raises an `edit` CustomEvent; the host applies the patch live to `<applysy-profile-builder>` (unsaved) and never persists — the normal Save flow does. The patch is an ordered op list (`convertNode`/`setAttrs`/`addChild`/`removeNode`/`updateHeader`) addressed by `BlockNode.id`, applied and schema-validated by `applyPatch` in `profile-builder-ui/src/model.ts`. `cv-api` also passes the user's other saved profiles down in the `Chat` request; the agent can *read* them on demand via `list_profiles` / `get_profile` tools when a request references another profile (US-AI-13), but edits still target only the open document.
+- **Job chat** (the `chrome-extension` side panel, US-EXT-4) sends `jobContext` (`{ jobTitle, jobDescription, fieldContext }` scraped from the active page) → `cv-api` routes to `JobChat` (profile summaries + the posting). A cover-letter request returns a `proposal` (`{ type: "fill", description, text }`); the widget renders the draft in-thread with a **"Use this"** action that raises a `fill` CustomEvent (`{ text }`), which the panel writes into the page field. Mutually exclusive with `document`.
 
 **Components**
 
@@ -206,7 +207,7 @@ The **document-style profile editor** packaged — like `chat-ui` — as a self-
 
 Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one rich-text document** in a single Lexical editor built from a **closed set of predefined widgets** (ADR-0014, §13 / US-EDIT-19): **title** (a section heading that anchors a group), **text** (paragraph), **chips** (tag cloud), **list** (bullets), **link** (a standalone hyperlink line — spec §10), and **timeline** (dated entries — work experience, education, projects — each with Title / Dates / Description). Widgets are inserted from a fixed **controls side rail** beside the document. A **title** node anchors a *group*: dragging its handle moves the title plus all non-title blocks that follow it (until the next title or the end of the document) as a single unit, with a live drag preview and drop indicator.
 
-**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a **flat `BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/**title**/paragraph/text/link/list/listItem/chips/chip/timeline/entry — `section` retired in US-EDIT-19). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree, and migrates any legacy `section` nodes to `title + flat children` on load. The cv-api stores `{ header, body }` as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
+**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a **flat `BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/**title**/paragraph/text/**inlineLink**/link/list/listItem/chips/chip/timeline/entry — `section` retired in US-EDIT-19; `inlineLink` is an inline hyperlink run inside paragraph text, added in US-EDIT-21, distinct from the standalone block `link` line). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree, and migrates any legacy `section` nodes to `title + flat children` on load. The cv-api stores `{ header, body }` as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 
 **Host-agnostic I/O** — no `fetch`, auth, or routing inside the widget:
 
@@ -262,7 +263,7 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `DELETE /api/job-profiles/:id/cvs/:cvId` | `CvController` | Delete generated CV |
 | `POST /api/cvs/generate-auto` | `CvController` | LLM selects best profile then generates CV |
 | `POST /api/cvs/draft-pdf` | `CvController` | Render an unsaved profile draft as PDF (live preview) |
-| `POST /api/chat` | `ChatController` | AI chat for `<ai-chat-widget>`. Without `document`: account-wide assistant over profile summaries (can update `GlobalPreferences`). With `document` (in-editor edit mode, US-AI-9): per-profile `Chat` agent returning `{ reply, proposal? }`; the document is taken from the request (live/unsaved) and nothing is persisted |
+| `POST /api/chat` | `ChatController` | AI chat for `<ai-chat-widget>`. Without `document`/`jobContext`: account-wide assistant over profile summaries (can update `GlobalPreferences`). With `document` (in-editor edit mode, US-AI-9): per-profile `Chat` agent returning `{ reply, proposal? }` (live/unsaved document, nothing persisted). With `jobContext` (extension side panel, US-EXT-4): `JobChat` agent over profile summaries + the page's posting, returning `{ reply, proposal? }` where a `fill` proposal carries a cover-letter draft |
 | `POST /api/cover-letter` | `CoverLetterController` | Generate cover letter from job description (auto-selects profile) |
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
@@ -274,13 +275,15 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 **Services**
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
-- `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `ExtractProfile`, `Chat`, `UserChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
+- `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `ExtractProfile`, `Chat`, `UserChat`, `JobChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
 - **Spending limit (US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches the effective limit; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }`. The limit is read from the `LlmUsageLimitUsd` row in `AppSettings`, falling back to `UsageLimit:MaxCostUsdPerUser` in config (default `$0.50`); admins change it via `PUT /api/admin/usage-limit`.
 - `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); walks `header` + the `body` block tree generically (ADR-0014)
-- `RequestTracingMiddleware` — records per-request spans into the `RequestSpans` table for observability
+
+**Request tracing — OpenTelemetry + Tempo ([ADR-0016](doc/adr/0016-distributed-tracing-tempo-otel.md))**
+cv-api is instrumented with OpenTelemetry (ASP.NET Core + gRPC-client) and exports spans over OTLP to Grafana Tempo. The gRPC client injects the W3C `traceparent` into call metadata, so the trace propagates to llm-service and the whole request renders as one cross-service waterfall in Grafana (HTTP → gRPC → llm-service handler → LLM call). Tracing is **opt-in and no-op when unconfigured** — it activates only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (the docker-compose stack points it at `http://tempo:4317`). This replaced the former `RequestSpans` Postgres table and `RequestTracingMiddleware`, which only stored flat, un-nested rows.
 
 **PDF generation**  
-`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0014): the `header` (name, title, contacts) followed by a **recursive walk of the `body` block tree** — one handler per node type (section → heading + flow, paragraph → text, link → a hyperlink line, list → bullets with indentation for nesting, chips → tag cloud, timeline → entries with title / dates / description). User-created sections (Projects, Publications, …) and nested widgets flow to the PDF without code changes; unknown or empty nodes degrade gracefully and depth is bounded. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
+`PdfService.GenerateFromDocument(ProfileDocument)` renders the document generically (ADR-0014): the `header` (name, title, contacts) followed by a **recursive walk of the `body` block tree** — one handler per node type (section → heading + flow, paragraph → text with inline-link hyperlinks, link → a hyperlink line, list → bullets with indentation for nesting, chips → tag cloud, timeline → entries with title / dates / description). User-created sections (Projects, Publications, …) and nested widgets flow to the PDF without code changes; unknown or empty nodes degrade gracefully and depth is bounded. cv-api renders the document for both saved profiles and unsaved drafts (`POST /api/cvs/draft-pdf`).
 
 ---
 
@@ -297,6 +300,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 | `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) |
 | `Chat` | Profile-scoped conversational assistant; may read the user's other saved profiles on demand via `list_profiles` / `get_profile` tools (US-AI-13) |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
+| `JobChat` | Side-panel chat over profile summaries + an open job posting (US-EXT-4); answers questions or returns a `fill` proposal carrying a cover-letter draft |
 | `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover letter text |
 | `SelectBestProfile` | Job description + profile summaries → best-matching profile id |
 | `Health` | Liveness check |
@@ -321,7 +325,7 @@ Tracing is **opt-in and no-op when unconfigured** — it activates only when all
 | `LANGFUSE_SECRET_KEY` | `sk-...` (Secret Manager in prod, [ADR-0002](doc/adr/0002-secret-management.md)) |
 | `LANGFUSE_HOST` | Langfuse base URL (self-hosted). In prod, the internal IP of the Langfuse VM ([ADR-0011](doc/adr/0011-langfuse-prod-single-vm.md)) |
 
-cv-api propagates request correlation context to llm-service as gRPC metadata — `x-trace-id` (the cv-api `TraceContext.TraceId`) and `x-user-id` (authenticated user). llm-service maps the trace id deterministically (`Langfuse.create_trace_id(seed=...)`) and sets `user_id`, so each Langfuse trace links back to the cv-api `RequestSpan` rows for the same request. Locally, bring up Langfuse with the opt-in overlay: `docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up` (UI at `http://localhost:3030`).
+cv-api propagates request correlation context to llm-service as gRPC metadata — `x-trace-id` (the active OpenTelemetry trace id, [ADR-0016](doc/adr/0016-distributed-tracing-tempo-otel.md)) and `x-user-id` (authenticated user). llm-service maps the trace id deterministically (`Langfuse.create_trace_id(seed=...)`) and sets `user_id`, so each Langfuse trace correlates with the Tempo trace for the same request. The OpenTelemetry gRPC **server** interceptor (added in `app/main.py`) separately extracts the W3C `traceparent` so llm-service's spans nest under the cv-api trace in Tempo. Locally, bring up Langfuse with the opt-in overlay: `docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up` (UI at `http://localhost:3030`).
 
 **LLM evals — Langfuse datasets + experiments ([ADR-0012](doc/adr/0012-langfuse-evals.md))**
 Offline evals live in `apps/llm-service/evals/`. Fixtures (`evals/fixtures/*.jsonl`) are the version-controlled source of truth; each run upserts them into a Langfuse dataset named `eval-<operation>` and runs an experiment (`Langfuse.run_experiment`) over the items. Targets (`evals/targets.py`) call each LLM operation; evaluators (`evals/evaluators.py`) emit `Evaluation` scores — deterministic extraction-accuracy checks plus Claude-as-judge quality/on-task/preference-adherence scorers. Each score carries a rationale `comment` (the judge's reasoning, or the deterministic expected-vs-got detail) and `{operation, model}` metadata, so the Langfuse scores table is self-explanatory rather than bare numbers; the dataset-run view is the per-item lens. Each operation's run is tagged with the Langfuse tracing environment `eval-<operation>`, so the scores/traces **Environment** column (sortable and filterable) shows which operation a score belongs to. Aggregate scores are checked against per-operation thresholds and the process exits non-zero on a breach (CI quality gate); results are also written to `evals/results/<operation>_latest.json` and viewable in the Langfuse UI. Running evals **requires** the `LANGFUSE_*` credentials (unlike live tracing, which is opt-in/no-op). Locally, start the Langfuse overlay and run `npm run evals` (the `llm-service:evals` Nx target injects the overlay's local-dev keys; bare run = all operations, forward args via `npm run evals -- --operation extract` or `-- --sync-only`). Against a non-local Langfuse, set `LANGFUSE_*` and call the module directly: `cd apps/llm-service && python -m evals.run_evals --operation all`.
@@ -343,10 +347,11 @@ A separate admin panel for operating the product, isolated from the user-facing 
 
 ### `apps/chrome-extension` — Job Application Auto-Fill (Chrome MV3)
 
-A Manifest V3 extension ("Applysy — Job Fill", TypeScript + Vite, React popup) that fills job-application forms using the user's profiles. It is a pure client of `cv-api` — no backend of its own.
+A Manifest V3 extension ("Applysy — Job Fill", TypeScript + Vite, React side panel) that fills job-application forms using the user's profiles. It is a pure client of `cv-api` — no backend of its own.
 
+- **Side panel** (toolbar icon, US-EXT-4) — opens a chat (`<ai-chat-widget>`, the bundled `chat-ui` IIFE) seeded with the active page's job posting as `jobContext`. The user asks about the role and requests a cover letter; the draft appears in-thread with a "Use this" action that writes it into the page field (via the content script's existing `INSERT_TEXT` path). A tiny router hosts the chat (default), a Settings view (optimised-CV profile picker), and a Hotkeys view. The background script relays `PANEL_GET_PAGE_CONTEXT`/`PANEL_INSERT_TEXT` between the panel and the active tab.
 - `Alt+Shift+F` — content script heuristically detects cover-letter/free-text fields on the page and fills them via `POST /api/cover-letter` (the backend auto-selects the best profile)
-- `Alt+Shift+D` — generates and downloads an optimized CV PDF for the current job posting (`POST /api/cvs/generate-auto`, or `POST /api/job-profiles/:id/cvs` + PDF download when a profile is forced in the popup)
+- `Alt+Shift+D` — generates and downloads an optimized CV PDF for the current job posting (`POST /api/cvs/generate-auto`, or `POST /api/job-profiles/:id/cvs` + PDF download when a specific profile is selected in Settings)
 - Auth: Google sign-in via `chrome.identity` → `POST /api/auth/google/token`, or email/password login; the JWT is stored in `chrome.storage.local` under the shared `TOKEN_KEY` constant from `@applysy/auth`
 
 Domain docs: [`doc/chrome-extension/`](doc/chrome-extension/).
@@ -387,7 +392,7 @@ GeneratedCv  (FK → Profile, cascade delete)
 LlmUsage  (no FK constraint; UserId nullable for system calls)
  ├── id (UUID PK)
  ├── userId (Guid, nullable, indexed)
- ├── operation  — "Generate" | "Extract" | "Chat" | "UserChat" | "CoverLetter" | "GenerateAuto"
+ ├── operation  — "Generate" | "Extract" | "Chat" | "UserChat" | "JobChat" | "CoverLetter" | "GenerateAuto"
  ├── promptTokens, completionTokens (int)
  ├── modelName  — e.g. "claude-sonnet-4-6"
  └── createdAt (UTC, indexed)
@@ -404,12 +409,8 @@ AppSetting  (generic runtime key-value config, no FK)
  ├── value (string, max 512)
  └── updatedAt (UTC)
 
-RequestSpan  (no FK; observability data written by RequestTracingMiddleware)
- ├── id (bigint PK)
- ├── traceId (Guid, indexed)
- ├── service, spanKind, operation
- ├── statusCode (nullable), isError, durationMs
- └── startedAt (indexed)
+(Request tracing is no longer in the database — spans go to Grafana Tempo via
+ OpenTelemetry; see ADR-0016.)
 ```
 
 Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persistence/Migrations/`. Only cv-api reads or writes this schema; admin-api reaches `Users`/`Profiles` through cv-api's `GET /api/admin/users` ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md)). The admin plane's own database is separate and schema-managed by `apps/admin-api/migrations/init-admin-db.sql` (see the admin section above).
@@ -420,7 +421,7 @@ Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persist
 
 Defined in `proto/llm_service.proto`. The C# stubs are generated at build time; the Python stubs are checked in under `apps/llm-service/app/grpc/`.
 
-Seven RPC methods: `Generate`, `ExtractProfile`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
+Eight RPC methods: `Generate`, `ExtractProfile`, `Chat`, `UserChat`, `JobChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
 
 The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + a recursive `ProfileNode body` block tree, ADR-0014) — the wire mirror of the canonical `ProfileDocument`. `Generate`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). `ChatRequest` also carries `repeated OtherProfile other_profiles` — the user's other saved profiles the agent may read on demand via tools (US-AI-13). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
 

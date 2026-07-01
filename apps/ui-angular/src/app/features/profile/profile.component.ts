@@ -2,6 +2,7 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   ElementRef,
+  HostListener,
   OnInit,
   effect,
   inject,
@@ -50,15 +51,30 @@ export class ProfileComponent implements OnInit {
   // Signal query: resolves once the @if(widgetReady()) branch renders the element.
   private readonly builderRef = viewChild<ElementRef<ProfileBuilderElement>>('builder');
   private readonly chatRef = viewChild<ElementRef<ChatWidgetElement>>('chat');
+  // US-AI-10: the page header the chat sidebar tucks under (so it starts below it).
+  private readonly headerRef = viewChild<ElementRef<HTMLElement>>('pageHeader');
+  readonly headerHeight = signal(64);
 
   profileId = '';
   readonly loading = signal(false);
   readonly loadError = signal(false);
   readonly saving = signal(false);
-  readonly extracting = signal(false);
   readonly widgetReady = signal(false);
   readonly widgetError = signal(false);
   readonly chatReady = signal(false);
+
+  // US-AI-10: whether the slide-in AI chat sidebar is open. Persisted as a
+  // single global preference so it restores across visits; default closed.
+  private static readonly CHAT_OPEN_KEY = 'applysy.profile.chatOpen';
+  readonly chatOpen = signal(ProfileComponent.readChatOpen());
+
+  private static readChatOpen(): boolean {
+    try {
+      return localStorage.getItem(ProfileComponent.CHAT_OPEN_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
 
   readonly apiBase = environment.apiUrl.replace(/\/api$/, '') + '/api';
   get authToken(): string {
@@ -93,6 +109,18 @@ export class ProfileComponent implements OnInit {
       const doc = this.currentDocument();
       if (chat) chat.document = doc;
     });
+
+    // Track the page header height so the chat sidebar can start just below it
+    // (US-AI-10), re-measuring on resize/reflow.
+    effect((onCleanup) => {
+      const el = this.headerRef()?.nativeElement;
+      if (!el || typeof ResizeObserver === 'undefined') return;
+      const update = () => this.headerHeight.set(el.offsetHeight);
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      onCleanup(() => ro.disconnect());
+    });
   }
 
   ngOnInit() {
@@ -117,6 +145,29 @@ export class ProfileComponent implements OnInit {
 
   onDocumentChange(event: Event) {
     this.currentDocument.set((event as CustomEvent<ProfileDocument>).detail);
+  }
+
+  // US-AI-10: open/close the slide-in chat sidebar, persisting the preference.
+  toggleChat() {
+    this.setChatOpen(!this.chatOpen());
+  }
+
+  closeChat() {
+    this.setChatOpen(false);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.chatOpen()) this.closeChat();
+  }
+
+  private setChatOpen(open: boolean) {
+    this.chatOpen.set(open);
+    try {
+      localStorage.setItem(ProfileComponent.CHAT_OPEN_KEY, String(open));
+    } catch {
+      /* storage unavailable — keep in-memory state only */
+    }
   }
 
   // An edit proposed by the in-editor chat. Apply it live to the builder
@@ -170,26 +221,6 @@ export class ProfileComponent implements OnInit {
       .subscribe({
         next: () => this.notify.success('Profile saved successfully!'),
         error: () => this.notify.error('Failed to save profile.'),
-      });
-  }
-
-  onExtractFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    input.value = '';
-    if (!file) return;
-
-    this.extracting.set(true);
-    this.profileService
-      .extractFromCv(this.profileId, file)
-      .pipe(finalize(() => this.extracting.set(false)))
-      .subscribe({
-        next: (result) => {
-          if (result.name) this.profileName.set(result.name);
-          this.setBuilderDocument(result.document);
-          this.notify.success('CV imported! Review the changes and save when ready.');
-        },
-        error: () => this.notify.error('Failed to import CV. Please try again.'),
       });
   }
 

@@ -36,6 +36,9 @@ services:
       # Shared key admin-api uses to call /api/admin/* (ADR-0005).
       AdminApi__ApiKey: ${CV_API_ADMIN_KEY:-localdevkey}
       UsageLimit__MaxCostUsdPerUser: "2.00"
+      # Distributed tracing to Tempo (ADR-0016). Unset => tracing is a no-op.
+      OTEL_SERVICE_NAME: cv-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4317}
     ports:
       - "5050:8080"
     depends_on:
@@ -101,6 +104,9 @@ services:
       # Prometheus scrapes llm-service:8000 (see monitoring/prometheus/prometheus.yml);
       # app default is 9090, so pin it to the published port.
       METRICS_PORT: "8000"
+      # Distributed tracing to Tempo (ADR-0016). Unset => tracing is a no-op.
+      OTEL_SERVICE_NAME: llm-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4317}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -181,6 +187,20 @@ services:
       - cv-api
       - llm-service
 
+  tempo:
+    image: grafana/tempo:2.7.1
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./monitoring/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      # 3200 Tempo query API · 4317 OTLP gRPC · 4318 OTLP HTTP. Published so the
+      # obs-dev overlay's host-run cv-api/llm-service can export to localhost.
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+
   grafana:
     image: grafana/grafana:11.6.0
     restart: unless-stopped
@@ -193,6 +213,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Datasource provisioning reads these; Grafana itself can't supply defaults
+      # (no ${VAR:-default} support), so do it here — Compose interpolation does.
+      # In-network compose service names work for the base stack and obs-dev overlay.
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
+      TEMPO_URL: ${TEMPO_URL:-http://tempo:3200}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -202,6 +230,8 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      tempo:
+        condition: service_started
       postgres:
         condition: service_healthy
 
@@ -210,3 +240,4 @@ volumes:
   admin_db_data:
   prometheus_data:
   grafana_data:
+  tempo_data:

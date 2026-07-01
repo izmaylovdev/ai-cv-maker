@@ -5,7 +5,7 @@ import warnings
 
 from . import llm_service_pb2 as llm__service__pb2
 
-GRPC_GENERATED_VERSION = '1.81.0'
+GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class LlmServiceStub:
+class LlmServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -69,9 +69,14 @@ class LlmServiceStub:
                 request_serializer=llm__service__pb2.SelectBestProfileRequest.SerializeToString,
                 response_deserializer=llm__service__pb2.SelectBestProfileResponse.FromString,
                 _registered_method=True)
+        self.JobChat = channel.unary_unary(
+                '/llm.LlmService/JobChat',
+                request_serializer=llm__service__pb2.JobChatRequest.SerializeToString,
+                response_deserializer=llm__service__pb2.JobChatResponse.FromString,
+                _registered_method=True)
 
 
-class LlmServiceServicer:
+class LlmServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Generate(self, request, context):
@@ -116,6 +121,12 @@ class LlmServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def JobChat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_LlmServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -154,6 +165,11 @@ def add_LlmServiceServicer_to_server(servicer, server):
                     request_deserializer=llm__service__pb2.SelectBestProfileRequest.FromString,
                     response_serializer=llm__service__pb2.SelectBestProfileResponse.SerializeToString,
             ),
+            'JobChat': grpc.unary_unary_rpc_method_handler(
+                    servicer.JobChat,
+                    request_deserializer=llm__service__pb2.JobChatRequest.FromString,
+                    response_serializer=llm__service__pb2.JobChatResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'llm.LlmService', rpc_method_handlers)
@@ -162,7 +178,7 @@ def add_LlmServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class LlmService:
+class LlmService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
@@ -344,6 +360,33 @@ class LlmService:
             '/llm.LlmService/SelectBestProfile',
             llm__service__pb2.SelectBestProfileRequest.SerializeToString,
             llm__service__pb2.SelectBestProfileResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def JobChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.LlmService/JobChat',
+            llm__service__pb2.JobChatRequest.SerializeToString,
+            llm__service__pb2.JobChatResponse.FromString,
             options,
             channel_credentials,
             insecure,

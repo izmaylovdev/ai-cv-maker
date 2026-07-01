@@ -324,3 +324,53 @@ which otherwise looks like blank space.
 - Drag via the handle is the sole reorder path; no move-up / move-down buttons exist.
 - The `title` node round-trips through serialization and the neutral `ProfileDocument` model, and persists through cv-api and PDF rendering.
 - Existing documents with `section` nodes are migrated: each `section` becomes a `title` block (carrying the heading text) followed by the section's former children, flattened to root level.
+
+### US-EDIT-20 — Insert links, lists, and chips inside a timeline entry
+
+**As a** user editing my profile,
+**I want to** insert links, lists, and chips into a timeline entry's description
+(its content area), not only at the document's root level,
+**so that** I can give a job, project, or degree rich, structured detail — bullet
+points of achievements, a row of skill chips, a portfolio link — instead of a
+single plain paragraph.
+
+**Acceptance criteria:**
+- When the caret is inside a timeline entry's description, inserting a **List**,
+  **Link**, or **Chips** widget (via the insert rail or its keyboard shortcut)
+  places the new element inside that entry's content, immediately after the block
+  containing the caret — not at root level.
+- **Chips** are now valid inside a timeline entry; the insert rail offers them
+  when the caret is in an entry.
+- Inserting **Timeline** or **Title** while the caret is inside an entry has no
+  effect there (a timeline can't nest in an entry, and titles are root-level
+  section markers).
+- An entry containing a list, link, or chips round-trips through serialization,
+  the neutral `ProfileDocument` model, cv-api persistence/validation, and PDF
+  rendering without loss or validation error.
+- Existing entries (paragraph-only) are unaffected; nothing about already-saved
+  profiles changes.
+
+### US-EDIT-21 — Insert a link at the caret, not as a new line
+
+**As a** user editing my profile,
+**I want to** add a hyperlink right where my caret is (or around the text I've
+selected), and set its URL in a small editor that actually saves what I type,
+**so that** I can drop a link into the middle of a sentence without it jumping
+onto its own line, and without losing the URL I just entered.
+
+**Acceptance criteria:**
+- With **text selected**, inserting **Link** (insert rail or its shortcut) wraps
+  the selection as an inline link and opens the floating URL editor below it
+  (unchanged from before).
+- With **no selection** (a collapsed caret), inserting **Link** adds an inline
+  link *at the caret* — on the same line, inline with the surrounding text — and
+  opens the floating URL editor. It does **not** insert a standalone link line.
+- For a caret-inserted link, the link's visible text mirrors its URL: as the URL
+  is committed, the displayed text becomes that URL (e.g. typing
+  `example.com` shows `example.com` as the link).
+- Committing the URL (Enter or the ✓ button) in the floating editor reliably
+  **saves** it to the link; the editor never silently discards a typed URL.
+  Committing an empty URL removes the link.
+- The floating editor exposes a single URL field (no "open in new tab" control).
+- Caret-inserted inline links round-trip through serialization, the neutral
+  `ProfileDocument` model, cv-api persistence/validation, and PDF rendering.

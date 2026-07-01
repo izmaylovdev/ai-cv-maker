@@ -1,16 +1,20 @@
 import ReactDOM from 'react-dom/client';
-import { ChatApp, ChatApi, ChatEdit } from './ChatApp';
+import { ChatApp, ChatApi, ChatEdit, ChatFill, JobContext } from './ChatApp';
 
 // Self-contained web component wrapper. Host-agnostic boundary:
 //   • input:  `auth-token` / `api-base` attributes; `.document` property (object)
-//             enables in-editor edit mode (US-AI-9) by sending it as context.
+//             enables in-editor edit mode (US-AI-9) by sending it as context;
+//             `.jobContext` property (object) enables side-panel job chat
+//             (US-EXT-4).
 //   • output: `edit` CustomEvent (detail = { patchJson, description }) when the
-//             assistant proposes an edit to the open document.
+//             assistant proposes an edit to the open document; `fill` CustomEvent
+//             (detail = { text }) when the user accepts a cover-letter draft.
 //   • method: `addAssistantNote(text)` appends a note to the thread (e.g. when
-//             the host rejects an edit, F-CHAT-6.10).
+//             the host rejects an edit, F-CHAT-6.10, or reports a fill outcome).
 class ChatWidget extends HTMLElement {
   private root?: ReturnType<typeof ReactDOM.createRoot>;
   private _document: unknown = null;
+  private _jobContext: JobContext | null = null;
   private api?: ChatApi;
 
   static get observedAttributes() {
@@ -23,6 +27,15 @@ class ChatWidget extends HTMLElement {
   }
   set document(value: unknown) {
     this._document = value ?? null;
+    this.renderWidget();
+  }
+
+  /** Property access for the side-panel host to pass the page's job posting. */
+  get jobContext(): JobContext | null {
+    return this._jobContext;
+  }
+  set jobContext(value: JobContext | null) {
+    this._jobContext = value ?? null;
     this.renderWidget();
   }
 
@@ -50,6 +63,12 @@ class ChatWidget extends HTMLElement {
     );
   };
 
+  private handleFill = (fill: ChatFill) => {
+    this.dispatchEvent(
+      new CustomEvent<ChatFill>('fill', { detail: fill, bubbles: true, composed: true }),
+    );
+  };
+
   private handleReady = (api: ChatApi) => {
     this.api = api;
   };
@@ -60,7 +79,9 @@ class ChatWidget extends HTMLElement {
         authToken={this.getAttribute('auth-token') ?? ''}
         apiBase={this.getAttribute('api-base') ?? '/api'}
         document={this._document ?? undefined}
+        jobContext={this._jobContext ?? undefined}
         onEdit={this.handleEdit}
+        onFill={this.handleFill}
         onReady={this.handleReady}
       />
     );

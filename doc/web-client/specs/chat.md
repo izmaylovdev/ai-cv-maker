@@ -60,8 +60,11 @@ Requires: `Authorization: Bearer <token>`
 { "reply": "You currently have the following skills listed: …" }
 ```
 
-**Response 400:** `"Message is required."` — empty or whitespace-only message.  
-**Response 502:** `"Chat failed: <upstream error>"` — LLM service unavailable.
+**Response 400:** `"Message is required."` — empty or whitespace-only message.
+
+**Failure responses (US-AI-11, see `specs/ai-enhancement.md` §11):** classified into a
+`{ code, message }` body so the widget can show a specific reason. `402 usage_limit_exceeded`,
+`422 llm_invalid_request`, `429 llm_rate_limited`, `502 llm_edit_failed`, `503 llm_unavailable`.
 
 The controller loads all profiles for the authenticated user (name, title, overview, skills) and passes them as `LlmProfileSummary` objects to `ILlmService.UserChatAsync`. The LLM uses this as read-only context; no write operations are performed on the database.
 
@@ -169,8 +172,8 @@ page (`/job-profiles/:id`), next to `<applysy-profile-builder>`. Unlike the glob
 `/chat` page (which sees lossy summaries of all profiles), this instance is given
 the **full open document** as context and can return a **structured edit** that is
 applied **live** to the builder. Nothing is auto-saved — an applied edit is an
-unsaved change in the builder exactly like a manual edit or an Import-from-CV
-result, and persists only when the user clicks Save.
+unsaved change in the builder exactly like a manual edit, and persists only when
+the user clicks Save.
 
 This reuses the already-present-but-unused per-profile `Chat` gRPC path
 (`ChatRequest{profile,message,history}` → `ChatResponse{reply,proposal}`); the
@@ -223,9 +226,12 @@ Response 200 (edit mode):
 
 Response 200 (question, or global mode): `{ "reply": "…", "proposal": null }`.
 
-Errors: `400` empty message; `402` spending limit reached (existing
-`EnsureWithinLimitAsync`); `502` LLM/gRPC failure. On any non-200 the widget
-shows its existing inline error and the document is untouched.
+Errors: `400` empty message; otherwise a classified `{ code, message }` failure
+(US-AI-11, `specs/ai-enhancement.md` §11) — `402 usage_limit_exceeded`,
+`422 llm_invalid_request`, `429 llm_rate_limited`, `502 llm_edit_failed`,
+`503 llm_unavailable`. On any non-200 the widget renders the server `message`
+inline (generic fallback only if the body is unreadable) and the document is
+untouched.
 
 cv-api wiring (`Features/Chat/ChatController.cs`):
 - `UserChatRequest` gains `ProfileDocument? Document`.

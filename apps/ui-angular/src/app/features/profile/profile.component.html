@@ -13,8 +13,9 @@
     </button>
   </div>
 } @else {
-  <div
-    class="sticky md:top-0 z-20 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
+  <!-- Full-width page header; the chat sidebar tucks in below it (US-AI-10). -->
+  <div #pageHeader
+    class="sticky md:top-0 z-30 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
     <div class="flex items-center gap-3 min-w-0">
       <button (click)="router.navigate(['/job-profiles'])"
               aria-label="Back to job profiles"
@@ -28,24 +29,30 @@
       </div>
     </div>
     <div class="flex items-center gap-2 shrink-0">
-      <!-- Import from CV (hidden file input) -->
-      <input #cvInput type="file" accept=".pdf,.doc,.docx,.txt" class="hidden"
-             (change)="onExtractFileChange($event)" />
-      <button type="button" (click)="cvInput.click()" [disabled]="extracting()" title="Import from CV"
-              class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 disabled:opacity-50 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
-        @if (extracting()) {
-          <span
-            class="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
-        } @else {
-          <span class="material-icons text-base">upload_file</span>
-        }
-        <span class="hidden lg:inline">Import CV</span>
-      </button>
-
       <button type="button" (click)="openPdf()" title="Open PDF"
               class="hidden sm:flex items-center gap-1.5 border border-gray-300 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer">
         <span class="material-icons text-base">picture_as_pdf</span><span class="hidden lg:inline"> PDF</span>
       </button>
+
+      @if (chatReady()) {
+        <button type="button" (click)="toggleChat()" [attr.aria-expanded]="chatOpen()"
+                aria-label="AI Editor" title="AI Editor"
+                class="flex items-center gap-1.5 border font-medium rounded-lg px-2.5 lg:px-3.5 py-2 text-sm transition-colors cursor-pointer"
+                [class.border-blue-500]="chatOpen()"
+                [class.bg-blue-50]="chatOpen()"
+                [class.dark:bg-blue-950]="chatOpen()"
+                [class.text-blue-600]="chatOpen()"
+                [class.dark:text-blue-400]="chatOpen()"
+                [class.border-gray-300]="!chatOpen()"
+                [class.dark:border-zinc-600]="!chatOpen()"
+                [class.text-gray-600]="!chatOpen()"
+                [class.dark:text-zinc-400]="!chatOpen()"
+                [class.hover:bg-gray-50]="!chatOpen()"
+                [class.dark:hover:bg-zinc-700]="!chatOpen()">
+          <span class="material-icons text-base">smart_toy</span>
+          <span class="hidden lg:inline">AI Editor</span>
+        </button>
+      }
 
       <button type="button" (click)="save()" [disabled]="saving()" title="Save Profile"
               class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-3.5 py-2 text-sm transition-colors cursor-pointer border-0">
@@ -61,51 +68,72 @@
 
   <!-- Mobile secondary actions row -->
   <div class="sm:hidden flex items-center gap-2 mb-4 -mt-2">
-    <button type="button" (click)="cvInput.click()" [disabled]="extracting()"
-            class="flex-1 flex items-center justify-center gap-1.5 border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 disabled:opacity-50 font-medium rounded-lg px-2 py-2 text-sm cursor-pointer">
-      <span class="material-icons text-base">upload_file</span> Import
-    </button>
     <button type="button" (click)="openPdf()"
             class="flex-1 flex items-center justify-center gap-1.5 border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 font-medium rounded-lg px-2 py-2 text-sm cursor-pointer">
       <span class="material-icons text-base">picture_as_pdf</span> PDF
     </button>
-  </div>
-
-  <div class="flex flex-col lg:flex-row gap-4 min-h-[40vh]">
-    <div class="flex-1 min-w-0">
-      @if (widgetReady()) {
-        <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
-                                 style="display:block"></applysy-profile-builder>
-      } @else if (widgetError()) {
-        <div class="flex flex-col items-center justify-center py-24 gap-3 text-center px-4">
-          <p class="text-sm text-red-600 dark:text-red-400">
-            Could not load the profile builder. Make sure the profile-builder-ui dev server is running on port 4203.
-          </p>
-          <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:builder</code>
-        </div>
-      } @else {
-        <div class="flex items-center justify-center py-24">
-          <span class="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
-        </div>
-      }
-    </div>
-
-    <!-- In-editor AI chat (US-AI-9): ask it to edit the open profile. -->
     @if (chatReady()) {
-      <aside
-        class="lg:w-96 shrink-0 flex flex-col rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden h-[60vh] lg:h-[calc(100vh-9rem)] lg:sticky lg:top-20">
-        <div class="px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0">
-          <h2 class="text-sm font-bold text-gray-900 dark:text-white">AI Editor</h2>
-          <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-            Ask me to edit this profile — e.g. "turn my skills list into chips".
-          </p>
-        </div>
-        <div class="flex-1 min-h-0">
-          <ai-chat-widget #chat (edit)="onChatEdit($event)"
-                          [attr.auth-token]="authToken" [attr.api-base]="apiBase"
-                          style="display:block;height:100%"></ai-chat-widget>
-        </div>
-      </aside>
+      <button type="button" (click)="toggleChat()" [attr.aria-expanded]="chatOpen()" aria-label="AI Editor"
+              class="flex-1 flex items-center justify-center gap-1.5 border font-medium rounded-lg px-2 py-2 text-sm cursor-pointer"
+              [class.border-blue-500]="chatOpen()"
+              [class.bg-blue-50]="chatOpen()"
+              [class.text-blue-600]="chatOpen()"
+              [class.border-gray-300]="!chatOpen()"
+              [class.dark:border-zinc-600]="!chatOpen()"
+              [class.text-gray-600]="!chatOpen()"
+              [class.dark:text-zinc-400]="!chatOpen()">
+        <span class="material-icons text-base">smart_toy</span> AI
+      </button>
     }
   </div>
+
+  <!-- Editor column. On lg+ it is pushed left to reserve room for the open chat
+       sidebar (push, no overlay); on smaller screens the sidebar slides over it
+       (US-AI-10 F-AI-10.3). -->
+  <div class="min-w-0 min-h-[40vh] transition-[margin] duration-300 ease-in-out"
+       [class.lg:mr-96]="chatReady() && chatOpen()">
+    @if (widgetReady()) {
+      <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
+                               style="display:block"></applysy-profile-builder>
+    } @else if (widgetError()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-3 text-center px-4">
+        <p class="text-sm text-red-600 dark:text-red-400">
+          Could not load the profile builder. Make sure the profile-builder-ui dev server is running on port 4203.
+        </p>
+        <code class="text-xs bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded">npm run serve:builder</code>
+      </div>
+    } @else {
+      <div class="flex items-center justify-center py-24">
+        <span class="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></span>
+      </div>
+    }
+  </div>
+
+  <!-- In-editor AI chat (US-AI-9) hosted in a slide-in sidebar (US-AI-10). The
+       widget stays mounted while hidden so the thread and live document binding
+       survive open/close; only the panel's visibility/position is toggled. -->
+  @if (chatReady()) {
+    <aside [attr.aria-hidden]="!chatOpen()"
+           [style.--chat-top]="headerHeight() + 'px'"
+           class="fixed top-14 md:top-[var(--chat-top)] bottom-0 right-0 z-40 w-full sm:w-96 flex flex-col bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-700 shadow-xl transform transition-[transform,visibility] duration-300 ease-in-out"
+           [class.translate-x-0]="chatOpen()"
+           [class.translate-x-full]="!chatOpen()"
+           [class.invisible]="!chatOpen()"
+           [class.pointer-events-none]="!chatOpen()">
+      <div class="relative z-10 px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <h2 class="text-sm font-bold text-gray-900 dark:text-white">AI Editor</h2>
+        </div>
+        <button type="button" (click)="closeChat()" aria-label="Close AI editor" title="Close"
+                class="shrink-0 flex items-center justify-center w-8 h-8 -mr-1 text-gray-400 hover:text-gray-600 dark:text-zinc-500 dark:hover:text-zinc-300 bg-transparent border-0 cursor-pointer">
+          <span class="material-icons text-[20px]">close</span>
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <ai-chat-widget #chat (edit)="onChatEdit($event)"
+                        [attr.auth-token]="authToken" [attr.api-base]="apiBase"
+                        style="display:block;height:100%"></ai-chat-widget>
+      </div>
+    </aside>
+  }
 }

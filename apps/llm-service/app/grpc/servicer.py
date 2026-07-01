@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.chains.chat_chain import ChatMessage, OtherProfile, chat_reply
 from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
+from app.chains.job_chat_chain import job_chat_reply
 from app.chains.profile_selector_chain import select_best_profile
 from app.chains.usage import TokenUsage
 from app.chains.user_chat_chain import (
@@ -153,6 +154,41 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
             return llm_service_pb2.UserChatResponse(
                 reply=result.reply,
                 preferences_update=result.preferences_update or "",
+                usage=_usage_proto(usage),
+            )
+        except _INVALID_ARG_EXCEPTIONS as exc:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except Exception as exc:
+            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+    async def JobChat(self, request, context):
+        try:
+            profiles = [
+                ProfileSummary(
+                    name=p.name,
+                    title=p.title,
+                    overview=p.overview,
+                    skills=list(p.skills),
+                )
+                for p in request.profiles
+            ]
+            history = [UserChatMessage(role=m.role, content=m.content) for m in request.history]
+            result, usage = await job_chat_reply(
+                profiles,
+                job_title=request.job_title,
+                job_description=request.job_description,
+                field_context=request.field_context,
+                message=request.message,
+                history=history,
+            )
+            proposal = llm_service_pb2.ChatProposal(
+                type=result.proposal.type,
+                description=result.proposal.description,
+                text=result.proposal.text,
+            ) if result.proposal else llm_service_pb2.ChatProposal()
+            return llm_service_pb2.JobChatResponse(
+                reply=result.reply,
+                proposal=proposal,
                 usage=_usage_proto(usage),
             )
         except _INVALID_ARG_EXCEPTIONS as exc:

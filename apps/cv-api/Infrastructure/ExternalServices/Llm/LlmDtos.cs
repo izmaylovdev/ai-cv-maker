@@ -26,12 +26,25 @@ public record LlmChatRequest(
     string Message,
     List<LlmChatMessage> History,
     List<LlmOtherProfile>? OtherProfiles = null);
-public record LlmChatProposal(string Type, string Description, string PatchJson);
+// `Text` carries a "fill" proposal's draft (US-EXT-4); `PatchJson` an "edit" proposal's patch.
+public record LlmChatProposal(string Type, string Description, string PatchJson, string? Text = null);
 public record LlmChatResponse(string Reply, LlmChatProposal? Proposal, LlmTokenUsage Usage);
 
 public record LlmProfileSummary(string Name, string Title, string Overview, List<string> Skills);
 public record LlmUserChatRequest(List<LlmProfileSummary> Profiles, string Message, List<LlmChatMessage> History, string? GlobalPreferences = null);
 public record LlmUserChatResponse(string Reply, string? PreferencesUpdate = null, LlmTokenUsage? Usage = null);
+
+// US-EXT-4 — side-panel chat about an open job posting (profile summaries + the
+// posting as context). Returns a reply and optionally a "fill" proposal.
+public record LlmJobChatRequest(
+    List<LlmProfileSummary> Profiles,
+    string JobTitle,
+    string JobDescription,
+    string FieldContext,
+    string Message,
+    List<LlmChatMessage> History
+);
+public record LlmJobChatResponse(string Reply, LlmChatProposal? Proposal, LlmTokenUsage Usage);
 
 // A profile document tagged with the owning profile id, so the response (a
 // selected_profile_id) maps back to a Profile.

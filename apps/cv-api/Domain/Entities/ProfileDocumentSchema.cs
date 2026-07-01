@@ -16,15 +16,16 @@ public static class ProfileDocumentSchema
     {
         ["root"]     = ["title", "paragraph", "list", "chips", "timeline", "link"],
         ["title"]    = [],
-        ["paragraph"] = ["text"],
+        ["paragraph"] = ["text", "inlineLink"],
         ["text"]     = [],
+        ["inlineLink"] = [],
         ["link"]     = [],
         ["list"]     = ["listItem"],
         ["listItem"] = ["paragraph", "list", "chips", "link"],
         ["chips"]    = ["chip"],
         ["chip"]     = [],
         ["timeline"] = ["entry"],
-        ["entry"]    = ["paragraph", "list", "link"],
+        ["entry"]    = ["paragraph", "list", "chips", "link"],
     };
 
     // Only list/timeline introduce a new flow nesting level — mirrors the TS

@@ -12,10 +12,10 @@ Two invocation paths are instrumented through this single module:
 - Direct Anthropic path (anthropic / foundry): :func:`anthropic_create` wraps the
   call in a Langfuse *generation* with model name and token usage.
 
-cv-api propagates its request correlation id and the authenticated user id as
-gRPC metadata (``x-trace-id`` / ``x-user-id``); :func:`rpc_span` opens the root
-trace per RPC and binds those so a Langfuse trace links to the cv-api
-``RequestSpan`` rows for the same request.
+cv-api propagates its active OpenTelemetry trace id and the authenticated user id
+as gRPC metadata (``x-trace-id`` / ``x-user-id``); :func:`rpc_span` opens the root
+trace per RPC and binds those so a Langfuse trace correlates with the Tempo trace
+(ADR-0016) for the same request.
 """
 
 from __future__ import annotations

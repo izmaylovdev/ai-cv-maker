@@ -14,5 +14,7 @@ public record UpdateProfileRequest(string Name, ProfileDocument Document);
 
 public record ChatMessageDto(string Role, string Content);
 public record ChatRequest(string Message, List<ChatMessageDto>? History = null);
-public record ChatProposalDto(string Type, string Description, string PatchJson);
+// `PatchJson` carries an "edit" proposal's patch; `Text` a "fill" proposal's
+// draft (US-EXT-4). Only one is populated per proposal `Type`.
+public record ChatProposalDto(string Type, string Description, string PatchJson, string? Text = null);
 public record ChatResponse(string Reply, ChatProposalDto? Proposal);

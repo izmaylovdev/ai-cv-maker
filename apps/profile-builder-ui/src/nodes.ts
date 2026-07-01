@@ -8,6 +8,7 @@ import {
   ChipsNode,
   EntryNode,
   FlowNode,
+  InlineLinkNode,
   LinkNode,
   ListItemNode,
   ListNode,
@@ -34,6 +35,11 @@ export function chipNode(text = ''): ChipNode {
 
 export function linkNode(text = '', url = ''): LinkNode {
   return { type: 'link', id: newId(), attrs: { text, url } };
+}
+
+/** An inline hyperlink run inside paragraph text (spec §15). */
+export function inlineLinkNode(text = '', url = ''): InlineLinkNode {
+  return { type: 'inlineLink', id: newId(), attrs: { text, url } };
 }
 
 export function chipsNode(texts: string[] = ['']): ChipsNode {
@@ -108,7 +114,7 @@ export const WIDGETS: WidgetDescriptor[] = [
   {
     kind: 'link',
     name: 'Link',
-    description: 'A standalone link — portfolio, profile, or reference.',
+    description: 'A hyperlink at the cursor, or wrapping a selection.',
     make: () => linkNode(),
   },
   {

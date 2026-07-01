@@ -186,53 +186,6 @@ namespace cv_api.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
-            modelBuilder.Entity("CvApi.Domain.Entities.RequestSpan", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("DurationMs")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsError")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Operation")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("Service")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("SpanKind")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("StatusCode")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TraceId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StartedAt");
-
-                    b.HasIndex("TraceId");
-
-                    b.ToTable("RequestSpans");
-                });
-
             modelBuilder.Entity("CvApi.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")

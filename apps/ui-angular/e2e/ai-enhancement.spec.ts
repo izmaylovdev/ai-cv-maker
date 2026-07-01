@@ -10,6 +10,16 @@ import { registerFakeProfileBuilder } from './support/mocks/builder.mock';
 
 const PROFILE_ID = TEST_PROFILE_ID;
 
+// US-AI-10 — the in-editor chat lives in a slide-in sidebar that defaults closed.
+// Open it via the "AI Editor" toggle before asserting on the widget.
+const aiToggle = (page: import('@playwright/test').Page) =>
+  page.getByRole('button', { name: /AI Editor/i }).first();
+
+async function openChat(page: import('@playwright/test').Page) {
+  await aiToggle(page).click();
+  await expect(page.locator('app-profile ai-chat-widget')).toBeVisible();
+}
+
 // US-AI-4 — Conversational profile chat (web component on the /chat page).
 test.describe('Chat widget', () => {
   test.beforeEach(async ({ page }) => {
@@ -47,6 +57,8 @@ test.describe('In-editor chat editing', () => {
     await mockProfileApi(page);
     await mockChatEditApi(page, 'Done.');
     await page.goto(`/job-profiles/${PROFILE_ID}`);
+    // The chat now lives in a collapsible sidebar (US-AI-10); open it first.
+    await openChat(page);
   });
 
   test('the editor page embeds a chat widget scoped to the open profile', async ({ page }) => {
@@ -125,5 +137,68 @@ test.describe('In-editor chat editing', () => {
     );
     // …and the host surfaced a note back into the chat thread.
     await expect(widget).toHaveAttribute('data-last-note', /.+/);
+  });
+});
+
+// US-AI-10 — Collapsible slide-in AI chat sidebar.
+// The in-editor chat (US-AI-9) is hosted in a panel that slides in from the
+// right and can be hidden back. Closing only hides it — the widget stays
+// mounted so the conversation and live document binding survive.
+test.describe('Collapsible AI chat sidebar', () => {
+  test.beforeEach(async ({ page }) => {
+    await registerFakeChatWidget(page);
+    await registerFakeProfileBuilder(page);
+    await setupAuth(page);
+    await mockProfileApi(page);
+    await mockChatEditApi(page, 'Done.');
+    await page.goto(`/job-profiles/${PROFILE_ID}`);
+  });
+
+  test('the chat panel is hidden by default', async ({ page }) => {
+    await expect(aiToggle(page)).toBeVisible();
+    await expect(page.locator('app-profile ai-chat-widget')).toBeHidden();
+    await expect(aiToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('the toggle opens the panel and reflects the open state', async ({ page }) => {
+    await aiToggle(page).click();
+    await expect(page.locator('app-profile ai-chat-widget')).toBeVisible();
+    await expect(aiToggle(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('the in-panel close button hides the panel again', async ({ page }) => {
+    await openChat(page);
+    await page.getByRole('button', { name: /Close AI editor/i }).click();
+    await expect(page.locator('app-profile ai-chat-widget')).toBeHidden();
+    await expect(aiToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('pressing Escape closes the open panel', async ({ page }) => {
+    await openChat(page);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('app-profile ai-chat-widget')).toBeHidden();
+  });
+
+  test('closing keeps the widget mounted (thread and document context survive)', async ({ page }) => {
+    await openChat(page);
+    const widget = page.locator('app-profile ai-chat-widget');
+    // Mark the live element via a host-surfaced note, then close + reopen.
+    await widget.evaluate((el: HTMLElement & { addAssistantNote(t: string): void }) =>
+      el.addAssistantNote('remembered'),
+    );
+    await page.keyboard.press('Escape');
+    await expect(widget).toBeHidden();
+    await openChat(page);
+    // Same element instance — never re-created — so the note (and its thread) persists.
+    await expect(widget).toHaveAttribute('data-last-note', 'remembered');
+    await expect(widget).toHaveAttribute('data-has-document', 'true');
+  });
+
+  test('remembers the open state across a reload', async ({ page }) => {
+    await openChat(page);
+    await page.reload();
+    await registerFakeChatWidget(page); // re-arm (addInitScript ran on first load)
+    await expect(page.locator('app-profile ai-chat-widget')).toBeVisible();
+    await expect(aiToggle(page)).toHaveAttribute('aria-expanded', 'true');
   });
 });

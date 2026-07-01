@@ -18,21 +18,23 @@ _LONG = 5_000   # free-text bodies and descriptions
 ALLOWED_CHILDREN: dict[str, list[str]] = {
     "root":     ["title", "paragraph", "list", "chips", "timeline", "link"],
     "title":    [],
-    "paragraph": ["text"],
+    "paragraph": ["text", "inlineLink"],
     "text":     [],
+    "inlineLink": [],
     "link":     [],
     "list":     ["listItem"],
     "listItem": ["paragraph", "list", "chips", "link"],
     "chips":    ["chip"],
     "chip":     [],
     "timeline": ["entry"],
-    "entry":    ["paragraph", "list", "link"],
+    "entry":    ["paragraph", "list", "chips", "link"],
 }
 
 # Required `attrs` keys per node type (each value must be a string).
 REQUIRED_ATTRS: dict[str, list[str]] = {
     "title": ["text"],
     "text":  ["text"],
+    "inlineLink": ["text", "url"],
     "link":  ["text", "url"],
     "chip":  ["text"],
     "entry": ["title", "dates"],
