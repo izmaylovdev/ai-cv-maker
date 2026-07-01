@@ -18,7 +18,14 @@ public record LlmExtractRequest(string CvText);
 public record LlmExtractResponse(ProfileDocument Document, LlmTokenUsage Usage);
 
 public record LlmChatMessage(string Role, string Content);
-public record LlmChatRequest(ProfileDocument Profile, string Message, List<LlmChatMessage> History);
+// US-AI-13 — one of the user's other saved profiles, so the in-editor agent can
+// read it on demand via the list_profiles / get_profile tools.
+public record LlmOtherProfile(string Id, string Name, ProfileDocument Document);
+public record LlmChatRequest(
+    ProfileDocument Profile,
+    string Message,
+    List<LlmChatMessage> History,
+    List<LlmOtherProfile>? OtherProfiles = null);
 public record LlmChatProposal(string Type, string Description, string PatchJson);
 public record LlmChatResponse(string Reply, LlmChatProposal? Proposal, LlmTokenUsage Usage);
 

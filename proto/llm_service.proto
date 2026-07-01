@@ -77,10 +77,19 @@ message ChatMessage {
   string content = 2;
 }
 
+// US-AI-13 — one of the user's other saved profiles, passed down so the in-editor
+// agent can read it on demand via the list_profiles / get_profile tools.
+message OtherProfile {
+  string               id       = 1;
+  string               name     = 2;
+  ProfileDocumentProto document = 3;
+}
+
 message ChatRequest {
-  ProfileDocumentProto profile = 1;
-  string               message = 2;
-  repeated ChatMessage history = 3;
+  ProfileDocumentProto profile        = 1;
+  string               message        = 2;
+  repeated ChatMessage history        = 3;
+  repeated OtherProfile other_profiles = 4;
 }
 
 message ChatProposal {

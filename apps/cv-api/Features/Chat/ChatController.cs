@@ -84,10 +84,18 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
             .Select(h => new LlmChatMessage(h.Role, h.Content))
             .ToList();
 
+        // US-AI-13 — the agent may read the user's other saved profiles on demand
+        // (via tools) to inform an edit; it still edits only the open document.
+        var otherProfiles = await db.Profiles
+            .Where(p => p.UserId == UserId)
+            .OrderBy(p => p.Name)
+            .Select(p => new LlmOtherProfile(p.Id.ToString(), p.Name, p.Document))
+            .ToListAsync();
+
         LlmChatResponse result;
         try
         {
-            result = await llmService.ChatAsync(new LlmChatRequest(request.Document!, request.Message, history));
+            result = await llmService.ChatAsync(new LlmChatRequest(request.Document!, request.Message, history, otherProfiles));
         }
         catch (Exception ex)
         {

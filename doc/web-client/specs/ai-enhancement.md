@@ -750,3 +750,98 @@ at 0) next to the accrued cost.
 - Time-windowed / resetting quotas (e.g. monthly) — this is a lifetime cumulative cap
 - Soft warnings as the user approaches the cap
 - Admin audit log of limit changes
+
+---
+
+## 13. In-Editor AI Editor Cross-Profile Reads (US-AI-13)
+
+### 13.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-13.1 | The `Chat` (in-editor edit) agent can enumerate the user's *other* saved profiles and read any one's full content on demand, without the user opening or pasting them. |
+| F-AI-13.2 | The agent invokes cross-profile reads only when the request needs them; requests satisfiable from the open document alone produce no tool calls (US-AI-9 behavior unchanged). |
+| F-AI-13.3 | cv-api supplies only the authenticated user's own profiles to the agent; no other user's data is ever passed to `llm-service`. |
+| F-AI-13.4 | Reads never mutate another profile; any `edit` proposal still targets only the open document and is not auto-saved. |
+| F-AI-13.5 | A `get_profile` for an unknown/unreadable id returns a tool error the agent reports in its reply, leaving the document unchanged. |
+| F-AI-13.6 | When the agent uses another profile as a source, its reply names that profile. |
+| F-AI-13.7 | Cross-profile content is subject to the same guardrails as US-AI-9 (no invented facts, CV/career scope only, embedded-instruction injection ignored). |
+
+### 13.2 Technical Specification
+
+**Design.** The AI Editor edit agent runs as the `Chat` gRPC RPC → `chat_reply`
+chain. Because `llm-service` has no database access, cv-api pre-fetches the
+authenticated user's saved profiles and passes them down in the `ChatRequest`.
+The agent uses Anthropic tool-use to look them up on demand — only compact
+summaries reach the model's context until it calls a tool, giving the
+"only when needed" / token-efficient behavior. Tools are resolved in-process
+from the passed-in set (no DB call, no cross-user leakage).
+
+#### gRPC (`proto/llm_service.proto`)
+
+Add an `OtherProfile` message and a repeated field on `ChatRequest`:
+
+```proto
+message OtherProfile {
+  string               id       = 1;
+  string               name     = 2;
+  ProfileDocumentProto document = 3;
+}
+
+message ChatRequest {
+  ProfileDocumentProto profile        = 1;
+  string               message        = 2;
+  repeated ChatMessage history        = 3;
+  repeated OtherProfile other_profiles = 4;  // US-AI-13: user's other saved profiles, for on-demand tool reads
+}
+```
+
+Regenerate stubs: `npm run grpc:generate`.
+
+#### LLM service (`apps/llm-service/app/chains/chat_chain.py`)
+
+- `chat_reply(...)` gains an `other_profiles: list[OtherProfile]` param (id, name, document).
+- Anthropic/Foundry path becomes a bounded tool-use loop (max ~4 iterations)
+  exposing two tools:
+  - `list_profiles` → `[{id, name, title, overview}]` derived from `other_profiles`
+    (title/overview from each document's header + first paragraph).
+  - `get_profile{profile_id}` → the matching profile's full `ProfileDocument` JSON,
+    or an error result if no id matches.
+- The system prompt gains a short section: other profiles exist; use the tools
+  only when the request references them; edits apply solely to the open document;
+  name the source profile when borrowing content.
+- Generic langchain fallback (non-Anthropic providers): no tool loop — inject a
+  compact `list_profiles`-style summary block inline when `other_profiles` is
+  non-empty (degraded mode).
+- Tool inputs/results and iteration count are traced via `observability` like
+  existing calls.
+
+#### cv-api (`apps/cv-api/`)
+
+- `Infrastructure/ExternalServices/Llm/LlmDtos.cs`: add
+  `record LlmOtherProfile(string Id, string Name, ProfileDocument Document)` and
+  add `List<LlmOtherProfile> OtherProfiles` to `LlmChatRequest`.
+- `Infrastructure/ExternalServices/Llm/LlmService.cs`: map `OtherProfiles` into
+  the new proto field.
+- `Features/Chat/ChatController.EditAsync`: load the user's saved profiles
+  (`db.Profiles.Where(p => p.UserId == UserId)`) and pass them all as
+  `OtherProfiles`. No new endpoint — same `POST /api/chat`, same request/response
+  shape to the frontend.
+
+#### Angular / frontend
+
+None. The in-editor chat request/response contract is unchanged; the new
+capability is entirely server-side.
+
+#### Data model
+
+No schema change, no migration (reads existing `Profiles`).
+
+### 13.3 Out of Scope (MVP)
+
+- Deduplicating the open document against a saved copy of the same profile (the
+  agent is told which document is "open"; minor overlap tolerated).
+- Tool-use (agentic) loop for non-Anthropic providers — those get an
+  inline-summary degraded mode only.
+- Cross-profile *writes* / editing another profile.
+- Fuzzy lookup by profile name (tools key on id).

@@ -149,6 +149,16 @@ public class LlmService(
                 Role = h.Role,
                 Content = h.Content,
             }));
+            // US-AI-13 — pass the user's other saved profiles for on-demand tool reads.
+            if (request.OtherProfiles is not null)
+            {
+                grpcRequest.OtherProfiles.AddRange(request.OtherProfiles.Select(p => new CvApi.Grpc.OtherProfile
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Document = ToProto(p.Document),
+                }));
+            }
 
             var reply = await ExecuteAsync(async _ =>
                 await grpcClient.ChatAsync(grpcRequest, DefaultCallOptions));

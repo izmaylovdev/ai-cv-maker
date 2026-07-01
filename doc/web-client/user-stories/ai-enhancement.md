@@ -171,3 +171,22 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - The assistant only edits in response to an edit request, and never invents factual data (organisations, dates, institutions) unless I explicitly ask.
 - If an edit cannot be applied (ambiguous target, request fails), the assistant says so in its reply and the document is left unchanged.
 - Edits respect the document schema (ADR-0014 block-tree nesting rules); an edit that would produce an invalid document is rejected rather than applied.
+
+---
+
+### US-AI-13 — Let the in-editor AI Editor see my other profiles when needed
+
+**As a** user editing one of my CV profiles with the in-editor AI chat,
+**I want to** ask the assistant to draw on my *other* saved profiles — not just the one I have open,
+**so that** I can pull content across profiles conversationally (e.g. "add the Rust experience from my Backend CV", "make this summary match the tone of my Data profile") without copy-pasting between profiles myself.
+
+**Supersedes** the single-profile scope of US-AI-9 for read purposes only: the assistant still edits **only the open document**, but it may now *read* my other profiles to inform an edit or answer.
+
+**Acceptance criteria:**
+- When a request needs information from my other profiles, the assistant can discover that I have other profiles and read their content on demand — I don't have to open or paste them.
+- The assistant only reaches for other profiles **when the request actually calls for it**; ordinary edits and questions about the open document behave exactly as before (no change to US-AI-9).
+- Only my own profiles are ever visible to the assistant; it can never see another user's profiles.
+- Any edit the assistant makes still applies **only to the currently open document** and is never auto-saved — reading another profile never modifies it.
+- If I ask about a profile that doesn't exist or can't be read, the assistant says so and changes nothing.
+- The assistant briefly notes when it used another profile as a source (e.g. "pulled from your *Backend Engineer* profile"), so it's clear where borrowed content came from.
+- Cross-profile reads respect the same scope/safety rules as US-AI-9 (no inventing facts, stays within CV/career scope, ignores instructions embedded in profile content).

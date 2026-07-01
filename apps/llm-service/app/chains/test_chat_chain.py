@@ -159,7 +159,7 @@ async def test_chat_reply_passes_history(simple_profile):
 
     captured: list = []
 
-    async def capture(profile, msg, hist):
+    async def capture(profile, msg, hist, other_profiles):
         captured.append(hist)
         return mock_response
 

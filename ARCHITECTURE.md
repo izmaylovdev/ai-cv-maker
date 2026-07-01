@@ -295,7 +295,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 |---|---|
 | `Generate` | Takes a profile document + optional notes → returns a tailored `ProfileDocument` (ADR-0013) |
 | `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) |
-| `Chat` | Profile-scoped conversational assistant |
+| `Chat` | Profile-scoped conversational assistant; may read the user's other saved profiles on demand via `list_profiles` / `get_profile` tools (US-AI-13) |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
 | `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover letter text |
 | `SelectBestProfile` | Job description + profile summaries → best-matching profile id |
@@ -418,7 +418,7 @@ Defined in `proto/llm_service.proto`. The C# stubs are generated at build time; 
 
 Seven RPC methods: `Generate`, `ExtractProfile`, `Chat`, `UserChat`, `Health`, `GenerateCoverLetter`, `SelectBestProfile`.
 
-The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + a recursive `ProfileNode body` block tree, ADR-0014) — the wire mirror of the canonical `ProfileDocument`. `Generate`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
+The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto header` + a recursive `ProfileNode body` block tree, ADR-0014) — the wire mirror of the canonical `ProfileDocument`. `Generate`, `ExtractProfile`, `Chat`, and `SelectBestProfile` take and/or return documents (`Generate`/`ExtractProfile` responses are a `ProfileDocumentProto document`; `Chat` returns a reply + optional patch proposal). `ChatRequest` also carries `repeated OtherProfile other_profiles` — the user's other saved profiles the agent may read on demand via tools (US-AI-13). The proto's `ProfileDocumentProto` comment points to the TypeScript and C# definitions it must stay in sync with.
 
 ---
 

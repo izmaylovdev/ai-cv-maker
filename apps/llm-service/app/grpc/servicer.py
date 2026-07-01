@@ -1,7 +1,7 @@
 import grpc
 from pydantic import ValidationError
 
-from app.chains.chat_chain import ChatMessage, chat_reply
+from app.chains.chat_chain import ChatMessage, OtherProfile, chat_reply
 from app.chains.cover_letter_chain import CoverLetterRequest, generate_cover_letter
 from app.chains.profile_selector_chain import select_best_profile
 from app.chains.usage import TokenUsage
@@ -115,7 +115,12 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
         try:
             profile = _proto_to_document(request.profile)
             history = [ChatMessage(role=m.role, content=m.content) for m in request.history]
-            result, usage = await chat_reply(profile, request.message, history)
+            # US-AI-13 — the user's other saved profiles, for on-demand tool reads.
+            other_profiles = [
+                OtherProfile(id=p.id, name=p.name, document=_proto_to_document(p.document))
+                for p in request.other_profiles
+            ]
+            result, usage = await chat_reply(profile, request.message, history, other_profiles)
             proposal = llm_service_pb2.ChatProposal(
                 type=result.proposal.type,
                 description=result.proposal.description,
