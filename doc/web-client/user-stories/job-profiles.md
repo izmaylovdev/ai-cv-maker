@@ -68,3 +68,18 @@ A Job Profile is the central entity of the application. Users can maintain multi
 **Acceptance criteria:**
 - A "back to profiles" navigation is available from within the profile editing page.
 - Returning to the dashboard shows all profiles with their current state.
+
+---
+
+### US-PROF-6 — Start a new profile from a default CV template
+
+**As a** user creating a new profile,
+**I want to** have it pre-populated with a standard CV structure instead of a blank page,
+**so that** I know what sections to fill in and can get started faster.
+
+**Acceptance criteria:**
+- When I create a new blank profile, the editor opens with a default set of empty CV sections: **Professional Summary**, **Work Experience**, **Education**, and **Skills**.
+- Each section shows its heading plus lightweight placeholder scaffolding (a summary paragraph, one blank experience entry, one blank education entry, an empty skills list) that I can edit or delete.
+- The template contains no fake personal data — the header (name, contact) and all content fields start empty; only the structure is provided.
+- Creating a profile by bootstrapping from an existing CV (US-PROF-3) is unaffected — extracted data still drives the document, not the template.
+- The seeded document is valid per the block-tree schema and renders correctly in both the editor and the PDF.

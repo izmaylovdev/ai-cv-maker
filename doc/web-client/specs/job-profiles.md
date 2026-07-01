@@ -56,6 +56,18 @@ A **Job Profile** is the central data entity of the application. Users may creat
 | F-PROF-5.1 | A "← Back to profiles" link is visible in the profile editor header. |
 | F-PROF-5.2 | Clicking it returns the user to `/profiles` with all cards in their current state. |
 
+### 2.6 Default CV Template (US-PROF-6)
+
+| # | Requirement |
+|---|-------------|
+| F-PROF-6.1 | Creating a blank profile (`POST /api/profiles`) seeds its document with a default CV template instead of an empty body. |
+| F-PROF-6.2 | The template body contains four titled sections in order: **Professional Summary**, **Work Experience**, **Education**, **Skills**. |
+| F-PROF-6.3 | Scaffolding per section: Summary → one empty paragraph; Work Experience → a timeline with one empty entry; Education → a timeline with one empty entry; Skills → an empty chips group. |
+| F-PROF-6.4 | The header (name, title, email, phone, location) and every content field start empty — the template carries structure only, no placeholder/fake data. |
+| F-PROF-6.5 | The seeded document passes `ProfileDocumentSchema.Validate` (block-tree schema, ADR-0014 §13). |
+| F-PROF-6.6 | The template only applies to the blank-create path; bootstrap-from-CV (US-PROF-3) continues to seed from extracted data, not the template. |
+| F-PROF-6.7 | Empty template nodes render as editable scaffolding in the profile editor; the PDF walk skips empty nodes (graceful degradation), so an untouched new profile still yields a near-empty PDF by design. |
+
 ---
 
 ## 3. Technical Specification
@@ -220,6 +232,40 @@ type SectionKey = "experience" | "education" | "skills";
 
 ---
 
+### 3.6 Default Profile Template (US-PROF-6)
+
+New factory on the domain model:
+
+```csharp
+// ProfileDocument.cs
+public static ProfileDocument DefaultTemplate();
+```
+
+Returns a `ProfileDocument` with an empty `ProfileHeader` and a `root` body whose
+children are (each node assigned a fresh id):
+
+| Order | Node | Attrs / children |
+|-------|------|------------------|
+| 1 | `title` | `text: "Professional Summary"` |
+| 2 | `paragraph` | no children (empty) |
+| 3 | `title` | `text: "Work Experience"` |
+| 4 | `timeline` | one `entry` with `title: ""`, `dates: ""`, one empty `paragraph` |
+| 5 | `title` | `text: "Education"` |
+| 6 | `timeline` | one `entry` with `title: ""`, `dates: ""`, one empty `paragraph` |
+| 7 | `title` | `text: "Skills"` |
+| 8 | `chips` | no children (empty) |
+
+**Wiring:** `JobProfileService.CreateAsync` seeds `ProfileDocument.DefaultTemplate()`
+instead of `ProfileDocument.Empty()`. `Empty()` is retained (used by
+`UpdateProfileAsync`'s null-guard). No API contract change — `POST /api/profiles`
+request/response shapes are unchanged; only the seeded body differs. No schema or
+EF migration change: the document lives in the existing jsonb column.
+
+**Angular:** no component or route change — the editor loads the document via
+`GET /api/profiles/:id` and renders whatever block tree it receives.
+
+---
+
 ## 4. Error States & UX
 
 | Scenario | UI Behaviour |
@@ -235,5 +281,5 @@ type SectionKey = "experience" | "education" | "skills";
 
 - Profile duplication / cloning
 - Sharing or exporting a profile (other than as PDF CV)
-- Profile templates
+- User-selectable / multiple CV templates (a single default template ships in §2.6; choosing between templates is deferred)
 - Folder / tag organisation

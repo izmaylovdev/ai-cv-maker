@@ -165,6 +165,34 @@ public class JobProfileServiceTests
     }
 
     // -------------------------------------------------------------------------
+    // CreateAsync — default template seeding (US-PROF-6)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CreateAsync_SeedsDefaultCvTemplate()
+    {
+        var userId = Guid.NewGuid();
+        await using var db = CreateDb();
+
+        var created = await MakeService(db).CreateAsync(userId, new("Backend Role"));
+
+        // Read the stored document back and assert it is the default template,
+        // not an empty body.
+        var stored = await db.Profiles.SingleAsync(p => p.Id == created.Id);
+        var titles = stored.Document.Body.Children
+            .Where(n => n.Type == "title")
+            .Select(n => n.Attrs.GetValueOrDefault("text"))
+            .ToList();
+
+        Assert.Equal(
+            new[] { "Professional Summary", "Work Experience", "Education", "Skills" },
+            titles);
+        Assert.Null(ProfileDocumentSchema.Validate(stored.Document.Body));
+        // No fake identity data seeded onto the header.
+        Assert.Equal(string.Empty, stored.Document.Header.FullName);
+    }
+
+    // -------------------------------------------------------------------------
     // GetAsync — access control
     // -------------------------------------------------------------------------
 

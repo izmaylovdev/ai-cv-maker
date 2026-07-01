@@ -371,6 +371,10 @@ Profile  (FK → User, cascade delete)
  │                   Replaces the former fullName/title/overview/location/contactEmail/contactPhone/
  │                   sectionOrder columns and the WorkExperiences/Educations/Skills child tables,
  │                   which were backfilled into the document and dropped.
+ │                   Blank-created profiles seed ProfileDocument.DefaultTemplate() (US-PROF-6): an empty
+ │                   header + four titled sections (Professional Summary / Work Experience / Education /
+ │                   Skills) with empty scaffolding — structure only, no data. Bootstrap-from-CV seeds
+ │                   from extracted data instead.
  └── GeneratedCvs[]     (cascade delete)
 
 GeneratedCv  (FK → Profile, cascade delete)

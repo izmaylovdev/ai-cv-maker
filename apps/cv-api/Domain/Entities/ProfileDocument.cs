@@ -13,6 +13,53 @@ public class ProfileDocument
     public BlockNode Body { get; set; } = BlockNode.Root();
 
     public static ProfileDocument Empty() => new();
+
+    /// <summary>
+    /// Default CV starter template (US-PROF-6): an empty header plus a body of four
+    /// titled sections — Professional Summary, Work Experience, Education, Skills —
+    /// each with empty scaffolding (a blank paragraph, timelines with one empty entry,
+    /// an empty skills chips group). Carries structure only: no fake identity or
+    /// content data. The tree is schema-valid (see ProfileDocumentSchema); empty
+    /// nodes render as editable scaffolding in the editor and are skipped by the PDF
+    /// walk, so an untouched new profile still produces a near-empty PDF by design.
+    /// </summary>
+    public static ProfileDocument DefaultTemplate()
+    {
+        static BlockNode Node(string type, Dictionary<string, string>? attrs = null, List<BlockNode>? children = null)
+            => new()
+            {
+                Type = type,
+                Id = Guid.NewGuid().ToString("n"),
+                Attrs = attrs ?? [],
+                Children = children ?? [],
+            };
+
+        static BlockNode Title(string text) => Node("title", new() { ["text"] = text });
+
+        // A timeline pre-seeded with a single blank entry the user fills in.
+        static BlockNode EmptyTimeline() => Node("timeline", children:
+        [
+            Node("entry", new() { ["title"] = string.Empty, ["dates"] = string.Empty }, children:
+            [
+                Node("paragraph"),
+            ]),
+        ]);
+
+        var body = BlockNode.Root();
+        body.Children =
+        [
+            Title("Professional Summary"),
+            Node("paragraph"),
+            Title("Work Experience"),
+            EmptyTimeline(),
+            Title("Education"),
+            EmptyTimeline(),
+            Title("Skills"),
+            Node("chips"),
+        ];
+
+        return new ProfileDocument { Body = body };
+    }
 }
 
 public class ProfileHeader

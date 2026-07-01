@@ -32,7 +32,9 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         {
             UserId = userId,
             Name = string.IsNullOrWhiteSpace(request.Name) ? "My Profile" : request.Name.Trim(),
-            Document = ProfileDocument.Empty(),
+            // US-PROF-6: seed a default CV template (titled sections + empty
+            // scaffolding) rather than a blank body, so users start with structure.
+            Document = ProfileDocument.DefaultTemplate(),
         };
         db.Profiles.Add(profile);
         await db.SaveChangesAsync();
