@@ -10,11 +10,17 @@ public class AuthController(IAuthService authService) : ControllerBase
     private const string RefreshTokenCookie = "refresh_token";
     private const int RefreshTokenExpiryDays = 30;
 
+    private const int MinPasswordLength = 8;
+
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest("Email and password are required.");
+        if (!new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(request.Email))
+            return BadRequest("A valid email address is required.");
+        if (request.Password.Length < MinPasswordLength)
+            return BadRequest($"Password must be at least {MinPasswordLength} characters.");
 
         var result = await authService.RegisterAsync(request);
         if (result is null)
