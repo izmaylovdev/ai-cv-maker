@@ -67,6 +67,7 @@ make dev        # same as npm run dev
 make dev-admin  # + admin stack
 make dev-obs    # + Langfuse tracing
 make dev-all    # + admin stack + tracing
+make dev-stop   # kill any host dev servers left running in the background
 ```
 
 | Server | Dev URL |

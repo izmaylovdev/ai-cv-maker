@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "dev-stack",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4200,
+      "autoPort": false
+    },
+    {
       "name": "profile-builder-ui",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["nx", "run", "profile-builder-ui:dev", "--port=4288"],

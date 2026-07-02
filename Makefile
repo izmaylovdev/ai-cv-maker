@@ -1,5 +1,5 @@
 # Applysy dev shortcuts. See README "One-line dev environment" for details.
-.PHONY: dev dev-admin dev-obs dev-all migrate migration help
+.PHONY: dev dev-admin dev-obs dev-all dev-stop migrate migration help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -16,6 +16,9 @@ dev-obs: ## dev + Langfuse LLM tracing
 
 dev-all: ## dev + admin stack + Langfuse tracing
 	bash scripts/dev.sh --with-admin --with-obs
+
+dev-stop: ## Kill any host dev servers left running in the background
+	bash scripts/dev-stop.sh
 
 migrate: ## Apply EF Core migrations to the local cv-api database
 	dotnet run --project apps/cv-api -- migrate
