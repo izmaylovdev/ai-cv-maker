@@ -59,58 +59,61 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
             return null;
         }
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == payload.Subject)
-                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+        // ValidateAsync already pins the audience to our web client. Still require a
+        // Google-verified email before we match/create an account by email address,
+        // so an unverified-email identity can't be linked onto someone else's login.
+        if (payload.EmailVerified != true || string.IsNullOrEmpty(payload.Email))
+            return null;
 
-        if (user is null)
-        {
-            user = new User
-            {
-                Email = payload.Email,
-                GoogleId = payload.Subject
-            };
-            db.Users.Add(user);
-        }
-        else if (user.GoogleId is null)
-        {
-            user.GoogleId = payload.Subject;
-        }
-
-        await db.SaveChangesAsync();
-        return new AuthResponse(GenerateToken(user), user.Email);
+        return await LinkOrCreateGoogleUserAsync(payload.Subject, payload.Email);
     }
 
     public async Task<AuthResponse?> GoogleAccessTokenLoginAsync(GoogleAccessTokenRequest request)
     {
         using var http = new HttpClient();
+        // Use tokeninfo (not userinfo): it returns the token's `aud` — the OAuth
+        // client the access token was minted for. We must reject tokens issued to
+        // any *other* Google app, otherwise a token the victim granted to a third
+        // party can be replayed here to log in as them (token substitution).
         var infoRes = await http.GetAsync(
-            $"https://www.googleapis.com/oauth2/v3/userinfo?access_token={Uri.EscapeDataString(request.AccessToken)}");
+            $"https://oauth2.googleapis.com/tokeninfo?access_token={Uri.EscapeDataString(request.AccessToken)}");
 
         if (!infoRes.IsSuccessStatusCode) return null;
 
-        var info = await infoRes.Content.ReadFromJsonAsync<GoogleUserInfo>();
-        if (info?.Email is null || info.Sub is null) return null;
+        var info = await infoRes.Content.ReadFromJsonAsync<GoogleTokenInfo>();
+        if (!IsTrustedGoogleToken(info, AllowedAccessTokenAudiences()))
+            return null;
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == info.Sub)
-                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == info.Email);
-
-        if (user is null)
-        {
-            user = new User { Email = info.Email, GoogleId = info.Sub };
-            db.Users.Add(user);
-        }
-        else if (user.GoogleId is null)
-        {
-            user.GoogleId = info.Sub;
-        }
-
-        await db.SaveChangesAsync();
-        return new AuthResponse(GenerateToken(user), user.Email);
+        return await LinkOrCreateGoogleUserAsync(info!.Sub!, info.Email!);
     }
 
-    private sealed record GoogleUserInfo(
+    /// <summary>
+    /// Validates a Google <c>tokeninfo</c> response before it is trusted for login:
+    /// the email must be Google-verified, subject and email present, and the token's
+    /// audience must be one we issued (the web or extension OAuth client). Pure and
+    /// side-effect free so the trust decision is unit-testable without live HTTP.
+    /// </summary>
+    public static bool IsTrustedGoogleToken(GoogleTokenInfo? info, IReadOnlyCollection<string> allowedAudiences)
+    {
+        if (info is null) return false;
+        if (string.IsNullOrEmpty(info.Sub) || string.IsNullOrEmpty(info.Email)) return false;
+        // tokeninfo returns email_verified as the JSON string "true"/"false".
+        if (!string.Equals(info.EmailVerified, "true", StringComparison.OrdinalIgnoreCase)) return false;
+        if (string.IsNullOrEmpty(info.Aud) || !allowedAudiences.Contains(info.Aud)) return false;
+        return true;
+    }
+
+    private string[] AllowedAccessTokenAudiences() =>
+        new[] { config["Google:WebClientId"], config["Google:ExtensionClientId"] }
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Select(id => id!)
+            .ToArray();
+
+    public sealed record GoogleTokenInfo(
         [property: System.Text.Json.Serialization.JsonPropertyName("sub")] string? Sub,
-        [property: System.Text.Json.Serialization.JsonPropertyName("email")] string? Email);
+        [property: System.Text.Json.Serialization.JsonPropertyName("email")] string? Email,
+        [property: System.Text.Json.Serialization.JsonPropertyName("email_verified")] string? EmailVerified,
+        [property: System.Text.Json.Serialization.JsonPropertyName("aud")] string? Aud);
 
     public async Task<AuthResponse?> GoogleCodeLoginAsync(GoogleCodeRequest request)
     {
@@ -153,17 +156,30 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
             return null;
         }
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == payload.Subject)
-                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+        if (payload.EmailVerified != true || string.IsNullOrEmpty(payload.Email))
+            return null;
+
+        return await LinkOrCreateGoogleUserAsync(payload.Subject, payload.Email);
+    }
+
+    /// <summary>
+    /// Finds the user by Google subject, else by (verified) email, else creates one,
+    /// backfilling GoogleId on first Google sign-in. Callers must have already
+    /// confirmed the email is Google-verified and the token's audience is ours.
+    /// </summary>
+    private async Task<AuthResponse> LinkOrCreateGoogleUserAsync(string googleId, string email)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId)
+                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == email);
 
         if (user is null)
         {
-            user = new User { Email = payload.Email, GoogleId = payload.Subject };
+            user = new User { Email = email, GoogleId = googleId };
             db.Users.Add(user);
         }
         else if (user.GoogleId is null)
         {
-            user.GoogleId = payload.Subject;
+            user.GoogleId = googleId;
         }
 
         await db.SaveChangesAsync();
