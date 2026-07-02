@@ -9,9 +9,13 @@ The order is:
 2. Spec (what it does, edge cases, acceptance criteria)
 3. Tests
 4. Implementation
-5. Documentation update
+5. Verification — prove each acceptance criterion works in a real browser against the local stack (the skill's `browser-verifier` subagent does this)
+6. Documentation update
+7. Commit on the feature branch and open a PR automatically (merging stays with the user)
 
 Never skip the spec phase, even for small changes.
+
+The skill does all work in a dedicated git worktree on a feature branch by default — `main` in the primary checkout stays clean until the branch is reviewed and merged.
 
 **Exception — infrastructure / security / cross-service work:** document the
 decision as an ADR in `doc/adr/` (template in `doc/adr/README.md`) instead of
