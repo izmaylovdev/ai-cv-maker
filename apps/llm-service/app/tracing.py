@@ -36,7 +36,6 @@ def configure_tracing() -> Any | None:
         return None
 
     try:
-        from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.instrumentation.grpc import aio_server_interceptor
         from opentelemetry.sdk.resources import Resource
@@ -51,10 +50,17 @@ def configure_tracing() -> Any | None:
             # OTLPSpanExporter reads OTEL_EXPORTER_OTLP_ENDPOINT itself; an http://
             # endpoint is treated as insecure (local Tempo, no TLS).
             _provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-            trace.set_tracer_provider(_provider)
+            # Deliberately NOT registered as the *global* tracer provider. Langfuse
+            # v3 (ADR-0010) is also OpenTelemetry-based and attaches its span
+            # processor to the global provider; if this Tempo provider were global,
+            # every gRPC instrumentation span would fan out to Langfuse too and land
+            # there as a content-less duplicate trace (named after the full method,
+            # e.g. `/llm.LlmService/Chat`). Keeping this provider local — and handing
+            # it explicitly to the interceptor below — confines Tempo spans to Tempo
+            # and leaves the global provider for Langfuse alone (ADR-0018).
             _logger.info("OpenTelemetry tracing enabled (endpoint=%s)", endpoint)
 
-        return aio_server_interceptor()
+        return aio_server_interceptor(tracer_provider=_provider)
     except Exception as exc:  # pragma: no cover - tracing must never break startup
         _logger.warning("OpenTelemetry init failed; tracing disabled: %s", exc)
         return None

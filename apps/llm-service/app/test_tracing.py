@@ -39,6 +39,28 @@ def test_returns_interceptor_when_configured(monkeypatch):
     tracing.shutdown()
 
 
+def test_tempo_provider_is_local_not_global(monkeypatch):
+    """The Tempo provider must not become the global tracer provider.
+
+    Langfuse (ADR-0010) is also OpenTelemetry-based and hooks the global provider;
+    a global Tempo provider would leak every gRPC instrumentation span into
+    Langfuse as an empty duplicate trace. Keeping it local prevents that (ADR-0018).
+    """
+    from opentelemetry import trace
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+    global_before = trace.get_tracer_provider()
+
+    interceptor = tracing.configure_tracing()
+
+    assert interceptor is not None
+    assert tracing._provider is not None
+    # configure_tracing must leave the global provider untouched.
+    assert trace.get_tracer_provider() is global_before
+    assert trace.get_tracer_provider() is not tracing._provider
+    tracing.shutdown()
+
+
 def test_setup_failure_degrades_to_noop(monkeypatch):
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
 
