@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
 
 from pydantic import BaseModel
@@ -16,6 +17,8 @@ from app.chains.cv_chain import (
     _llm_model_name,
 )
 from app.schemas import BlockNode, ProfileDocument
+
+_logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -165,6 +168,77 @@ _TOOLS = [
 # Bound the agentic loop so a misbehaving model can't spin forever.
 _MAX_TOOL_ITERATIONS = 4
 
+# Output-token cap for the chat edit. Edits are returned as a JSON envelope whose
+# patch_json is an escaped string of ops — populating a whole profile from another
+# emits one op per piece of content, so this must be generous or the JSON is cut
+# off mid-string and fails to parse. 1024 was far too small; 8192 still truncated a
+# full-profile populate.
+#
+# The chat request STREAMS (observability.anthropic_stream), so we are NOT bound by
+# the SDK's non-streaming 10-minute guard — that guard rejects a buffered request
+# with max_tokens > ~21_333 (and Opus 4/4.1 cap lower, at 8_192). Streaming lets us
+# use a generous cap safely on any model. 32_000 is ample for a full profile;
+# anything still larger degrades gracefully to _TRUNCATION_REPLY below.
+_MAX_TOKENS = 32_000
+
+# Two DISTINCT failure modes, deliberately kept apart (both leave the doc unchanged,
+# no proposal). Conflating them once cost us a long misdiagnosis, so each has its own
+# user-facing message AND its own log line — a recurrence must be identifiable at a
+# glance in the logs, distinct from the other and from unrelated errors.
+#
+# 1. Truncation: the model actually ran out of output budget (stop_reason
+#    "max_tokens"). The edit really was too big for one turn — nudge to split it.
+_TRUNCATION_REPLY = (
+    "That change was too large for me to apply in one step. Try breaking it into "
+    "smaller edits — for example, add your work experience first, then your "
+    "education, then your skills."
+)
+# 2. Unparseable: the model finished normally but its reply wasn't the JSON envelope
+#    we expect (e.g. wrapped in prose we couldn't recover). NOT a size problem — say
+#    so honestly rather than blaming the edit's size.
+_UNPARSEABLE_REPLY = (
+    "I hit a problem applying that edit — my response came back in an unexpected "
+    "format, so I've left your profile unchanged. Please try again, or rephrase "
+    "your request."
+)
+
+
+def _truncated_response() -> ChatResponse:
+    _logger.warning(
+        "chat edit hit the output-token cap (stop_reason=max_tokens, max_tokens=%d); "
+        "returning the split-the-edit nudge, document unchanged",
+        _MAX_TOKENS,
+    )
+    return ChatResponse(reply=_TRUNCATION_REPLY, proposal=None)
+
+
+def _lc_finish_reason(response: object) -> object:
+    """The provider's finish reason from a LangChain response, if any."""
+    meta = getattr(response, "response_metadata", None) or {}
+    return meta.get("finish_reason") or meta.get("finishReason")
+
+
+def _lc_is_truncated(response: object) -> bool:
+    """True when a LangChain response was cut off at the output-token limit
+    (OpenAI/Gemini report "length"/"MAX_TOKENS")."""
+    fr = _lc_finish_reason(response)
+    return isinstance(fr, str) and fr.strip().lower() in {"length", "max_tokens", "maxtokens"}
+
+
+def _unparseable_response(raw: str, exc: Exception, *, stop_reason: object = None) -> ChatResponse:
+    """The model's reply could not be parsed into the edit envelope. Distinct from
+    truncation: logs the stop_reason, length and a bounded snippet of the raw text so
+    the real cause (bad format, stray prose, etc.) is diagnosable without re-running."""
+    _logger.warning(
+        "chat edit response was not parseable JSON (stop_reason=%s, raw_len=%d): %s | "
+        "snippet=%r",
+        stop_reason,
+        len(raw),
+        exc,
+        raw[:500],
+    )
+    return ChatResponse(reply=_UNPARSEABLE_REPLY, proposal=None)
+
 
 def _build_prompt(profile: ProfileDocument, message: str) -> str:
     return _HUMAN_TEMPLATE.format(
@@ -224,12 +298,33 @@ def _system_prompt(other_profiles: list[OtherProfile], *, tools_enabled: bool) -
     )
 
 
+def _extract_envelope(text: str) -> dict:
+    """Parse the JSON envelope out of a model reply that may wrap it in prose and/or
+    a Markdown code fence, with trailing content after it.
+
+    The model is told to return ONLY JSON, but especially after using a tool (e.g.
+    reading another profile to populate from) it adds a conversational preamble and/or
+    a trailing sign-off around a ```json block — "I pulled your Backend CV...\\n
+    ```json\\n{...}\\n```\\nLet me know!". A naive fence-strip anchored at the start
+    misses the preamble, and json.loads over the whole thing chokes on the trailing
+    text ("Extra data"), so the (valid) edit gets mis-reported as a failure.
+
+    Strategy: find the first "{" and decode ONE complete JSON object from there with
+    raw_decode, which stops at the object's end and ignores anything after it. This
+    transparently handles bare JSON, fenced JSON, prose preambles, and trailing text.
+    Raises json.JSONDecodeError if no complete object is present (genuine bad output)."""
+    s = text.strip()
+    start = s.find("{")
+    if start == -1:
+        raise json.JSONDecodeError("no JSON object in model reply", s or "", 0)
+    obj, _end = json.JSONDecoder().raw_decode(s, start)
+    if not isinstance(obj, dict):
+        raise json.JSONDecodeError("model reply was not a JSON object", s, start)
+    return obj
+
+
 def _parse_response(text: str) -> ChatResponse:
-    import re
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, count=1, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```\s*$", "", cleaned, count=1)
-    data = json.loads(cleaned)
+    data = _extract_envelope(text)
     proposal = None
     if data.get("proposal"):
         p = data["proposal"]
@@ -270,14 +365,14 @@ async def _chat_anthropic(
         kwargs: dict = dict(
             name="chat",
             model=model,
-            max_tokens=1024,
+            max_tokens=_MAX_TOKENS,
             temperature=app_settings.llm_temperature(),
             system=system,
             messages=messages,
         )
         if tools_enabled:
             kwargs["tools"] = _TOOLS
-        response = await observability.anthropic_create(client, **kwargs)
+        response = await observability.anthropic_stream(client, **kwargs)
         total_usage = _add_usage(total_usage, response.usage, model)
 
         if tools_enabled and getattr(response, "stop_reason", None) == "tool_use":
@@ -295,10 +390,21 @@ async def _chat_anthropic(
             messages.append({"role": "user", "content": tool_results})
             continue
 
+        # Truncated at the output-token cap → the JSON envelope is cut off and can't
+        # be parsed. Surface a "split the edit" nudge instead of a raw parse error.
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            return _truncated_response(), total_usage or TokenUsage.empty()
+
         raw = "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
-        return _parse_response(raw), total_usage or TokenUsage.empty()
+        try:
+            return _parse_response(raw), total_usage or TokenUsage.empty()
+        except json.JSONDecodeError as exc:
+            # Finished normally (stop_reason != max_tokens, handled above) but the
+            # reply wasn't the JSON envelope. A format problem, not a size one.
+            stop_reason = getattr(response, "stop_reason", None)
+            return _unparseable_response(raw, exc, stop_reason=stop_reason), total_usage or TokenUsage.empty()
 
     # Tool loop exhausted without a final answer — fail gracefully, unchanged doc.
     return (
@@ -328,7 +434,15 @@ async def _chat_langchain(
 
     response = await observability.lc_invoke(llm, lc_messages, name="chat")
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
-    return _parse_response(str(response.content)), usage
+    try:
+        return _parse_response(str(response.content)), usage
+    except json.JSONDecodeError as exc:
+        # Same two distinct modes as the Anthropic path. A generic provider signals
+        # truncation via finish_reason == "length"; anything else is a format issue.
+        raw = str(response.content)
+        if _lc_is_truncated(response):
+            return _truncated_response(), usage
+        return _unparseable_response(raw, exc, stop_reason=_lc_finish_reason(response)), usage
 
 
 async def _chat_with_llm(

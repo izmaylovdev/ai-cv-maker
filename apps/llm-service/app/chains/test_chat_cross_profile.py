@@ -182,7 +182,7 @@ async def test_anthropic_loop_resolves_get_profile_then_answers(open_profile):
     with patch.object(chat_chain, "_build_anthropic_messages_client", return_value=MagicMock()), \
          patch.object(chat_chain, "_get_anthropic_model", return_value="claude-x"), \
          patch("app.settings.llm_provider", return_value="anthropic"), \
-         patch("app.observability.anthropic_create", new=create):
+         patch("app.observability.anthropic_stream", new=create):
         result, usage = await chat_chain.chat_reply(
             open_profile, "add the Rust experience from my Backend CV", [], others
         )
@@ -218,7 +218,7 @@ async def test_anthropic_no_tools_when_no_other_profiles(open_profile):
     with patch.object(chat_chain, "_build_anthropic_messages_client", return_value=MagicMock()), \
          patch.object(chat_chain, "_get_anthropic_model", return_value="claude-x"), \
          patch("app.settings.llm_provider", return_value="anthropic"), \
-         patch("app.observability.anthropic_create", new=create):
+         patch("app.observability.anthropic_stream", new=create):
         result, _ = await chat_chain.chat_reply(open_profile, "what is my title?", [])
 
     assert create.await_count == 1

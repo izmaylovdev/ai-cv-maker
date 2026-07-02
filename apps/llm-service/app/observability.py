@@ -213,15 +213,30 @@ def _anthropic_usage(message: Any) -> dict[str, int] | None:
         return None
 
 
-async def anthropic_create(anthropic_client: Any, *, name: str, **kwargs: Any) -> Any:
-    """Call ``anthropic_client.messages.create(**kwargs)`` inside a Langfuse generation.
+async def _messages_call(anthropic_client: Any, kwargs: dict, *, stream: bool) -> Any:
+    """Issue the Anthropic request and return the final Message.
 
-    Records model name, the prompt messages, the completion text and token usage.
-    Equivalent to a bare ``messages.create`` call when tracing is disabled.
+    When ``stream`` is True the response is consumed as a server-sent stream and
+    reassembled via ``get_final_message()`` — the same Message shape a plain
+    ``create`` returns, but it bypasses the SDK's non-streaming 10-minute guard,
+    which otherwise rejects a large ``max_tokens`` outright (see
+    ``chat_chain._MAX_TOKENS``).
     """
+    if stream:
+        async with anthropic_client.messages.stream(**kwargs) as s:
+            return await s.get_final_message()
+    return await anthropic_client.messages.create(**kwargs)
+
+
+async def _anthropic_generation(
+    anthropic_client: Any, *, name: str, stream: bool, kwargs: dict
+) -> Any:
+    """Run an Anthropic request inside a Langfuse generation (a no-op pass-through
+    when tracing is disabled). Shared by :func:`anthropic_create` (buffered) and
+    :func:`anthropic_stream` (streamed)."""
     c = client()
     if c is None:
-        return await anthropic_client.messages.create(**kwargs)
+        return await _messages_call(anthropic_client, kwargs, stream=stream)
 
     with c.start_as_current_generation(
         name=name,
@@ -232,7 +247,7 @@ async def anthropic_create(anthropic_client: Any, *, name: str, **kwargs: Any) -
             k: kwargs[k] for k in ("max_tokens", "temperature") if k in kwargs
         },
     ) as generation:
-        message = await anthropic_client.messages.create(**kwargs)
+        message = await _messages_call(anthropic_client, kwargs, stream=stream)
         try:
             generation.update(
                 output=_anthropic_text(message),
@@ -241,6 +256,27 @@ async def anthropic_create(anthropic_client: Any, *, name: str, **kwargs: Any) -
         except Exception as exc:  # pragma: no cover - tracing must not fail the call
             _logger.debug("Langfuse generation update failed: %s", exc)
         return message
+
+
+async def anthropic_create(anthropic_client: Any, *, name: str, **kwargs: Any) -> Any:
+    """Call ``anthropic_client.messages.create(**kwargs)`` inside a Langfuse generation.
+
+    Records model name, the prompt messages, the completion text and token usage.
+    Equivalent to a bare ``messages.create`` call when tracing is disabled.
+    """
+    return await _anthropic_generation(
+        anthropic_client, name=name, stream=False, kwargs=kwargs
+    )
+
+
+async def anthropic_stream(anthropic_client: Any, *, name: str, **kwargs: Any) -> Any:
+    """Like :func:`anthropic_create` but consumes the response as a stream and
+    returns the assembled final Message. Streaming skips the SDK's non-streaming
+    10-minute guard, so a large ``max_tokens`` (full-profile chat edits) is not
+    rejected. Same return shape and Langfuse tracing as ``anthropic_create``."""
+    return await _anthropic_generation(
+        anthropic_client, name=name, stream=True, kwargs=kwargs
+    )
 
 
 def flush() -> None:

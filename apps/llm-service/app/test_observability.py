@@ -150,6 +150,64 @@ async def test_anthropic_create_records_generation_when_enabled(monkeypatch):
     assert update_kwargs["usage_details"] == {"input": 10, "output": 5}
 
 
+def _stream_cm(final_msg):
+    """Async context manager standing in for ``client.messages.stream(**kwargs)``:
+    ``async with`` yields a stream whose ``get_final_message()`` returns final_msg."""
+    stream = MagicMock()
+    stream.get_final_message = AsyncMock(return_value=final_msg)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=stream)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_passthrough_when_disabled():
+    msg = MagicMock()
+    anthropic_client = MagicMock()
+    anthropic_client.messages.stream = MagicMock(return_value=_stream_cm(msg))
+
+    result = await observability.anthropic_stream(
+        anthropic_client, name="chat", model="claude", messages=[], system="s"
+    )
+
+    assert result is msg
+    # Streams (bypassing the non-streaming 10-min guard); never buffers via create.
+    anthropic_client.messages.stream.assert_called_once_with(
+        model="claude", messages=[], system="s"
+    )
+    anthropic_client.messages.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_records_generation_when_enabled(monkeypatch):
+    fake_client = MagicMock()
+    generation = MagicMock()
+    cm = MagicMock()
+    cm.__enter__.return_value = generation
+    cm.__exit__.return_value = False
+    fake_client.start_as_current_generation.return_value = cm
+    monkeypatch.setattr(observability, "_build_client", lambda: fake_client)
+    observability.reset()
+
+    msg = MagicMock()
+    msg.content = [MagicMock(type="text", text="hello")]
+    msg.usage = MagicMock(input_tokens=10, output_tokens=5)
+    anthropic_client = MagicMock()
+    anthropic_client.messages.stream = MagicMock(return_value=_stream_cm(msg))
+
+    result = await observability.anthropic_stream(
+        anthropic_client, name="chat", model="claude", messages=[], max_tokens=32000
+    )
+
+    assert result is msg
+    fake_client.start_as_current_generation.assert_called_once()
+    generation.update.assert_called_once()
+    _, update_kwargs = generation.update.call_args
+    assert update_kwargs["output"] == "hello"
+    assert update_kwargs["usage_details"] == {"input": 10, "output": 5}
+
+
 # --- trace context propagation ---------------------------------------------
 
 
