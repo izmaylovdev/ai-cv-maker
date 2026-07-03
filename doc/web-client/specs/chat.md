@@ -49,11 +49,12 @@ Requires: `Authorization: Bearer <token>`
   "history": [
     { "role": "user",      "content": "…" },
     { "role": "assistant", "content": "…" }
-  ]
+  ],
+  "sessionId": "b1f2c3d4-…-uuid"
 }
 ```
 
-`history` contains only `user` and `assistant` turns; `error` role messages from the widget are filtered before sending.
+`history` contains only `user` and `assistant` turns; `error` role messages from the widget are filtered before sending. `sessionId` (optional, US-AI-16) is a per-conversation id the widget mints once per mount and sends on every request; cv-api forwards it to llm-service so a whole conversation groups under one Langfuse Session (see `ARCHITECTURE.md` → LLM observability). Omitting it is a no-op.
 
 **Response 200:**
 ```json

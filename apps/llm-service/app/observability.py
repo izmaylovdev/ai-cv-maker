@@ -30,6 +30,7 @@ _logger = logging.getLogger(__name__)
 # gRPC metadata header names carrying cv-api trace context (lowercase per gRPC).
 TRACE_ID_HEADER = "x-trace-id"
 USER_ID_HEADER = "x-user-id"
+SESSION_ID_HEADER = "x-session-id"
 
 _client: Any | None = None
 _initialized = False
@@ -79,6 +80,7 @@ def parse_trace_metadata(metadata: dict[str, str] | None) -> dict[str, str | Non
     return {
         "cv_api_trace_id": metadata.get(TRACE_ID_HEADER) or None,
         "user_id": metadata.get(USER_ID_HEADER) or None,
+        "session_id": metadata.get(SESSION_ID_HEADER) or None,
     }
 
 
@@ -121,6 +123,7 @@ async def rpc_span(
     ctx = parse_trace_metadata(metadata)
     seed = ctx["cv_api_trace_id"]
     user_id = ctx["user_id"]
+    session_id = ctx["session_id"]
 
     from langfuse import Langfuse
 
@@ -133,6 +136,7 @@ async def rpc_span(
                 c.update_current_trace(
                     name=name,
                     user_id=user_id,
+                    session_id=session_id,
                     tags=["llm-service"],
                     input=rpc_input,
                     metadata={"cv_api_trace_id": seed} if seed else None,

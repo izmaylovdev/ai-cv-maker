@@ -27,20 +27,23 @@ public class LlmService(
     /// so the llm-service Langfuse trace correlates with the Tempo trace (ADR-0016)
     /// for the same request. The gRPC client instrumentation separately injects the
     /// W3C <c>traceparent</c> that nests llm-service's spans under this trace.
+    /// When <paramref name="sessionId"/> is set (the chat widget's per-conversation
+    /// id, US-AI-16) it rides as <c>x-session-id</c> so all messages in one
+    /// conversation group under a single Langfuse Session; a null/empty id adds no
+    /// header.
     /// </summary>
-    private CallOptions DefaultCallOptions
+    private CallOptions BuildCallOptions(string? sessionId)
     {
-        get
-        {
-            var metadata = new Metadata();
-            var traceId = Activity.Current?.TraceId.ToString();
-            if (!string.IsNullOrEmpty(traceId))
-                metadata.Add("x-trace-id", traceId);
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!string.IsNullOrEmpty(userId))
-                metadata.Add("x-user-id", userId);
-            return new CallOptions(headers: metadata, deadline: DateTime.UtcNow.Add(CallDeadline));
-        }
+        var metadata = new Metadata();
+        var traceId = Activity.Current?.TraceId.ToString();
+        if (!string.IsNullOrEmpty(traceId))
+            metadata.Add("x-trace-id", traceId);
+        var userId = httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrEmpty(userId))
+            metadata.Add("x-user-id", userId);
+        if (!string.IsNullOrEmpty(sessionId))
+            metadata.Add("x-session-id", sessionId);
+        return new CallOptions(headers: metadata, deadline: DateTime.UtcNow.Add(CallDeadline));
     }
 
 
@@ -100,7 +103,7 @@ public class LlmService(
                 Profile = ToProto(request.Profile),
                 Message = request.Message ?? string.Empty,
                 GlobalPreferences = request.GlobalPreferences ?? string.Empty,
-            }, DefaultCallOptions));
+            }, BuildCallOptions(null)));
 
         return new LlmGenerateResponse(FromProto(reply.Document), MapUsage(reply.Usage));
     }
@@ -111,7 +114,7 @@ public class LlmService(
             await grpcClient.ExtractProfileAsync(new ExtractProfileRequest
             {
                 CvText = request.CvText,
-            }, DefaultCallOptions));
+            }, BuildCallOptions(null)));
 
         return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage));
     }
@@ -140,7 +143,7 @@ public class LlmService(
         }
 
         var reply = await ExecuteAsync(async _ =>
-            await grpcClient.ChatAsync(grpcRequest, DefaultCallOptions));
+            await grpcClient.ChatAsync(grpcRequest, BuildCallOptions(request.SessionId)));
 
         LlmChatProposal? proposal = null;
         if (!string.IsNullOrEmpty(reply.Proposal?.Type))
@@ -176,7 +179,7 @@ public class LlmService(
         }));
 
         var reply = await ExecuteAsync(async _ =>
-            await grpcClient.UserChatAsync(grpcRequest, DefaultCallOptions));
+            await grpcClient.UserChatAsync(grpcRequest, BuildCallOptions(request.SessionId)));
 
         return new LlmUserChatResponse(
             reply.Reply,
@@ -208,7 +211,7 @@ public class LlmService(
         }));
 
         var reply = await ExecuteAsync(async _ =>
-            await grpcClient.JobChatAsync(grpcRequest, DefaultCallOptions));
+            await grpcClient.JobChatAsync(grpcRequest, BuildCallOptions(request.SessionId)));
 
         LlmChatProposal? proposal = null;
         if (!string.IsNullOrEmpty(reply.Proposal?.Type))
@@ -236,7 +239,7 @@ public class LlmService(
         grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
         var reply = await ExecuteAsync(async _ =>
-            await grpcClient.GenerateCoverLetterAsync(grpcRequest, DefaultCallOptions));
+            await grpcClient.GenerateCoverLetterAsync(grpcRequest, BuildCallOptions(null)));
 
         return new LlmCoverLetterResponse(
             reply.Text,
@@ -254,7 +257,7 @@ public class LlmService(
         grpcRequest.Profiles.AddRange(request.Profiles.Select(ToProto));
 
         var reply = await ExecuteAsync(async _ =>
-            await grpcClient.SelectBestProfileAsync(grpcRequest, DefaultCallOptions));
+            await grpcClient.SelectBestProfileAsync(grpcRequest, BuildCallOptions(null)));
 
         return new LlmSelectBestProfileResponse(
             Guid.TryParse(reply.ProfileId, out var id) ? id : Guid.Empty

@@ -215,17 +215,19 @@ def test_parse_trace_metadata_extracts_headers():
     parsed = observability.parse_trace_metadata(
         {"x-trace-id": "guid-123", "x-user-id": "user-7", "authorization": "Bearer x"}
     )
-    assert parsed == {"cv_api_trace_id": "guid-123", "user_id": "user-7"}
+    assert parsed == {"cv_api_trace_id": "guid-123", "user_id": "user-7", "session_id": None}
 
 
 def test_parse_trace_metadata_handles_missing():
     assert observability.parse_trace_metadata(None) == {
         "cv_api_trace_id": None,
         "user_id": None,
+        "session_id": None,
     }
     assert observability.parse_trace_metadata({}) == {
         "cv_api_trace_id": None,
         "user_id": None,
+        "session_id": None,
     }
 
 
@@ -289,6 +291,71 @@ async def test_rpc_span_records_input_and_output_when_enabled(monkeypatch):
     # Output recorded on both once the response is known.
     assert any(call.kwargs.get("output") == {"a": 2} for call in trace_calls)
     span.update.assert_called_with(output={"a": 2})
+
+
+# --- session grouping (US-AI-16) -------------------------------------------
+
+
+def test_parse_trace_metadata_extracts_session_id():
+    # F-AI-16.4 — the x-session-id header is parsed alongside the existing keys.
+    parsed = observability.parse_trace_metadata(
+        {"x-session-id": "sess-1", "x-trace-id": "guid-123", "x-user-id": "user-7"}
+    )
+    assert parsed == {
+        "cv_api_trace_id": "guid-123",
+        "user_id": "user-7",
+        "session_id": "sess-1",
+    }
+
+
+def test_parse_trace_metadata_session_id_none_when_absent():
+    # F-AI-16.6 — missing/empty session id is a no-op: parsed as None, never raising.
+    assert observability.parse_trace_metadata(None)["session_id"] is None
+    assert observability.parse_trace_metadata({})["session_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_rpc_span_binds_session_id_when_present(monkeypatch):
+    # F-AI-16.1 — the parsed x-session-id is bound onto the Langfuse root trace.
+    fake_client = MagicMock()
+    span = MagicMock()
+    cm = MagicMock()
+    cm.__enter__.return_value = span
+    cm.__exit__.return_value = False
+    fake_client.start_as_current_span.return_value = cm
+    monkeypatch.setattr(observability, "_build_client", lambda: fake_client)
+    observability.reset()
+
+    async with observability.rpc_span(
+        "Generate", {"x-trace-id": "abc", "x-session-id": "sess-1"}
+    ):
+        pass
+
+    trace_calls = fake_client.update_current_trace.call_args_list
+    assert any(call.kwargs.get("session_id") == "sess-1" for call in trace_calls)
+
+
+@pytest.mark.asyncio
+async def test_rpc_span_session_id_none_when_absent(monkeypatch):
+    # F-AI-16.6 — with no x-session-id header, no session is bound (None), no raise.
+    fake_client = MagicMock()
+    span = MagicMock()
+    cm = MagicMock()
+    cm.__enter__.return_value = span
+    cm.__exit__.return_value = False
+    fake_client.start_as_current_span.return_value = cm
+    monkeypatch.setattr(observability, "_build_client", lambda: fake_client)
+    observability.reset()
+
+    async with observability.rpc_span("Generate", {"x-trace-id": "abc"}):
+        pass
+
+    trace_calls = fake_client.update_current_trace.call_args_list
+    assert trace_calls, "update_current_trace should have been called"
+    # session_id must be bound explicitly as None (no session), never omitted,
+    # and rpc_span must not raise on an absent header.
+    assert any("session_id" in call.kwargs for call in trace_calls)
+    assert all(call.kwargs.get("session_id") is None for call in trace_calls)
 
 
 def test_to_serializable_passthrough_and_fallback():

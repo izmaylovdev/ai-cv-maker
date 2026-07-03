@@ -1272,7 +1272,7 @@ the Sessions view stitches the conversation while individual traces are unaffect
 ```
 
 Response 200: unchanged (`{ reply, proposal? }`). Omitting `sessionId` is valid
-(F-AI-15.6). No auth or route change.
+(F-AI-16.6). No auth or route change.
 
 #### chat-ui (`apps/chat-ui/src/ChatApp.tsx`)
 
@@ -1300,7 +1300,7 @@ Response 200: unchanged (`{ reply, proposal? }`). Omitting `sessionId` is valid
 - `parse_trace_metadata(...)` returns a new `"session_id"` key (value or `None`).
 - `rpc_span(...)`: pass `session_id=<parsed value>` into
   `c.update_current_trace(...)` (Langfuse Python SDK v3 accepts `session_id`).
-  When absent it is `None` → no session bound (F-AI-15.6). The `trace_interceptor`
+  When absent it is `None` → no session bound (F-AI-16.6). The `trace_interceptor`
   already forwards all invocation metadata into `rpc_span`, so no interceptor
   change is needed.
 

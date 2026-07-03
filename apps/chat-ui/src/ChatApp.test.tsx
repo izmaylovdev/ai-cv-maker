@@ -218,6 +218,95 @@ describe('ChatApp — empty-state layout (US-AI-12)', () => {
   });
 });
 
+// US-AI-16 — the widget mints one sessionId per mount and sends it on every
+// POST /chat, so all messages within one open widget group under a single
+// Langfuse Session. A reload (fresh mount) starts a new Session.
+describe('ChatApp — Langfuse session grouping (US-AI-16)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function bodyOf(fetchMock: ReturnType<typeof vi.fn>, call: number) {
+    return JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string);
+  }
+
+  // F-AI-16.1 — every request carries a non-empty string sessionId.
+  it('includes a non-empty string sessionId in the request body', async () => {
+    const fetchMock = mockFetchOnce({ reply: 'ok', proposal: null });
+
+    render(<ChatApp authToken="t" apiBase="/api" />);
+    await sendMessage('hello');
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = bodyOf(fetchMock, 0);
+    expect(typeof body.sessionId).toBe('string');
+    expect(body.sessionId.length).toBeGreaterThan(0);
+  });
+
+  // F-AI-16.1 — two messages within one mount share the SAME sessionId.
+  it('sends the same sessionId for two messages within one mount', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ reply: 'ok', proposal: null }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ChatApp authToken="t" apiBase="/api" />);
+    await sendMessage('first');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await sendMessage('second');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const first = bodyOf(fetchMock, 0);
+    const second = bodyOf(fetchMock, 1);
+    expect(first.sessionId).toBeTruthy();
+    expect(second.sessionId).toBe(first.sessionId);
+  });
+
+  // F-AI-16.2 — a fresh mount (page reload) yields a DIFFERENT sessionId.
+  it('mints a different sessionId on a fresh mount', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ reply: 'ok', proposal: null }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = render(<ChatApp authToken="t" apiBase="/api" />);
+    await sendMessage('hello');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const firstSession = bodyOf(fetchMock, 0).sessionId;
+    first.unmount();
+
+    render(<ChatApp authToken="t" apiBase="/api" />);
+    await sendMessage('hello again');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const secondSession = bodyOf(fetchMock, 1).sessionId;
+
+    expect(firstSession).toBeTruthy();
+    expect(secondSession).toBeTruthy();
+    expect(secondSession).not.toBe(firstSession);
+  });
+
+  // F-AI-16.1 — the sessionId is present in edit mode too (not lost in the
+  // mutually-exclusive context branch that also carries `document`).
+  it('includes the sessionId in edit mode (with a document)', async () => {
+    const fetchMock = mockFetchOnce({ reply: 'ok', proposal: null });
+
+    render(<ChatApp authToken="t" apiBase="/api" document={DOC} onEdit={vi.fn()} />);
+    await sendMessage('add a skill');
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = bodyOf(fetchMock, 0);
+    expect(body.document).toEqual(DOC);
+    expect(typeof body.sessionId).toBe('string');
+    expect(body.sessionId.length).toBeGreaterThan(0);
+  });
+});
+
 // US-AI-11 / F-AI-11.7-11.8 — the widget renders the server-provided error
 // message verbatim, falls back to a single generic line only when the body is
 // unreadable, and stays usable after a failure.

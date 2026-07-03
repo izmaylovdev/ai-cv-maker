@@ -96,6 +96,10 @@ export function ChatApp({ authToken, apiBase, document, profileId, jobContext, o
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // US-AI-16 — one conversation = one widget mount. Mint a stable session id once
+  // per mount and send it on every POST /chat so all messages group under a single
+  // Langfuse Session. A page reload remounts the widget → a fresh id → a new Session.
+  const sessionId = useRef(crypto.randomUUID()).current;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,13 +133,18 @@ export function ChatApp({ authToken, apiBase, document, profileId, jobContext, o
         // Context is mutually exclusive: `document` → edit mode (in-editor chat);
         // `jobContext` → side-panel job chat (US-EXT-4); neither → the global
         // read-only assistant.
-        body: JSON.stringify(
-          document
-            ? { message: text, history, document, profileId }
+        body: JSON.stringify({
+          message: text,
+          history,
+          // US-AI-16 — sessionId rides alongside the mutually-exclusive context so
+          // no branch can forget it.
+          sessionId,
+          ...(document
+            ? { document, profileId }
             : jobContext
-              ? { message: text, history, jobContext }
-              : { message: text, history },
-        ),
+              ? { jobContext }
+              : {}),
+        }),
       });
 
       if (!res.ok) {

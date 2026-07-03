@@ -25,13 +25,14 @@ public record LlmChatRequest(
     ProfileDocument Profile,
     string Message,
     List<LlmChatMessage> History,
-    List<LlmOtherProfile>? OtherProfiles = null);
+    List<LlmOtherProfile>? OtherProfiles = null,
+    string? SessionId = null);
 // `Text` carries a "fill" proposal's draft (US-EXT-4); `PatchJson` an "edit" proposal's patch.
 public record LlmChatProposal(string Type, string Description, string PatchJson, string? Text = null);
 public record LlmChatResponse(string Reply, LlmChatProposal? Proposal, LlmTokenUsage Usage);
 
 public record LlmProfileSummary(string Name, string Title, string Overview, List<string> Skills);
-public record LlmUserChatRequest(List<LlmProfileSummary> Profiles, string Message, List<LlmChatMessage> History, string? GlobalPreferences = null);
+public record LlmUserChatRequest(List<LlmProfileSummary> Profiles, string Message, List<LlmChatMessage> History, string? GlobalPreferences = null, string? SessionId = null);
 public record LlmUserChatResponse(string Reply, string? PreferencesUpdate = null, LlmTokenUsage? Usage = null);
 
 // US-EXT-4 — side-panel chat about an open job posting (profile summaries + the
@@ -42,7 +43,8 @@ public record LlmJobChatRequest(
     string JobDescription,
     string FieldContext,
     string Message,
-    List<LlmChatMessage> History
+    List<LlmChatMessage> History,
+    string? SessionId = null
 );
 public record LlmJobChatResponse(string Reply, LlmChatProposal? Proposal, LlmTokenUsage Usage);
 

@@ -66,7 +66,7 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
             request.Message,
             history,
             string.IsNullOrWhiteSpace(user?.GlobalPreferences) ? null : user.GlobalPreferences
-        ));
+        ) { SessionId = request.SessionId });
 
         await usageService.RecordAsync(UserId, "UserChat", result.Usage ?? LlmTokenUsage.Empty);
 
@@ -108,7 +108,7 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
             job.FieldContext ?? string.Empty,
             request.Message,
             history
-        ));
+        ) { SessionId = request.SessionId });
 
         await usageService.RecordAsync(UserId, "JobChat", result.Usage);
 
@@ -141,7 +141,7 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
 
         // See Chat(): LLM failures propagate as typed exceptions and are mapped to
         // specific { code, message } responses by the IExceptionHandlers (US-AI-11).
-        var result = await llmService.ChatAsync(new LlmChatRequest(request.Document!, request.Message, history, otherProfiles));
+        var result = await llmService.ChatAsync(new LlmChatRequest(request.Document!, request.Message, history, otherProfiles) { SessionId = request.SessionId });
 
         await usageService.RecordAsync(UserId, "Chat", result.Usage);
 
@@ -160,7 +160,10 @@ public record UserChatRequest(
     JobContextDto? JobContext = null,
     // US-AI-13 — the id of the profile open in the editor (edit mode), so the
     // agent's cross-profile reads exclude the document being edited.
-    string? ProfileId = null);
+    string? ProfileId = null,
+    // US-AI-16 — per-conversation id from the chat widget; forwarded to
+    // llm-service so a conversation groups under one Langfuse Session.
+    string? SessionId = null);
 public record UserChatResponse(string Reply, ChatProposalDto? Proposal = null);
 
 // US-EXT-4 — the open job posting sent by the side-panel extension chat.
