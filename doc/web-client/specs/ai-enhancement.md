@@ -1025,3 +1025,132 @@ No schema change, no migration (reads existing `Profiles`).
   inline-summary degraded mode only.
 - Cross-profile *writes* / editing another profile.
 - Fuzzy lookup by profile name (tools key on id).
+
+---
+
+## 14. Per-User Billing Balance (US-AI-14)
+
+Turns the single **global** spending cap of §9 (US-AI-7) into a **per-user
+monetary balance**. Each user has their own dollar *allowance*; their AI spend
+(the §8 cost calculation, unchanged) is deducted from it; the remaining
+*balance* is shown on a new Billing page, and AI is blocked once a user's own
+balance reaches zero. There is **no top-up / payment** — the allowance is
+seeded from config and (optionally, later) adjusted out of band.
+
+**Relationship to §8/§9.** §8 token tracking and cost estimation are reused
+verbatim (`LlmUsage`, `UsageService.Summarize`). §9's enforcement mechanism
+(`EnsureWithinLimitAsync`, the 402 `usage_limit_exceeded` contract, the
+`UsageLimitExceededException` → HTTP mapping, and the frontend `usage-limit.ts`
+helper) is reused too — the only change is that the threshold it compares
+against is now the requesting user's **own allowance** rather than one global
+value. The global admin limit (§9.6) becomes the **default allowance** applied
+to users without an explicit account. The existing `/usage` page and
+`GET /api/usage` are left unchanged.
+
+### 14.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-14.1 | Each user has a per-user billing account carrying a monetary allowance in USD. When a user has no account row yet, their effective allowance is the configurable default `Billing:DefaultAllowanceUsd` (which itself falls back to the §9 effective global limit for backward compatibility). |
+| F-AI-14.2 | cv-api exposes `GET /api/billing` (JWT-authenticated) returning the calling user's `allowanceUsd`, `spentUsd`, `balanceUsd`, `currency`, `promptTokens`, and `completionTokens`. |
+| F-AI-14.3 | `spentUsd` is the §8 estimated cost over the user's own `LlmUsage` rows. `balanceUsd` = `max(0, allowanceUsd − spentUsd)` — never negative in the response. `currency` is `"USD"`. |
+| F-AI-14.4 | Before any LLM call, cv-api compares the user's `spentUsd` against **that user's own** effective allowance and rejects the request when `spentUsd ≥ allowanceUsd`. The comparison is per-user: one user's spend never affects another user's allowance, balance, or block state. |
+| F-AI-14.5 | A blocked request behaves exactly as §9: the check runs *before* the gRPC call (no LLM call, no new `LlmUsage` row), returns HTTP 402 with the stable code `usage_limit_exceeded` and a human-readable **billing-balance** message, and mutates no profile/CV data. |
+| F-AI-14.6 | A user whose `spentUsd` is still below their allowance is allowed to proceed even if that single call would push them over (threshold evaluated on spend accrued so far; the pending call's cost is unknown in advance). |
+| F-AI-14.7 | The Angular `/billing` route renders a Billing page (auth-guarded) showing the balance, allowance, and amount spent in dollars, the prompt/completion token totals behind the spend, and a spent-vs-allowance progress bar; it renders correctly in light and dark themes. |
+| F-AI-14.8 | A "Billing" item appears in the authenticated navigation sidebar and links to `/billing`. |
+| F-AI-14.9 | When the Angular app receives a 402 `usage_limit_exceeded` from any AI action, it surfaces the distinct billing-balance message (reusing the existing `usage-limit.ts` helper), not the generic AI-failure message. |
+
+### 14.2 Technical Specification
+
+#### Data model
+
+New table `BillingAccounts` (one row per user, created on demand):
+
+| Column | Type | Notes |
+|--------|------|-------|
+| Id | Guid PK | |
+| UserId | Guid FK → Users | unique (one account per user) |
+| AllowanceUsd | decimal(18,6) | the user's monetary allowance |
+| Currency | string | `"USD"` (fixed for MVP) |
+| UpdatedAt | DateTime | UTC |
+
+EF Core migration `AddBillingAccounts` (per CLAUDE.md — generate with
+`dotnet ef migrations add AddBillingAccounts` in `apps/cv-api`). No seed rows:
+absence of a row means "use the config default allowance", so a fresh DB needs
+no migration data.
+
+#### Config (`appsettings.json`)
+
+```json
+"Billing": { "DefaultAllowanceUsd": 0.50 }
+```
+
+`BillingOptions.DefaultAllowanceUsd` is **nullable** (`decimal?`, default `null`).
+When it is `null` (key absent), the effective default allowance falls back to
+`UsageService.GetEffectiveLimitAsync()` — this is what preserves §9 behavior and
+keeps the existing `UsageLimitTests` passing unchanged (a user with no
+`BillingAccount` row and no `Billing` config is still capped at exactly the
+global limit). `appsettings.Development.json` may set a comfortable dev value
+(e.g. `2.00`, mirroring the existing dev `UsageLimit`).
+
+#### Enforcement & service (cv-api, `apps/cv-api/Features/Usage/`)
+
+Extend the existing `UsageService` (keeps enforcement in one place):
+
+- `GetEffectiveAllowanceAsync(Guid userId)` — returns the user's
+  `BillingAccount.AllowanceUsd` if a row exists, else `BillingOptions.DefaultAllowanceUsd`
+  when non-null, else `GetEffectiveLimitAsync()` (§9 global limit fallback).
+- Constructor gains an `IOptions<BillingOptions>` parameter. The existing
+  `UsageLimitTests` `Service(...)` helper must be updated to pass
+  `Options.Create(new BillingOptions())` (i.e. `DefaultAllowanceUsd = null`),
+  which routes through the fallback so **every existing assertion in
+  `UsageLimitTests` still passes unchanged** — that is the §9 no-regression proof.
+- `EnsureWithinLimitAsync(Guid? userId)` — **changed**: computes the user's
+  accrued cost (existing `Summarize`) and their effective *allowance* (above),
+  throws `UsageLimitExceededException(allowance)` when `accrued ≥ allowance`.
+  `null` userId (system calls) stays exempt. All 8 existing call sites are
+  unchanged.
+- `GetBillingSummaryAsync(Guid userId)` — composes `BillingSummaryDto` from the
+  user's `Summarize` result and their effective allowance.
+- `UsageLimitExceededException` message is reworded to billing-balance language,
+  e.g. *"Your billing balance is exhausted — you've used your $0.50 AI allowance."*
+  The HTTP mapping (`UsageLimitExceptionHandler` → 402, body
+  `{ code: "usage_limit_exceeded", message, limitUsd }`) is unchanged so
+  `usage-limit.ts` and §11 keep working; `limitUsd` now carries the allowance.
+
+New `BillingController` (`apps/cv-api/Features/Billing/`), `[Authorize]`,
+`[Route("api/billing")]`:
+
+```
+GET /api/billing  →  { "allowanceUsd": 0.50, "spentUsd": 0.081, "balanceUsd": 0.419,
+                       "currency": "USD", "promptTokens": 12000, "completionTokens": 3000 }
+```
+
+`record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens)`.
+
+#### Angular (`apps/ui-angular/src/app/`)
+
+- `features/billing/billing.service.ts` — `getMyBilling()` → `GET /api/billing`,
+  `BillingSummary` interface.
+- `features/billing/billing.component.ts` — standalone `BillingComponent`:
+  balance / allowance / spent cards in USD, token totals, a spent-vs-allowance
+  progress bar (turns red at ≥ 100%), light/dark styling (mirrors the existing
+  `UsageComponent` visual language).
+- `app.routes.ts` — new lazy route `{ path: 'billing', canActivate: [authGuard],
+  loadComponent: … BillingComponent }`.
+- `app.html` — add a "Billing" sidebar link (e.g. `credit_card` material icon)
+  in the authenticated `<nav>`, after the "Usage" link.
+- No change to `usage-limit.ts` logic — only the server message copy changes.
+
+#### Out of Scope (MVP)
+
+- Adding funds / top-up / any payment provider (Stripe etc.).
+- A user- or admin-facing UI to edit a user's allowance (rows are created with
+  the config default; explicit per-user allowances are set out of band for now).
+- Currencies other than USD.
+- Resetting / periodic (monthly) allowances — this is a lifetime cumulative
+  allowance, like §9.
+- Consolidating or removing the existing `/usage` page — both pages coexist
+  (`/usage` = token focus, `/billing` = money focus).
+- Soft warnings as the balance approaches zero.

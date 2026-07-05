@@ -54,5 +54,11 @@ export const appRoutes: Route[] = [
     loadComponent: () =>
       import('./features/usage/usage.component').then((m) => m.UsageComponent),
   },
+  {
+    path: 'billing',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/billing/billing.component').then((m) => m.BillingComponent),
+  },
   { path: '**', redirectTo: '/job-profiles' },
 ];

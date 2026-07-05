@@ -21,7 +21,8 @@ public class CoverLetterServiceTests
     private static UsageService MakeUsageService(AppDbContext db)
         => new(db,
             Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
-            Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()));
+            Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()),
+            Microsoft.Extensions.Options.Options.Create(new CvApi.Features.Billing.BillingOptions()));
 
     // --- Block-tree node factories (ADR-0014; mirror profile-builder-ui/src/nodes.ts) ---
 

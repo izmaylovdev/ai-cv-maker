@@ -1,4 +1,5 @@
 using CvApi.Domain.Entities;
+using CvApi.Features.Billing;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
@@ -31,7 +32,7 @@ public class UsageLimitTests
         => Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = max });
 
     private static UsageService Service(AppDbContext db, decimal limit = 0.50m)
-        => new(db, Pricing(), Limit(limit));
+        => new(db, Pricing(), Limit(limit), Options.Create(new BillingOptions()));
 
     // 1M completion tokens at $15/1M = $15.00 of accrued cost.
     private static LlmUsage Usage(Guid userId, int completionTokens)

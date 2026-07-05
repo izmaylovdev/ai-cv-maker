@@ -241,3 +241,24 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - If I ask about a profile that doesn't exist or can't be read, the assistant says so and changes nothing.
 - The assistant briefly notes when it used another profile as a source (e.g. "pulled from your *Backend Engineer* profile"), so it's clear where borrowed content came from.
 - Cross-profile reads respect the same scope/safety rules as US-AI-9 (no inventing facts, stays within CV/career scope, ignores instructions embedded in profile content).
+
+---
+
+### US-AI-14 — See my per-user billing balance and get blocked when it runs out
+
+**As a** signed-in user whose AI activity costs money,
+**I want to** open a Billing page that shows my own dollar balance — a starting allowance minus what my AI usage has cost so far — and have the app stop my AI requests when that balance reaches zero,
+**so that** I can see exactly how much AI budget I have left and I'm never surprised by usage beyond my allocated funds.
+
+**Supersedes** the single global spending cap of US-AI-7 for the enforcement threshold: the limit is now each user's *own* allowance rather than one value shared by everyone. Token tracking and cost estimation (US-AI-6) are unchanged and reused. Adding funds (top-up / payment) is explicitly out of scope for this story.
+
+**Acceptance criteria:**
+- A "Billing" item appears in the main navigation for authenticated users; clicking it navigates to `/billing`.
+- The Billing page shows, in US dollars: my current **balance** (funds remaining), my total **allowance**, and the **amount spent** on AI to date. Balance equals allowance minus amount spent and is never shown below $0.
+- The page also shows the token consumption (prompt tokens and completion tokens) that produced the spend, so the dollar figure is explainable.
+- Two different users see independent balances: one user spending AI budget does not change another user's balance or allowance.
+- After I use an AI action, my Billing page reflects the increased amount spent and reduced balance on reload.
+- When my balance is exhausted (amount spent has reached my allowance), any AI-backed action is blocked with a clear, distinct message that I've run out of billing balance — not a generic "AI is unavailable" error — and my profile/CV data is left unchanged.
+- A user whose balance is still above $0 is allowed to proceed, even if that single request later pushes the spend past the allowance (the check is against spend accrued so far, since the pending call's cost is unknown in advance).
+- The Billing page is protected by the auth guard: visiting `/billing` while signed out redirects to login.
+- The Billing page renders correctly in both light and dark themes.

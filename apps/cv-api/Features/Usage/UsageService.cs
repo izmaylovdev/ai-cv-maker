@@ -1,4 +1,5 @@
 using CvApi.Domain.Entities;
+using CvApi.Features.Billing;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -31,16 +32,21 @@ public class UsageLimitOptions
 
 /// <summary>
 /// Thrown before an LLM call when the requesting user has already accrued
-/// estimated cost at or above the effective spending limit (US-AI-7). Mapped to
-/// HTTP 402 by <c>UsageLimitExceptionHandler</c>.
+/// estimated cost at or above their effective billing allowance (US-AI-14,
+/// extends US-AI-7). Mapped to HTTP 402 by <c>UsageLimitExceptionHandler</c>.
 /// </summary>
 public class UsageLimitExceededException(decimal limitUsd)
-    : Exception($"You've reached your AI usage limit of ${limitUsd:0.00}.")
+    : Exception(FormattableString.Invariant(
+        $"Your billing balance is exhausted — you've used your ${limitUsd:0.00} AI allowance."))
 {
     public decimal LimitUsd { get; } = limitUsd;
 }
 
-public class UsageService(AppDbContext db, IOptions<LlmPricingOptions> pricing, IOptions<UsageLimitOptions> limitOptions)
+public class UsageService(
+    AppDbContext db,
+    IOptions<LlmPricingOptions> pricing,
+    IOptions<UsageLimitOptions> limitOptions,
+    IOptions<BillingOptions> billingOptions)
 {
     /// <summary>DB key under which the admin-configurable limit is stored.</summary>
     public const string LimitSettingKey = "LlmUsageLimitUsd";
@@ -107,19 +113,55 @@ public class UsageService(AppDbContext db, IOptions<LlmPricingOptions> pricing, 
     }
 
     /// <summary>
+    /// Effective per-user billing allowance (US-AI-14): the user's
+    /// <c>BillingAccount.AllowanceUsd</c> if a row exists; otherwise the
+    /// configured billing default when non-null; otherwise the §9
+    /// admin-configurable global limit (preserves US-AI-7 behavior).
+    /// </summary>
+    public async Task<decimal> GetEffectiveAllowanceAsync(Guid userId)
+    {
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(b => b.UserId == userId);
+        if (account is not null)
+            return account.AllowanceUsd;
+
+        if (billingOptions.Value.DefaultAllowanceUsd is decimal configuredDefault)
+            return configuredDefault;
+
+        return await GetEffectiveLimitAsync();
+    }
+
+    /// <summary>
     /// Guard called before every LLM operation. Throws
     /// <see cref="UsageLimitExceededException"/> when the user's accrued cost has
-    /// reached the effective limit. System calls (null user) are exempt.
+    /// reached their effective billing allowance. System calls (null user) are exempt.
     /// </summary>
     public async Task EnsureWithinLimitAsync(Guid? userId)
     {
         if (userId is null)
             return;
 
-        var limit = await GetEffectiveLimitAsync();
         var accrued = (await GetUserSummaryAsync(userId.Value)).EstimatedCostUsd;
-        if (accrued >= limit)
-            throw new UsageLimitExceededException(limit);
+        var allowance = await GetEffectiveAllowanceAsync(userId.Value);
+        if (accrued >= allowance)
+            throw new UsageLimitExceededException(allowance);
+    }
+
+    /// <summary>
+    /// Per-user billing summary (US-AI-14): allowance, spend, remaining balance
+    /// (floored at zero), currency, and token totals.
+    /// </summary>
+    public async Task<BillingSummaryDto> GetBillingSummaryAsync(Guid userId)
+    {
+        var summary = await GetUserSummaryAsync(userId);
+        var allowance = await GetEffectiveAllowanceAsync(userId);
+        var balance = Math.Max(0, allowance - summary.EstimatedCostUsd);
+        return new BillingSummaryDto(
+            allowance,
+            summary.EstimatedCostUsd,
+            balance,
+            "USD",
+            summary.PromptTokens,
+            summary.CompletionTokens);
     }
 
     public async Task<List<AdminUsageSummaryDto>> GetAllUserSummariesAsync()
@@ -165,3 +207,4 @@ public class UsageService(AppDbContext db, IOptions<LlmPricingOptions> pricing, 
 
 public record UserUsageSummaryDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
 public record AdminUsageSummaryDto(Guid UserId, string Email, int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
+public record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens);

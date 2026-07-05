@@ -24,7 +24,8 @@ public class JobProfileServiceTests
     private static UsageService MakeUsageService(AppDbContext db)
         => new(db,
             Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
-            Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()));
+            Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()),
+            Microsoft.Extensions.Options.Options.Create(new CvApi.Features.Billing.BillingOptions()));
 
     private static JobProfileService MakeService(AppDbContext db)
         => new(db, new Mock<ILlmService>().Object, MakeUsageService(db));

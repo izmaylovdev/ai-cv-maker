@@ -41,6 +41,34 @@ namespace cv_api.Migrations
                     b.ToTable("AppSettings");
                 });
 
+            modelBuilder.Entity("CvApi.Domain.Entities.BillingAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("AllowanceUsd")
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("BillingAccounts");
+                });
+
             modelBuilder.Entity("CvApi.Domain.Entities.GeneratedCv", b =>
                 {
                     b.Property<Guid>("Id")

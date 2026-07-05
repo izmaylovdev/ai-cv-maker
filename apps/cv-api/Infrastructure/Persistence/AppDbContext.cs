@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LlmUsage> LlmUsages => Set<LlmUsage>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +82,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(s => s.Key);
             e.Property(s => s.Key).HasMaxLength(100);
             e.Property(s => s.Value).HasMaxLength(512).IsRequired();
+        });
+
+        modelBuilder.Entity<BillingAccount>(e =>
+        {
+            e.HasKey(b => b.Id);
+            e.HasIndex(b => b.UserId).IsUnique();
+            e.Property(b => b.AllowanceUsd).HasColumnType("decimal(18,6)");
+            e.Property(b => b.Currency).IsRequired().HasMaxLength(3);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>

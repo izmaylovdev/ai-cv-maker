@@ -210,6 +210,8 @@ builder.Services.Configure<CvApi.Features.Usage.LlmPricingOptions>(
     builder.Configuration.GetSection(CvApi.Features.Usage.LlmPricingOptions.SectionName));
 builder.Services.Configure<CvApi.Features.Usage.UsageLimitOptions>(
     builder.Configuration.GetSection(CvApi.Features.Usage.UsageLimitOptions.SectionName));
+builder.Services.Configure<CvApi.Features.Billing.BillingOptions>(
+    builder.Configuration.GetSection(CvApi.Features.Billing.BillingOptions.SectionName));
 builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
 // Map the per-user spending-limit guard (US-AI-7) to HTTP 402.
