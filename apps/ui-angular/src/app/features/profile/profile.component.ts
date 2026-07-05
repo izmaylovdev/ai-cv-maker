@@ -76,6 +76,53 @@ export class ProfileComponent implements OnInit {
     }
   }
 
+  // US-AI-15: resizable chat panel width (px), persisted to localStorage.
+  // Clamped to [320px, min(720px, 66% of viewport width)].
+  // Visible only on lg+ breakpoint; on smaller screens width is fixed.
+  private static readonly MIN_CHAT_WIDTH = 320;
+  private static readonly CHAT_WIDTH_KEY = 'applysy.profile.chatWidth';
+  readonly chatWidth = signal(ProfileComponent.readChatWidth());
+
+  private static readChatWidth(): number {
+    try {
+      const stored = localStorage.getItem(ProfileComponent.CHAT_WIDTH_KEY);
+      const value = stored ? parseInt(stored, 10) : 384;
+      return ProfileComponent.clampWidth(value);
+    } catch {
+      return 384;
+    }
+  }
+
+  private static clampWidth(px: number): number {
+    return Math.max(ProfileComponent.MIN_CHAT_WIDTH, Math.min(px, ProfileComponent.computeMaxWidth()));
+  }
+
+  private static computeMaxWidth(): number {
+    const viewport = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    return Math.min(720, Math.ceil(viewport * 0.66));
+  }
+
+  // Template helpers (US-AI-15): the panel is only resizable on lg+ (≥1024px),
+  // where it is a fixed-width sidebar; below that it stays at the US-AI-10 width.
+  isLgViewport(): boolean {
+    return typeof window !== 'undefined' && window.innerWidth >= 1024;
+  }
+
+  // Upper clamp bound, surfaced to the drag handle's aria-valuemax.
+  maxChatWidth(): number {
+    return ProfileComponent.computeMaxWidth();
+  }
+
+  setChatWidth(px: number): void {
+    const clamped = ProfileComponent.clampWidth(px);
+    this.chatWidth.set(clamped);
+    try {
+      localStorage.setItem(ProfileComponent.CHAT_WIDTH_KEY, String(clamped));
+    } catch {
+      // storage unavailable — keep in-memory state only
+    }
+  }
+
   readonly apiBase = environment.apiUrl.replace(/\/api$/, '') + '/api';
   get authToken(): string {
     return this.auth.getToken() ?? '';
@@ -161,13 +208,53 @@ export class ProfileComponent implements OnInit {
     if (this.chatOpen()) this.closeChat();
   }
 
-  private setChatOpen(open: boolean) {
+  setChatOpen(open: boolean) {
     this.chatOpen.set(open);
     try {
       localStorage.setItem(ProfileComponent.CHAT_OPEN_KEY, String(open));
     } catch {
       /* storage unavailable — keep in-memory state only */
     }
+  }
+
+  // US-AI-15: handle drag resize of the chat panel. Left drag widens, right narrows.
+  onHandlePointerDown(event: PointerEvent): void {
+    const target = event.target as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = this.chatWidth();
+
+    const handleMove = (e: PointerEvent) => {
+      // Dragging left (negative X delta) increases width; dragging right decreases it.
+      this.setChatWidth(startWidth + (startX - e.clientX));
+    };
+
+    const handleEnd = () => {
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
+      document.removeEventListener('pointercancel', handleEnd);
+    };
+
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleEnd);
+    document.addEventListener('pointercancel', handleEnd);
+  }
+
+  // US-AI-15: keyboard navigation for drag handle (ArrowLeft widens, ArrowRight narrows).
+  onHandleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      this.setChatWidth(this.chatWidth() + 16);  // Widen
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      this.setChatWidth(this.chatWidth() - 16);  // Narrow
+    }
+  }
+
+  // US-AI-15: re-clamp width on viewport resize to ensure it respects new bounds.
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.setChatWidth(this.chatWidth());
   }
 
   // An edit proposed by the in-editor chat. Apply it live to the builder

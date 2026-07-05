@@ -15,7 +15,8 @@
 } @else {
   <!-- Full-width page header; the chat sidebar tucks in below it (US-AI-10). -->
   <div #pageHeader
-    class="sticky md:top-0 z-30 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3">
+    class="sticky md:top-0 z-30 -mx-4 md:-mx-8 mb-6 flex items-center justify-between gap-2 md:gap-4 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 px-4 md:px-8 py-3"
+    [style.--chat-width]="chatWidth() + 'px'">
     <div class="flex items-center gap-3 min-w-0">
       <button (click)="router.navigate(['/job-profiles'])"
               aria-label="Back to job profiles"
@@ -89,9 +90,9 @@
 
   <!-- Editor column. On lg+ it is pushed left to reserve room for the open chat
        sidebar (push, no overlay); on smaller screens the sidebar slides over it
-       (US-AI-10 F-AI-10.3). -->
+       (US-AI-10 F-AI-10.3). US-AI-15: right margin now dynamic based on chat width. -->
   <div class="min-w-0 min-h-[40vh] transition-[margin] duration-300 ease-in-out"
-       [class.lg:mr-96]="chatReady() && chatOpen()">
+       [style.marginRight.px]="chatReady() && chatOpen() && isLgViewport() ? chatWidth() : 0">
     @if (widgetReady()) {
       <applysy-profile-builder #builder (documentchange)="onDocumentChange($event)"
                                style="display:block"></applysy-profile-builder>
@@ -111,15 +112,31 @@
 
   <!-- In-editor AI chat (US-AI-9) hosted in a slide-in sidebar (US-AI-10). The
        widget stays mounted while hidden so the thread and live document binding
-       survive open/close; only the panel's visibility/position is toggled. -->
+       survive open/close; only the panel's visibility/position is toggled.
+       US-AI-15: width is now resizable on lg+ via drag handle. -->
   @if (chatReady()) {
     <aside [attr.aria-hidden]="!chatOpen()"
            [style.--chat-top]="headerHeight() + 'px'"
-           class="fixed top-14 md:top-[var(--chat-top)] bottom-0 right-0 z-40 w-full sm:w-96 flex flex-col bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-700 shadow-xl transform transition-[transform,visibility] duration-300 ease-in-out"
+           class="fixed top-14 md:top-[var(--chat-top)] bottom-0 right-0 z-40 flex flex-col bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-700 shadow-xl transform transition-[transform,visibility] duration-300 ease-in-out sm:w-96"
+           [style.width.px]="chatOpen() && isLgViewport() ? chatWidth() : null"
+           [class.w-full]="!chatOpen() || !isLgViewport()"
            [class.translate-x-0]="chatOpen()"
            [class.translate-x-full]="!chatOpen()"
            [class.invisible]="!chatOpen()"
            [class.pointer-events-none]="!chatOpen()">
+      <!-- US-AI-15: drag handle for resizing (visible on lg+ only) -->
+      <div class="hidden lg:block absolute left-0 top-0 bottom-0 w-1 -ml-2 cursor-ew-resize bg-transparent hover:bg-blue-500/10 transition-colors z-50 pointer-events-auto"
+           role="separator"
+           aria-orientation="vertical"
+           aria-label="Resize AI Editor panel"
+           tabindex="0"
+           [attr.aria-valuenow]="chatWidth()"
+           aria-valuemin="320"
+           [attr.aria-valuemax]="maxChatWidth()"
+           (pointerdown)="onHandlePointerDown($event)"
+           (keydown)="onHandleKeydown($event)">
+      </div>
+
       <div class="relative z-10 px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0 flex items-center justify-between gap-2">
         <div class="min-w-0">
           <h2 class="text-sm font-bold text-gray-900 dark:text-white">AI Editor</h2>

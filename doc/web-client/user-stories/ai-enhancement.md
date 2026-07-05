@@ -262,3 +262,22 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - A user whose balance is still above $0 is allowed to proceed, even if that single request later pushes the spend past the allowance (the check is against spend accrued so far, since the pending call's cost is unknown in advance).
 - The Billing page is protected by the auth guard: visiting `/billing` while signed out redirects to login.
 - The Billing page renders correctly in both light and dark themes.
+
+---
+
+### US-AI-15 — Resize the in-editor AI chat sidebar
+
+**As a** user editing one of my CV profiles with the in-editor AI chat (US-AI-10),
+**I want to** drag the chat sidebar's edge to make it wider or narrower,
+**so that** I can trade screen space between the document and the assistant to suit the task — a wide panel to read a long AI reply, a narrow one to keep the document in view.
+
+**Acceptance criteria:**
+- The open chat sidebar shows a drag handle along its left (inner) edge; the cursor changes to a horizontal-resize cursor when hovering it.
+- Dragging the handle left widens the panel and dragging right narrows it, live, following the pointer as I drag.
+- On large screens the document column keeps making room for the panel as it resizes — it is pushed by exactly the panel's current width, with no overlap or scrim.
+- The panel width is clamped to a sensible range: it can never get so narrow the chat is unusable, nor so wide it hides the document (it stays within the viewport).
+- The chosen width is remembered between visits (persisted in localStorage) and restored the next time the sidebar is opened.
+- Resizing does not reset the conversation or the panel's live link to the open document (US-AI-9/US-AI-10 behavior is unchanged).
+- The resize handle is only present on screens where the panel is a fixed-width sidebar (large screens); on small screens where the panel covers the full width, no handle is shown.
+- The handle is keyboard-accessible: it exposes a focusable control with an accessible name, and Left/Right arrow keys adjust the width within the same clamped range.
+- Works in both light and dark themes.

@@ -1154,3 +1154,68 @@ GET /api/billing  →  { "allowanceUsd": 0.50, "spentUsd": 0.081, "balanceUsd": 
 - Consolidating or removing the existing `/usage` page — both pages coexist
   (`/usage` = token focus, `/billing` = money focus).
 - Soft warnings as the balance approaches zero.
+
+---
+
+## 15. Resizable AI Chat Sidebar (US-AI-15)
+
+Adds a drag-to-resize handle to the slide-in AI chat sidebar from §10 /
+US-AI-10, which the §10.3 out-of-scope list explicitly deferred. The panel's
+width becomes a user-adjustable, persisted value instead of the fixed `w-96`
+(384px); everything else about the panel (slide animation, push-not-overlay
+on `lg+`, mount/hide behavior, document binding) is unchanged.
+
+### 15.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-15.1 | On `lg+` screens, the open chat panel shows a drag handle on its left (inner) edge; `cursor: ew-resize` on hover. |
+| F-AI-15.2 | Dragging the handle resizes the panel live: moving the pointer left increases width, moving it right decreases width. |
+| F-AI-15.3 | The width is clamped to `[320px, min(720px, 66% of viewport width)]`; the clamp is re-evaluated on window resize so the panel never exceeds the viewport. |
+| F-AI-15.4 | While resized on `lg+`, the document column's right margin equals the panel's current width exactly (no gap, no overlap) — extending the push behavior of F-AI-10.3 from a fixed to a dynamic width. |
+| F-AI-15.5 | The width is persisted to `localStorage` and restored on load; default (no stored value, or below `sm`/`md` where the handle doesn't apply) is 384px, matching the current fixed width. |
+| F-AI-15.6 | Dragging or adjusting the width does not remount the chat element, reset the conversation thread, or drop the live document binding (F-AI-10.4 unchanged). |
+| F-AI-15.7 | Below `lg`, no handle is rendered and width behaves exactly as in US-AI-10 (`w-full` under `sm`, fixed `384px` at `sm`/`md`). |
+| F-AI-15.8 | The handle is a focusable control with an accessible name (`role="separator"`, `aria-orientation="vertical"`, `aria-label="Resize AI Editor panel"`, `aria-valuenow`/`aria-valuemin`/`aria-valuemax` reflecting the current/clamped width in px); `ArrowLeft`/`ArrowRight` while focused adjust the width by a fixed step within the same clamp. |
+| F-AI-15.9 | Works in light and dark themes. |
+
+### 15.2 Technical Specification
+
+#### Angular (`apps/ui-angular/src/app/features/profile/`)
+
+`ProfileComponent`:
+- New `chatWidth` signal (px, number), initialized from `localStorage` (key
+  `applysy.profile.chatWidth`), clamped against the current viewport at read
+  time; default `384`.
+- `MIN_CHAT_WIDTH = 320`; `computeMaxWidth()` = `Math.min(720, ceil(innerWidth * 0.66))`.
+- `clampWidth(px)` clamps to `[MIN_CHAT_WIDTH, computeMaxWidth()]`.
+- `setChatWidth(px)` clamps, updates the signal, and writes to `localStorage`
+  (mirrors the existing `setChatOpen` pattern).
+- `isLgViewport()` / `maxChatWidth()` template helpers gate the handle and
+  push behavior to `lg+` and surface the clamp bound to `aria-valuemax`.
+- Drag handling: `onHandlePointerDown(event)` captures the pointer and records
+  `startX`/`startWidth`; `document` `pointermove` listeners (added on down,
+  removed on `pointerup`/`pointercancel`) call
+  `setChatWidth(startWidth + (startX - clientX))` per move.
+- Keyboard: `onHandleKeydown(event)` on `ArrowLeft`/`ArrowRight` calls
+  `setChatWidth(chatWidth() ± 16)`.
+- `@HostListener('window:resize')` re-clamps `chatWidth()` against the new max.
+
+`profile.component.html`:
+- `<aside>` width bound with `[style.width.px]="chatOpen() && isLgViewport() ? chatWidth() : null"`
+  (falls back to `sm:w-96` / `w-full` below `lg`).
+- Editor column right margin bound with
+  `[style.marginRight.px]="chatReady() && chatOpen() && isLgViewport() ? chatWidth() : 0"`.
+- A handle element inside the `<aside>` (`hidden lg:block absolute left-0 ...
+  cursor-ew-resize`) with the separator ARIA attributes and the pointer/keyboard
+  handlers.
+
+No API, data-model, gRPC, or backend changes.
+
+### 15.3 Out of Scope (MVP)
+
+- Per-profile width memory (persisted as a single global preference, same as
+  `chatOpen`).
+- Resizing on `sm`/`md` screens or the full-width `<sm` overlay.
+- Snapping/presets (e.g. double-click to reset to default width).
+- Touch-drag beyond what Pointer Events already covers natively.
