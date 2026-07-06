@@ -247,7 +247,7 @@
       "id": 9,
       "type": "table",
       "title": "Recent Traces",
-      "description": "End-to-end traces from Tempo (ADR-0016). Click a Trace ID to open the full cross-service waterfall (cv-api HTTP → gRPC → llm-service → LLM call).",
+      "description": "End-to-end traces from Tempo (ADR-0016). The Request column shows the root span's url.path (span Name only carries the HTTP verb when no route template matched). Click a Trace ID to open the full cross-service waterfall (cv-api HTTP → gRPC → llm-service → LLM call).",
       "gridPos": { "x": 0, "y": 22, "w": 12, "h": 10 },
       "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
       "targets": [
@@ -255,7 +255,7 @@
           "refId": "A",
           "datasource": { "type": "tempo", "uid": "tempo-cv-maker" },
           "queryType": "traceql",
-          "query": "{}",
+          "query": "{} | select(span.url.path)",
           "tableType": "traces",
           "limit": 20
         }
