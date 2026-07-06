@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CvApi.Domain.Entities;
+using CvApi.Features.Billing;
 using CvApi.Features.Chat;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
@@ -48,7 +49,8 @@ public class ChatControllerTests
             {
                 Models = new() { ["default"] = new LlmPricingModel { PromptCostPer1M = 3m, CompletionCostPer1M = 15m } },
             }),
-            Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = 100m }));
+            Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = 100m }),
+            Options.Create(new BillingOptions()));
 
     private static ChatController Controller(AppDbContext db, ILlmService llm, Guid userId) =>
         new(db, llm, Usage(db))
