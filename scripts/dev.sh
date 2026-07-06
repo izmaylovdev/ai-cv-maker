@@ -75,7 +75,7 @@ cleanup() {
   trap - INT TERM EXIT
   echo ""
   echo "[dev] shutting down..."
-  for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
+  for p in "${pids[@]:-}"; do [[ -n "$p" ]] && kill "$p" 2>/dev/null || true; done
   pkill -9 -f 'nx run' 2>/dev/null || true
   # dotnet watch detaches the compiled cv-api host process, and Next.js detaches
   # its next-server child; neither matches 'nx run', so kill them explicitly to
