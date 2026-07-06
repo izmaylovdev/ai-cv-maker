@@ -10,5 +10,11 @@ public class User
 
     public string? GlobalPreferences { get; set; }
 
+    /// <summary>
+    /// ISO 3166-1 alpha-2 payment country, uppercase (US-BILL-1). Null means the
+    /// user was never asked; it is requested at first top-up and stored.
+    /// </summary>
+    public string? Country { get; set; }
+
     public List<Profile> Profiles { get; set; } = [];
 }

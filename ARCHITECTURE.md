@@ -112,7 +112,7 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/chat` | `ChatPageComponent` (hosts `<ai-chat-widget>`) | `authGuard` |
 | `/settings` | `SettingsComponent` (global AI preferences) | `authGuard` |
 | `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
-| `/billing` | `BillingComponent` (per-user $ balance, allowance & spend, US-AI-14) | `authGuard` |
+| `/billing` | `BillingComponent` (per-user $ balance, allowance & spend, US-AI-14; top-up with country-based payment channel, payment country, top-up history, US-BILL-1) | `authGuard` |
 
 **Key features**
 - Document-style profile editing via the embedded `<applysy-profile-builder>` web component (ADR-0013). `ProfileComponent` lazy-loads the widget (`BuilderLoaderService`, mirroring `ChatLoaderService`), seeds it with the profile's `document`, listens to `documentchange`, and wires Save / Import-from-CV / Open-PDF. Whole-document AI rewrites are now driven through the in-editor AI chat (US-AI-9) rather than a dedicated toolbar button. The chat lives in a collapsible sidebar that slides in from the right and pushes the editor on large screens (US-AI-10); it stays mounted while hidden so the thread and live document binding survive open/close, and its open/closed state persists in `localStorage`. The old reactive-form split-panel editor and its structured `Profile` model are removed.
@@ -269,7 +269,13 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
 | `GET /api/usage` | `UsageController` | Current user's token usage, estimated cost, and effective spending limit (`limitUsd`) |
-| `GET /api/billing` | `BillingController` | Current user's per-user billing balance: `{ allowanceUsd, spentUsd, balanceUsd, currency, promptTokens, completionTokens }` where `balanceUsd = max(0, allowance − spent)` (US-AI-14) |
+| `GET /api/billing` | `BillingController` | Current user's per-user billing balance: `{ allowanceUsd, spentUsd, balanceUsd, currency, promptTokens, completionTokens, country }` where `balanceUsd = max(0, allowance − spent)` (US-AI-14; `country` added by US-BILL-1, `null` until asked) |
+| `PUT /api/billing/country` | `BillingController` | Set the user's payment country (`{ country: "UA" }`, ISO alpha-2 uppercase; 400 otherwise) — selects the payment channel (US-BILL-1) |
+| `POST /api/billing/top-up` | `BillingController` | Start a balance top-up (`{ amountUsd: 5\|10\|20 }`) → `{ paymentId, channel, redirectUrl }`. Routes by country: `UA` → Monobank invoice, else Stripe Checkout. 409 without a stored country, 502 on provider failure (US-BILL-1) |
+| `GET /api/billing/top-ups` | `BillingController` | Current user's top-up history, newest first: `{ id, amountUsd, channel, status, createdAt }` (US-BILL-1) |
+| `POST /api/billing/webhooks/stripe` | `BillingController` | Stripe webhook (anonymous, `Stripe-Signature`-verified): `checkout.session.completed` → Paid + credit, `checkout.session.expired` → Failed (US-BILL-1) |
+| `POST /api/billing/webhooks/monobank` | `BillingController` | Monobank webhook (anonymous, `X-Sign` ECDSA-verified against the cached merchant pubkey): `success` → Paid + credit; `failure`/`expired`/`reversed` → Failed; intermediate statuses ignored (US-BILL-1) |
+| `GET\|POST /api/billing/fake-pay/…` | `FakePayEndpoints` | **Dev only** (`Billing:Payments:UseFakeProviders`): local fake payment page + completion endpoint driving the same confirmation path as the webhooks; 404 in production mode (US-BILL-1) |
 | `GET /api/admin/users` | `AdminUsersController` | Registered-users list for admin-api (service-to-service, API-key auth, **not** JWT) |
 | `GET /api/admin/usage-limit` | `AdminUsageLimitController` | Read the global per-user spending limit (service-to-service, API-key auth) |
 | `PUT /api/admin/usage-limit` | `AdminUsageLimitController` | Update the global per-user spending limit (service-to-service, API-key auth) |
@@ -278,7 +284,8 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 - `AuthService` — password hashing (BCrypt), JWT issuance, Google token/code verification, refresh-token rotation
 - `JobProfileService`, `CvService`, `CoverLetterService`, `UsageService` — per-feature application logic (under `Features/`)
 - `LlmService` — gRPC client to `llm-service`; wraps all LLM RPCs (`Generate`, `ExtractProfile`, `Chat`, `UserChat`, `JobChat`, `GenerateCoverLetter`, `SelectBestProfile`) with Polly circuit-breaker and rate-limit handling
-- **Per-user billing balance (US-AI-14, extends US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches **that user's own allowance**; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }` (the message reads as billing-balance exhaustion). The effective allowance resolves per user: the user's `BillingAccount.AllowanceUsd` if a row exists, else the nullable `Billing:DefaultAllowanceUsd` config, else the §9 global limit (`LlmUsageLimitUsd` row in `AppSettings` → `UsageLimit:MaxCostUsdPerUser`, default `$0.50`). Leaving `Billing:DefaultAllowanceUsd` unset preserves the admin-configurable global cap for users without a `BillingAccount` row. `GET /api/billing` surfaces the derived balance (`BillingSummaryDto`). There is no top-up/payment path — allowances are seeded out of band.
+- **Per-user billing balance (US-AI-14, extends US-AI-7)** — `UsageService.EnsureWithinLimitAsync` runs before every LLM RPC and throws `UsageLimitExceededException` once a user's accrued estimated cost reaches **that user's own allowance**; `UsageLimitExceptionHandler` maps it to **HTTP 402** with `{ code: "usage_limit_exceeded", message, limitUsd }` (the message reads as billing-balance exhaustion). The effective allowance resolves per user: the user's `BillingAccount.AllowanceUsd` if a row exists, else the nullable `Billing:DefaultAllowanceUsd` config, else the §9 global limit (`LlmUsageLimitUsd` row in `AppSettings` → `UsageLimit:MaxCostUsdPerUser`, default `$0.50`). Leaving `Billing:DefaultAllowanceUsd` unset preserves the admin-configurable global cap for users without a `BillingAccount` row. `GET /api/billing` surfaces the derived balance (`BillingSummaryDto`).
+- **Balance top-up via country-based payment channels (US-BILL-1)** — `TopUpService` + `IPaymentChannel` implementations under `Features/Billing/Channels/`. `PaymentChannelResolver` picks the channel from `User.Country` (asked once, at first payment): `UA` → `MonobankChannel` (invoice/create, amount in kopecks at the fixed configured `Billing:Payments:Monobank:UahPerUsd` rate), anything else → `StripeChannel` (Stripe.net Checkout Session). Payment confirmations (Stripe webhook, Monobank webhook, and the dev fake-pay endpoints) all funnel through one idempotent `PaymentConfirmationService`: only a `Pending → Paid` transition credits `BillingAccount.AllowanceUsd`, so provider retries can't double-credit. When `Billing:Payments:UseFakeProviders` is true (Development default), fake channels + a local fake payment page replace the real providers so the whole flow runs without credentials.
 - `PdfService` — renders a `ProfileDocument` to PDF using QuestPDF (A4); walks `header` + the `body` block tree generically (ADR-0014)
 
 **Request tracing — OpenTelemetry + Tempo ([ADR-0016](doc/adr/0016-distributed-tracing-tempo-otel.md))**
@@ -369,7 +376,8 @@ User
  ├── passwordHash (nullable)
  ├── googleId (nullable, unique)
  ├── createdAt
- └── globalPreferences  — nullable free-text AI preferences (edited on /settings or by the UserChat agent)
+ ├── globalPreferences  — nullable free-text AI preferences (edited on /settings or by the UserChat agent)
+ └── country  — nullable ISO 3166-1 alpha-2 (uppercase), asked at first top-up; selects the payment channel (US-BILL-1)
 
 Profile  (FK → User, cascade delete)
  ├── id, userId
@@ -419,6 +427,18 @@ BillingAccount  (one row per user, unique UserId; created on demand, US-AI-14)
  └── updatedAt (UTC)
        Absence of a row ⇒ fall back to Billing:DefaultAllowanceUsd, else the §9 global
        limit. Balance is derived (allowance − accrued cost), never stored.
+
+TopUpPayment  (FK → User, cascade delete; one row per top-up attempt, US-BILL-1)
+ ├── id (UUID PK)
+ ├── userId (indexed)
+ ├── amountUsd (decimal(18,6))  — one of the fixed amounts (5 / 10 / 20)
+ ├── channel (string)  — "stripe" | "monobank" (dev fake mode: "fake-stripe" | "fake-monobank")
+ ├── status (string)  — Pending → Paid | Failed (terminal statuses never regress)
+ ├── externalId (nullable, unique)  — Stripe Checkout session id / Monobank invoiceId
+ └── createdAt, updatedAt (UTC)
+       A Pending → Paid transition credits BillingAccount.AllowanceUsd by amountUsd exactly
+       once (webhook retries are acknowledged and ignored). First-ever credit seeds the
+       BillingAccount row from the user's current effective allowance + amount.
 
 (Request tracing is no longer in the database — spans go to Grafana Tempo via
  OpenTelemetry; see ADR-0016.)

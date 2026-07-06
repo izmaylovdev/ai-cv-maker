@@ -12,3 +12,4 @@ See also: [user-stories](../user-stories/)
 | [ai-enhancement.md](ai-enhancement.md) | Field enhancement & full profile optimization | US-AI-1 – US-AI-3 |
 | [cv-generation.md](cv-generation.md) | AI CV generation & PDF export | US-CV-1 – US-CV-6 |
 | [chat.md](chat.md) | Conversational AI career assistant | US-AI-4 |
+| [billing.md](billing.md) | Balance top-ups via country-based payment channels | US-BILL-1 |
