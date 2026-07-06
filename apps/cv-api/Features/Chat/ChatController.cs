@@ -125,10 +125,16 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
             .Select(h => new LlmChatMessage(h.Role, h.Content))
             .ToList();
 
-        // US-AI-13 — the agent may read the user's other saved profiles on demand
-        // (via tools) to inform an edit; it still edits only the open document.
+        // US-AI-13 — the agent may read the user's OTHER saved profiles on demand
+        // (via tools) to inform an edit; it still edits only the open document. The
+        // profile currently open in the editor must be excluded — otherwise it shows
+        // up in list_profiles as a source you can populate *from itself*, which is
+        // nonsensical and confuses the agent (see ChatControllerTests). The editor
+        // sends its ProfileId so we can filter it out; when it's absent (older
+        // clients / an unsaved doc) we fall back to the full set.
+        var openId = Guid.TryParse(request.ProfileId, out var pid) ? pid : (Guid?)null;
         var otherProfiles = await db.Profiles
-            .Where(p => p.UserId == UserId)
+            .Where(p => p.UserId == UserId && (openId == null || p.Id != openId))
             .OrderBy(p => p.Name)
             .Select(p => new LlmOtherProfile(p.Id.ToString(), p.Name, p.Document))
             .ToListAsync();
@@ -151,7 +157,10 @@ public record UserChatRequest(
     string Message,
     List<ChatMessageDto>? History = null,
     ProfileDocument? Document = null,
-    JobContextDto? JobContext = null);
+    JobContextDto? JobContext = null,
+    // US-AI-13 — the id of the profile open in the editor (edit mode), so the
+    // agent's cross-profile reads exclude the document being edited.
+    string? ProfileId = null);
 public record UserChatResponse(string Reply, ChatProposalDto? Proposal = null);
 
 // US-EXT-4 — the open job posting sent by the side-panel extension chat.

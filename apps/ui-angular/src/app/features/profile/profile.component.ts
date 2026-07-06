@@ -30,6 +30,8 @@ interface ProfileBuilderElement extends HTMLElement {
 // Custom element exposed by the chat web component (in-editor edit mode).
 interface ChatWidgetElement extends HTMLElement {
   document: unknown;
+  // US-AI-13 — the open profile's id, so the agent's cross-profile reads exclude it.
+  profileId: string;
   addAssistantNote(text: string): void;
 }
 
@@ -154,7 +156,11 @@ export class ProfileComponent implements OnInit {
     effect(() => {
       const chat = this.chatRef()?.nativeElement;
       const doc = this.currentDocument();
-      if (chat) chat.document = doc;
+      if (chat) {
+        chat.document = doc;
+        // Identify the open profile so cross-profile reads exclude it (US-AI-13).
+        chat.profileId = this.profileId;
+      }
     });
 
     // Track the page header height so the chat sidebar can start just below it

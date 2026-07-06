@@ -14,6 +14,7 @@ import { ChatApp, ChatApi, ChatEdit, ChatFill, JobContext } from './ChatApp';
 class ChatWidget extends HTMLElement {
   private root?: ReturnType<typeof ReactDOM.createRoot>;
   private _document: unknown = null;
+  private _profileId: string | null = null;
   private _jobContext: JobContext | null = null;
   private api?: ChatApi;
 
@@ -27,6 +28,15 @@ class ChatWidget extends HTMLElement {
   }
   set document(value: unknown) {
     this._document = value ?? null;
+    this.renderWidget();
+  }
+
+  /** The open profile's id, so the agent's cross-profile reads exclude it (US-AI-13). */
+  get profileId(): string | null {
+    return this._profileId;
+  }
+  set profileId(value: string | null) {
+    this._profileId = value || null;
     this.renderWidget();
   }
 
@@ -79,6 +89,7 @@ class ChatWidget extends HTMLElement {
         authToken={this.getAttribute('auth-token') ?? ''}
         apiBase={this.getAttribute('api-base') ?? '/api'}
         document={this._document ?? undefined}
+        profileId={this._profileId ?? undefined}
         jobContext={this._jobContext ?? undefined}
         onEdit={this.handleEdit}
         onFill={this.handleFill}

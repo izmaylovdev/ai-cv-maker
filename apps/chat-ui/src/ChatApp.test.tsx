@@ -47,6 +47,20 @@ describe('ChatApp — in-editor editing', () => {
     expect(body.document).toEqual(DOC);
   });
 
+  it('includes the open profileId so cross-profile reads exclude it (US-AI-13)', async () => {
+    const fetchMock = mockFetchOnce({ reply: 'ok', proposal: null });
+
+    render(
+      <ChatApp authToken="t" apiBase="/api" document={DOC} profileId="prof-42" onEdit={vi.fn()} />,
+    );
+    await sendMessage('populate this from my other profile');
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.profileId).toBe('prof-42');
+    expect(body.document).toEqual(DOC);
+  });
+
   it('does not send a document on the global (read-only) chat', async () => {
     const fetchMock = mockFetchOnce({ reply: 'ok', proposal: null });
 

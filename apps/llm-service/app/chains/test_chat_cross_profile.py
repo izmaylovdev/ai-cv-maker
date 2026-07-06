@@ -204,6 +204,49 @@ async def test_anthropic_loop_resolves_get_profile_then_answers(open_profile):
 
 
 @pytest.mark.asyncio
+async def test_anthropic_loop_clarifying_question_after_tool_is_shown(open_profile):
+    """Regression (Langfuse trace 99d91a29): the model calls list_profiles, then
+    (turn 2) asks the user in plain prose which profile to use as the source. That
+    prose clarifying question must be returned to the user verbatim — NOT swallowed
+    as an 'unexpected format' failure — with no proposal and the doc unchanged."""
+    from app.chains import chat_chain
+
+    others = [
+        _other("id-1", "Junior Machine Learning Developer", "", ""),
+        _other("id-2", "Senior Software Engineer", "Senior Software Engineer", "Full-stack, 8 yrs."),
+    ]
+
+    turn1 = MagicMock()
+    turn1.stop_reason = "tool_use"
+    turn1.content = [_tool_use_block("tu-1", "list_profiles", {})]
+    turn1.usage = _usage(100, 20)
+
+    question = (
+        "I found 2 other profiles. Which one would you like to use as the source?\n\n"
+        "1. **Junior Machine Learning Developer**\n2. **Senior Software Engineer**"
+    )
+    turn2 = MagicMock()
+    turn2.stop_reason = "end_turn"
+    turn2.content = [_text_block(question)]  # plain prose, no JSON envelope
+    turn2.usage = _usage(150, 40)
+
+    create = AsyncMock(side_effect=[turn1, turn2])
+
+    with patch.object(chat_chain, "_build_anthropic_messages_client", return_value=MagicMock()), \
+         patch.object(chat_chain, "_get_anthropic_model", return_value="claude-x"), \
+         patch("app.settings.llm_provider", return_value="anthropic"), \
+         patch("app.observability.anthropic_stream", new=create):
+        result, _ = await chat_chain.chat_reply(
+            open_profile, "populate this profile based on my other one", [], others
+        )
+
+    assert create.await_count == 2  # tool call, then the prose answer
+    assert result.reply == question  # verbatim, not the "unexpected format" message
+    assert "unexpected format" not in result.reply
+    assert result.proposal is None
+
+
+@pytest.mark.asyncio
 async def test_anthropic_no_tools_when_no_other_profiles(open_profile):
     """Ordinary edits with no other profiles pass no tools (US-AI-9 unchanged)."""
     from app.chains import chat_chain

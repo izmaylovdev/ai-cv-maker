@@ -68,6 +68,12 @@ interface Props {
    */
   document?: unknown;
   /**
+   * The id of the open profile (in-editor chat only). Sent alongside `document`
+   * so the agent's cross-profile reads exclude the profile being edited (US-AI-13)
+   * — otherwise the open profile lists itself as a source to populate from.
+   */
+  profileId?: string;
+  /**
    * The current page's job posting (side-panel chat only). When provided it is
    * sent as context with every message; the assistant can answer questions about
    * the role and propose a cover letter. Mutually exclusive with `document`.
@@ -86,7 +92,7 @@ export interface ChatApi {
   addAssistantNote: (text: string) => void;
 }
 
-export function ChatApp({ authToken, apiBase, document, jobContext, onEdit, onFill, onReady }: Props) {
+export function ChatApp({ authToken, apiBase, document, profileId, jobContext, onEdit, onFill, onReady }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -125,7 +131,7 @@ export function ChatApp({ authToken, apiBase, document, jobContext, onEdit, onFi
         // read-only assistant.
         body: JSON.stringify(
           document
-            ? { message: text, history, document }
+            ? { message: text, history, document, profileId }
             : jobContext
               ? { message: text, history, jobContext }
               : { message: text, history },

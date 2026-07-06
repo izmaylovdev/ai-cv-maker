@@ -324,7 +324,28 @@ def _extract_envelope(text: str) -> dict:
 
 
 def _parse_response(text: str) -> ChatResponse:
-    data = _extract_envelope(text)
+    """Turn a model reply into a ChatResponse.
+
+    A reply that contains no JSON object at all is a legitimate *conversational*
+    turn — a plain-prose answer or a clarifying question the model asks (typically
+    after a tool call, e.g. "I found 2 profiles; which one should I use as the
+    source?"). The system prompt tells the model to always return the JSON
+    envelope, but it naturally drops it for non-edit turns, especially after using
+    a tool. Treat such a reply as the assistant's message (no proposal) and show it
+    verbatim, rather than reporting a spurious "unexpected format" failure and
+    hiding the model's actual answer from the user.
+
+    A reply that DOES contain a "{" is meant to be the envelope; if it can't be
+    decoded (truncated/broken JSON) we let _extract_envelope raise so the caller
+    surfaces the distinct unparseable/truncation handling."""
+    s = text.strip()
+    if s and "{" not in s:
+        return ChatResponse(reply=s, proposal=None)
+    data = _extract_envelope(s)
+    if "reply" not in data:
+        # A JSON object that isn't our envelope — treat as an unparseable reply
+        # (not a KeyError → 500) so the caller's distinct failure handling runs.
+        raise json.JSONDecodeError("model reply is missing the 'reply' field", s, 0)
     proposal = None
     if data.get("proposal"):
         p = data["proposal"]

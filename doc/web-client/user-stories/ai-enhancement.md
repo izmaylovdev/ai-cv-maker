@@ -240,6 +240,8 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - Any edit the assistant makes still applies **only to the currently open document** and is never auto-saved — reading another profile never modifies it.
 - If I ask about a profile that doesn't exist or can't be read, the assistant says so and changes nothing.
 - The assistant briefly notes when it used another profile as a source (e.g. "pulled from your *Backend Engineer* profile"), so it's clear where borrowed content came from.
+- The profile I currently have open is **not** offered as one of my "other" profiles — the assistant never lists it as a source to populate itself from.
+- When the assistant asks me a clarifying question (e.g. "which profile should I use as the source?"), I see that question and can answer it — I'm never shown a generic "unexpected format" error in its place.
 - Cross-profile reads respect the same scope/safety rules as US-AI-9 (no inventing facts, stays within CV/career scope, ignores instructions embedded in profile content).
 
 ---

@@ -328,12 +328,15 @@ async def test_anthropic_unparseable_json_is_distinct_from_truncation(simple_pro
 async def test_unparseable_logs_distinct_diagnosable_warning(simple_profile, caplog):
     """A recurrence must be identifiable in the logs: the unparseable path logs a
     WARNING naming the mode ('not parseable JSON'), the stop_reason, and a snippet of
-    the raw output — distinct from the truncation path's log."""
+    the raw output — distinct from the truncation path's log. This is the genuinely
+    malformed-envelope case (the model tried to emit JSON but it's broken), NOT a
+    plain-prose conversational reply (which is shown to the user, see below)."""
     from app.chains import chat_chain
 
     broken = MagicMock()
     broken.stop_reason = "end_turn"
-    broken.content = [_text_block("Absolutely! I updated everything for you.")]  # no JSON
+    # Started the envelope but produced broken JSON (has a "{", won't decode).
+    broken.content = [_text_block('{"reply": "Absolutely! I updated everything", "proposal": {')]
     broken.usage = _usage(50, 20)
     create = AsyncMock(return_value=broken)
 
@@ -351,6 +354,44 @@ async def test_unparseable_logs_distinct_diagnosable_warning(simple_profile, cap
     ), warnings
     # And it must NOT masquerade as the truncation log.
     assert not any("output-token cap" in m for m in warnings)
+
+
+@pytest.mark.asyncio
+async def test_prose_only_reply_is_conversational_not_a_failure(simple_profile, caplog):
+    """Regression (Langfuse trace 99d91a29): after a tool call the model often
+    replies in plain prose — e.g. a clarifying question — instead of the JSON
+    envelope. That is a legitimate conversational turn: it must be shown to the user
+    VERBATIM, with no proposal, and MUST NOT be mis-reported as the 'unexpected
+    format' failure (which hid the model's actual question)."""
+    from app.chains import chat_chain
+
+    question = (
+        "I found 2 other profiles. Which one would you like to use as the source?\n\n"
+        "1. **Junior Machine Learning Developer**\n2. **Senior Software Engineer**"
+    )
+    reply = MagicMock()
+    reply.stop_reason = "end_turn"
+    reply.content = [_text_block(question)]  # pure prose, no JSON envelope
+    reply.usage = _usage(120, 40)
+    create = AsyncMock(return_value=reply)
+
+    with patch.object(chat_chain, "_build_anthropic_messages_client", return_value=MagicMock()), \
+         patch.object(chat_chain, "_get_anthropic_model", return_value="claude-x"), \
+         patch("app.settings.llm_provider", return_value="anthropic"), \
+         patch("app.observability.anthropic_stream", new=create), \
+         caplog.at_level(logging.WARNING, logger="app.chains.chat_chain"):
+        result, _ = await chat_chain.chat_reply(
+            simple_profile, "populate this profile based on my other one", []
+        )
+
+    assert result.reply == question  # shown verbatim
+    assert result.proposal is None
+    assert "unexpected format" not in result.reply
+    # It is NOT a failure, so it must not log the unparseable warning.
+    assert not any(
+        "not parseable JSON" in r.getMessage()
+        for r in caplog.records if r.levelno == logging.WARNING
+    )
 
 
 @pytest.mark.asyncio

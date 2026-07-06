@@ -946,6 +946,8 @@ No API, data-model, gRPC, or backend changes. No new props.
 | F-AI-13.5 | A `get_profile` for an unknown/unreadable id returns a tool error the agent reports in its reply, leaving the document unchanged. |
 | F-AI-13.6 | When the agent uses another profile as a source, its reply names that profile. |
 | F-AI-13.7 | Cross-profile content is subject to the same guardrails as US-AI-9 (no invented facts, CV/career scope only, embedded-instruction injection ignored). |
+| F-AI-13.8 | The profile open in the editor is excluded from the cross-profile list — it never appears in `list_profiles`, so the agent cannot offer the open profile as a source for populating itself. |
+| F-AI-13.9 | A conversational reply (e.g. a clarifying question the agent asks after a tool call, "which profile should I use as the source?") is shown to the user verbatim, with no proposal and the document unchanged — it is **not** mis-reported as an "unexpected format" failure. |
 
 ### 13.2 Technical Specification
 
@@ -990,6 +992,12 @@ Regenerate stubs: `npm run grpc:generate`.
 - The system prompt gains a short section: other profiles exist; use the tools
   only when the request references them; edits apply solely to the open document;
   name the source profile when borrowing content.
+- Response parsing (`_parse_response`) treats a reply with **no JSON envelope** as a
+  legitimate conversational turn (F-AI-13.9): after a tool call the model often
+  answers in plain prose (e.g. a clarifying question), which is returned to the user
+  verbatim with no proposal. Only a reply that *starts* an envelope (`{`) but can't
+  be decoded is a genuine failure (the distinct "unexpected format" / truncation
+  handling still applies).
 - Generic langchain fallback (non-Anthropic providers): no tool loop — inject a
   compact `list_profiles`-style summary block inline when `other_profiles` is
   non-empty (degraded mode).
@@ -1004,14 +1012,18 @@ Regenerate stubs: `npm run grpc:generate`.
 - `Infrastructure/ExternalServices/Llm/LlmService.cs`: map `OtherProfiles` into
   the new proto field.
 - `Features/Chat/ChatController.EditAsync`: load the user's saved profiles
-  (`db.Profiles.Where(p => p.UserId == UserId)`) and pass them all as
-  `OtherProfiles`. No new endpoint — same `POST /api/chat`, same request/response
-  shape to the frontend.
+  (`db.Profiles.Where(p => p.UserId == UserId)`) **excluding the open profile**
+  identified by the request's `ProfileId` (`p.Id != openId`), and pass the rest as
+  `OtherProfiles` (F-AI-13.8). When `ProfileId` is absent (older clients / an
+  unsaved doc) the full owned set is passed. No new endpoint — same `POST /api/chat`,
+  same response shape to the frontend.
 
 #### Angular / frontend
 
-None. The in-editor chat request/response contract is unchanged; the new
-capability is entirely server-side.
+The in-editor chat sends the open profile's id so the server can exclude it: the
+`<ai-chat-widget>` gains a `profileId` property (mirroring `document`); the profile
+page sets it from the route, and `ChatApp` includes `profileId` in the edit-mode
+request body. The global (read-only) and side-panel chats are unaffected.
 
 #### Data model
 
@@ -1019,8 +1031,6 @@ No schema change, no migration (reads existing `Profiles`).
 
 ### 13.3 Out of Scope (MVP)
 
-- Deduplicating the open document against a saved copy of the same profile (the
-  agent is told which document is "open"; minor overlap tolerated).
 - Tool-use (agentic) loop for non-Anthropic providers — those get an
   inline-summary degraded mode only.
 - Cross-profile *writes* / editing another profile.
