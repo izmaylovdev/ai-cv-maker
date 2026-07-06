@@ -283,3 +283,21 @@ The application embeds AI assistance through the **in-editor AI chat** (US-AI-9)
 - The resize handle is only present on screens where the panel is a fixed-width sidebar (large screens); on small screens where the panel covers the full width, no handle is shown.
 - The handle is keyboard-accessible: it exposes a focusable control with an accessible name, and Left/Right arrow keys adjust the width within the same clamped range.
 - Works in both light and dark themes.
+
+---
+
+### US-AI-16 — See a whole chat conversation grouped together in Langfuse
+
+**As an** operator/developer reviewing AI usage in Langfuse,
+**I want to** see every message a user sends within one chat conversation grouped together as a single Session,
+**so that** I can read the whole back-and-forth as one thread — following how the conversation and the assistant's responses evolved — instead of hunting through disconnected, one-off traces.
+
+**Context:** Today each chat message produces its own standalone Langfuse trace with nothing linking the messages of one conversation. Langfuse's *Sessions* view groups traces that share a session id; that id is never set, so the Sessions view is empty for chat.
+
+A "conversation" is one continuous use of the chat widget: it begins when the widget mounts (page load / widget open) and ends when the widget is reloaded. Reloading the page starts a new conversation.
+
+**Acceptance criteria:**
+- When I send two or more messages within the same open chat widget, all the resulting LLM traces appear grouped under a single Session in Langfuse's Sessions view.
+- When I reload the page (a fresh widget) and send more messages, those messages appear under a *different* Session — not mixed in with the previous one.
+- The Session still shows which user it belongs to (existing per-user attribution is unchanged).
+- With Langfuse not configured (no credentials), the chat works exactly as before — sending a message succeeds and nothing about the user-facing behaviour changes.

@@ -1229,3 +1229,92 @@ No API, data-model, gRPC, or backend changes.
 - Resizing on `sm`/`md` screens or the full-width `<sm` overlay.
 - Snapping/presets (e.g. double-click to reset to default width).
 - Touch-drag beyond what Pointer Events already covers natively.
+
+---
+
+## 16. Group a Chat Conversation as a Langfuse Session (US-AI-16)
+
+### 16.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-16.1 | All LLM traces produced by messages sent within one chat-widget mount share a single Langfuse `session_id` and appear grouped under one Session in Langfuse's Sessions view. |
+| F-AI-16.2 | A page reload (fresh widget mount) yields a new `session_id`; its messages form a distinct Session and are not mixed with the previous one. |
+| F-AI-16.3 | Per-user attribution is unchanged — a Session's traces still carry the authenticated `user_id` (existing ADR-0010 behavior). |
+| F-AI-16.4 | The session id rides as gRPC call metadata (`x-session-id`), alongside the existing `x-trace-id` / `x-user-id`; the proto message contract is unchanged. |
+| F-AI-16.5 | When Langfuse is not configured, chat behaves exactly as before — the session id is accepted and forwarded but nothing observability-related runs (no-op), and no user-facing behavior changes. |
+| F-AI-16.6 | A missing/empty session id is a no-op: traces are produced without a session (never an error), so older/other clients that don't send one keep working. |
+
+### 16.2 Technical Specification
+
+**Design.** Langfuse groups traces into a Session when each trace's root sets
+`session_id` (ADR-0010). The chat conversation has no server-side identity, so the
+**client** mints the id: the `chat-ui` widget generates one `crypto.randomUUID()`
+per mount and sends it on every `POST /api/chat`. cv-api forwards it to
+`llm-service` as gRPC metadata `x-session-id` (the same channel as `x-trace-id` /
+`x-user-id` — no proto change). `llm-service` reads it in the trace interceptor and
+sets it on the root trace. Each message remains its own trace (seeded from the
+per-request `x-trace-id`); `session_id` is the only thing tying them together, so
+the Sessions view stitches the conversation while individual traces are unaffected.
+
+#### API
+
+`POST /api/chat` — request body gains one optional field:
+
+```json
+{
+  "message": "…",
+  "history": [ … ],
+  "document": { … },      // optional (edit mode) — unchanged
+  "jobContext": { … },    // optional (job chat)  — unchanged
+  "sessionId": "b1f2…-uuid"  // NEW, optional: conversation id (one per widget mount)
+}
+```
+
+Response 200: unchanged (`{ reply, proposal? }`). Omitting `sessionId` is valid
+(F-AI-15.6). No auth or route change.
+
+#### chat-ui (`apps/chat-ui/src/ChatApp.tsx`)
+
+- Mint a stable id once per component mount — `const sessionId = useRef(crypto.randomUUID()).current;` (or `useState(() => crypto.randomUUID())`). It is created at mount and reset only when the component remounts (page reload), which matches "one conversation = one widget mount" (US-AI-16).
+- Include `sessionId` in every `POST ${apiBase}/chat` body, in all three context branches (plain assistant, `document` edit mode, `jobContext`). It is independent of the mutually-exclusive context fields.
+
+#### cv-api (`apps/cv-api/`)
+
+- `Features/Chat/ChatController.cs`: add `string? SessionId = null` to the
+  `UserChatRequest` DTO record. Thread it into the domain requests built in
+  `Chat` (→ `LlmUserChatRequest`), `EditAsync` (→ `LlmChatRequest`), and
+  `JobChatAsync` (→ `LlmJobChatRequest`).
+- `Infrastructure/ExternalServices/Llm/LlmDtos.cs`: add `string? SessionId = null`
+  to `LlmUserChatRequest`, `LlmChatRequest`, and `LlmJobChatRequest`.
+- `Infrastructure/ExternalServices/Llm/LlmService.cs`: replace the parameterless
+  `DefaultCallOptions` property with a `BuildCallOptions(string? sessionId)` helper
+  (keep the existing `x-trace-id` / `x-user-id` logic) that adds an
+  `x-session-id` metadata header when `sessionId` is non-empty. `ChatAsync`,
+  `UserChatAsync`, and `JobChatAsync` pass `request.SessionId`; the other RPCs
+  (Generate/Extract/CoverLetter/SelectBestProfile) call `BuildCallOptions(null)`.
+
+#### llm-service (`apps/llm-service/app/observability.py`)
+
+- Add `SESSION_ID_HEADER = "x-session-id"`.
+- `parse_trace_metadata(...)` returns a new `"session_id"` key (value or `None`).
+- `rpc_span(...)`: pass `session_id=<parsed value>` into
+  `c.update_current_trace(...)` (Langfuse Python SDK v3 accepts `session_id`).
+  When absent it is `None` → no session bound (F-AI-15.6). The `trace_interceptor`
+  already forwards all invocation metadata into `rpc_span`, so no interceptor
+  change is needed.
+
+#### Data model
+
+No schema change, no migration. No gRPC proto change (session id is call metadata).
+
+### 16.3 Out of Scope (MVP)
+
+- Persisting the session id across page reloads (localStorage) or a "new chat"
+  reset button — a reload deliberately starts a new Session (US-AI-16).
+- A server-minted / DB-backed conversation entity — the id is client-generated and
+  used only for observability grouping.
+- Propagating a session id from the Chrome-extension job-chat UI — the cv-api/
+  llm-service plumbing accepts one generically, but only the `chat-ui` widget is
+  wired to send it in this story.
+- Grouping non-chat LLM calls (Generate/Extract/CoverLetter) into Sessions.
