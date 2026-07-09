@@ -11,4 +11,5 @@ See also: [specs](../specs/)
 | [profile-editing.md](profile-editing.md) | Editing personal info, experience, education, and skills |
 | [ai-enhancement.md](ai-enhancement.md) | AI-powered field enhancement and full profile optimization |
 | [cv-generation.md](cv-generation.md) | Generating tailored CVs and PDF export |
+| [billing.md](billing.md) | Paying for the product: balance top-ups via country-based payment channels |
 | [developer-experience.md](developer-experience.md) | Developer tooling and local setup |

@@ -214,6 +214,32 @@ builder.Services.Configure<CvApi.Features.Billing.BillingOptions>(
     builder.Configuration.GetSection(CvApi.Features.Billing.BillingOptions.SectionName));
 builder.Services.AddScoped<CvApi.Features.Usage.UsageService>();
 
+// Balance top-ups (US-BILL-1). Which channel implementations are registered is
+// decided once at startup: fake-provider mode swaps both real channels for
+// local fakes and exposes the /api/billing/fake-pay/* endpoints below.
+builder.Services.Configure<CvApi.Features.Billing.PaymentsOptions>(
+    builder.Configuration.GetSection(CvApi.Features.Billing.PaymentsOptions.SectionName));
+builder.Services.AddHttpClient(); // Monobank invoice + pubkey calls
+var useFakePaymentProviders = builder.Configuration.GetValue<bool>("Billing:Payments:UseFakeProviders");
+if (useFakePaymentProviders)
+{
+    builder.Services.AddScoped<CvApi.Features.Billing.Channels.IPaymentChannel,
+        CvApi.Features.Billing.Channels.FakeStripeChannel>();
+    builder.Services.AddScoped<CvApi.Features.Billing.Channels.IPaymentChannel,
+        CvApi.Features.Billing.Channels.FakeMonobankChannel>();
+}
+else
+{
+    builder.Services.AddScoped<CvApi.Features.Billing.Channels.IPaymentChannel,
+        CvApi.Features.Billing.Channels.StripeChannel>();
+    builder.Services.AddScoped<CvApi.Features.Billing.Channels.IPaymentChannel,
+        CvApi.Features.Billing.Channels.MonobankChannel>();
+}
+builder.Services.AddScoped<CvApi.Features.Billing.Channels.PaymentChannelResolver>();
+builder.Services.AddScoped<CvApi.Features.Billing.PaymentConfirmationService>();
+builder.Services.AddScoped<CvApi.Features.Billing.TopUpService>();
+builder.Services.AddSingleton<CvApi.Features.Billing.Channels.MonobankSignatureVerifier>();
+
 // Map the per-user spending-limit guard (US-AI-7) to HTTP 402.
 builder.Services.AddExceptionHandler<CvApi.Features.Usage.UsageLimitExceptionHandler>();
 // Classify LLM failures into specific { code, message } responses (US-AI-11) so
@@ -251,6 +277,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
+
+// Fake payment pages exist only in fake-provider mode (US-BILL-1, F-BILL-1.9);
+// with real providers configured these routes must 404.
+if (useFakePaymentProviders)
+    CvApi.Features.Billing.FakePayEndpoints.MapFakePayEndpoints(app);
 
 app.Run();
 

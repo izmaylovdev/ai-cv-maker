@@ -147,21 +147,27 @@ public class UsageService(
     }
 
     /// <summary>
-    /// Per-user billing summary (US-AI-14): allowance, spend, remaining balance
-    /// (floored at zero), currency, and token totals.
+    /// Per-user billing summary (US-AI-14, extended by US-BILL-1): allowance,
+    /// spend, remaining balance (floored at zero), currency, token totals, and
+    /// the stored payment country (null when never asked).
     /// </summary>
     public async Task<BillingSummaryDto> GetBillingSummaryAsync(Guid userId)
     {
         var summary = await GetUserSummaryAsync(userId);
         var allowance = await GetEffectiveAllowanceAsync(userId);
         var balance = Math.Max(0, allowance - summary.EstimatedCostUsd);
+        var country = await db.Users
+            .Where(u => u.Id == userId)
+            .Select(u => u.Country)
+            .FirstOrDefaultAsync();
         return new BillingSummaryDto(
             allowance,
             summary.EstimatedCostUsd,
             balance,
             "USD",
             summary.PromptTokens,
-            summary.CompletionTokens);
+            summary.CompletionTokens,
+            country);
     }
 
     public async Task<List<AdminUsageSummaryDto>> GetAllUserSummariesAsync()
@@ -207,4 +213,4 @@ public class UsageService(
 
 public record UserUsageSummaryDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
 public record AdminUsageSummaryDto(Guid UserId, string Email, int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
-public record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens);
+public record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens, string? Country = null);
