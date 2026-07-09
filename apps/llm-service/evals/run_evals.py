@@ -28,6 +28,7 @@ from typing import Any
 
 from evals.datasets import dataset_name, load_cases, sync_dataset
 from evals.evaluators import (
+    ApplicationMessageStyleEvaluator,
     CVQualityEvaluator,
     ExtractAccuracyEvaluator,
     OnTaskEvaluator,
@@ -60,7 +61,7 @@ _OPERATIONS: dict[str, tuple] = {
     "cover_letter_with_prefs": (
         cover_letter_with_prefs_target,
         _FIXTURES_DIR / "cover_letter_with_prefs_cases.jsonl",
-        [CVQualityEvaluator(), PreferencesAdherenceEvaluator()],
+        [CVQualityEvaluator(), PreferencesAdherenceEvaluator(), ApplicationMessageStyleEvaluator()],
     ),
 }
 
@@ -86,6 +87,11 @@ _THRESHOLDS: dict[str, dict[str, float]] = {
         "quality.professionalism": 4.0,
         "quality.relevance": 3.5,
         "adherence.adherence": 4.0,  # higher bar — length/style prefs are explicit and testable
+        # US-EXT-5: application-message style is a hard gate — any salutation,
+        # sign-off, or bracketed placeholder in a non-exempt case fails the run.
+        "style.no_salutation": 1.0,
+        "style.no_signoff": 1.0,
+        "style.no_placeholders": 1.0,
     },
 }
 

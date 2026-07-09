@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -232,6 +233,79 @@ class ExtractAccuracyEvaluator:
         meta = _score_meta(metadata)
         return [
             _eval(name=f"extract_accuracy.{metric}", value=s["value"], comment=s["comment"], metadata=meta)
+            for metric, s in scores.items()
+        ]
+
+
+_SALUTATION_RE = re.compile(r"^\s*(dear|to whom|hi|hello)\b", re.IGNORECASE)
+_SIGNOFF_RE = re.compile(
+    r"^\s*(sincerely|best regards|kind regards|yours faithfully|yours truly|warm regards)\b",
+    re.IGNORECASE,
+)
+_PLACEHOLDER_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _score_application_style(response: str) -> dict[str, dict]:
+    """Deterministic application-message style scoring (US-EXT-5; pure, no I/O).
+
+    Returns ``{metric: {"value": 0|1, "comment": str}}`` for ``no_salutation``,
+    ``no_signoff`` and ``no_placeholders``. The generated text is pasted into a
+    form field on a job-application site, so letter formalities score 0.
+    """
+    lines = [line for line in response.splitlines() if line.strip()]
+
+    first_line = lines[0].strip() if lines else ""
+    salutation = _SALUTATION_RE.match(first_line)
+    if salutation:
+        salutation_score = {"value": 0, "comment": f"opens with a salutation line: {first_line!r}"}
+    else:
+        salutation_score = {"value": 1, "comment": "no salutation line detected"}
+
+    # A sign-off block is a closing phrase (optionally followed by a name) on the
+    # trailing lines, e.g. "Sincerely,\nJane Doe".
+    signoff_line = next((l for l in lines[-3:] if _SIGNOFF_RE.match(l)), None)
+    if signoff_line is not None:
+        signoff_score = {"value": 0, "comment": f"ends with a sign-off line: {signoff_line.strip()!r}"}
+    else:
+        signoff_score = {"value": 1, "comment": "no sign-off or signature block detected"}
+
+    placeholders = _PLACEHOLDER_RE.findall(response)
+    if placeholders:
+        placeholder_score = {"value": 0, "comment": f"contains bracketed placeholder(s): {', '.join(placeholders)}"}
+    else:
+        placeholder_score = {"value": 1, "comment": "no bracketed placeholders detected"}
+
+    return {
+        "no_salutation": salutation_score,
+        "no_signoff": signoff_score,
+        "no_placeholders": placeholder_score,
+    }
+
+
+class ApplicationMessageStyleEvaluator:
+    """Deterministic application-message style check (US-EXT-5).
+
+    The generated cover-letter text is pasted into a free-text field on a
+    job-application website, so it must carry no letter formalities: no
+    salutation, no sign-off/signature block, no bracketed placeholders. Binary
+    0/1 scores. Cases whose dataset-item metadata carries a truthy
+    ``style_exempt`` (they intentionally request letter format via
+    ``global_preferences``) are skipped — all metrics score 1.
+    """
+
+    def __call__(
+        self, *, input: dict | None = None, output: Any, metadata: dict | None = None, **kwargs
+    ) -> list[Evaluation]:
+        meta = dict(metadata) if metadata else None
+        if (metadata or {}).get("style_exempt"):
+            comment = "case marked style_exempt (intentionally requests letter format); skipped"
+            return [
+                _eval(name=f"style.{metric}", value=1, comment=comment, metadata=meta)
+                for metric in ("no_salutation", "no_signoff", "no_placeholders")
+            ]
+        scores = _score_application_style(_response_text(output))
+        return [
+            _eval(name=f"style.{metric}", value=s["value"], comment=s["comment"], metadata=meta)
             for metric, s in scores.items()
         ]
 

@@ -17,6 +17,12 @@ from typing import Any
 # in the dataset item's ``expected_output``.
 EXPECTED_FIELDS = ("expected_name", "expected_work_count", "expected_edu_count")
 
+# Fixture fields that annotate the case for evaluators rather than the target.
+# They are split out of ``input`` and merged into the dataset item's metadata
+# (e.g. ``style_exempt`` marks a case that intentionally requests letter format,
+# so ApplicationMessageStyleEvaluator skips it — US-EXT-5).
+METADATA_FIELDS = ("style_exempt",)
+
 DATASET_PREFIX = "eval-"
 
 
@@ -53,9 +59,12 @@ def split_case(case: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | N
 
     ``input`` holds exactly the keyword arguments the target accepts; ground-truth
     fields (:data:`EXPECTED_FIELDS`) are moved into ``expected_output`` (``None``
-    when the row has none).
+    when the row has none) and evaluator annotations (:data:`METADATA_FIELDS`)
+    are dropped here and carried on the dataset item's metadata instead.
     """
-    input_data = {k: v for k, v in case.items() if k not in EXPECTED_FIELDS}
+    input_data = {
+        k: v for k, v in case.items() if k not in EXPECTED_FIELDS and k not in METADATA_FIELDS
+    }
     expected = {k: case[k] for k in EXPECTED_FIELDS if k in case}
     return input_data, (expected or None)
 
@@ -82,11 +91,13 @@ def sync_dataset(client: Any, operation: str, cases: list[dict[str, Any]]) -> An
     client.create_dataset(name=name, description=f"LLM eval fixtures for '{operation}' (ADR-0012)")
     for case in cases:
         input_data, expected = split_case(case)
+        metadata = {"operation": operation}
+        metadata.update({k: case[k] for k in METADATA_FIELDS if k in case})
         client.create_dataset_item(
             dataset_name=name,
             input=input_data,
             expected_output=expected,
             id=item_id(operation, input_data),
-            metadata={"operation": operation},
+            metadata=metadata,
         )
     return client.get_dataset(name)
