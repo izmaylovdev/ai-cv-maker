@@ -245,3 +245,133 @@ def test_env_for_is_valid_langfuse_environment():
         assert env == f"eval-{op}"
         assert pattern.match(env), f"invalid environment name: {env}"
         assert not env.startswith("langfuse")
+
+
+# --- application-message style scoring (US-EXT-5, deterministic) ------------
+#
+# ApplicationMessageStyleEvaluator scores generated application text on the
+# absence of letter formalities: `style.no_salutation`, `style.no_signoff`,
+# `style.no_placeholders` (binary 0/1, same Evaluation conventions as
+# ExtractAccuracyEvaluator). Cases whose dataset-item metadata marks them as
+# intentionally requesting letter format (`style_exempt`) are skipped (score 1).
+#
+# The import is deliberately inside a helper (not module-level) so the red
+# state of these tests does not fail collection of the pre-existing tests
+# above — each new test fails individually with ImportError until the
+# evaluator exists.
+
+_CLEAN_APPLICATION_MESSAGE = (
+    "I have spent eight years building distributed systems in Python and Go, "
+    "most recently leading the migration of a monolith to microservices at Acme Corp. "
+    "That experience maps directly onto the platform work described in this role."
+)
+
+_STYLE_METADATA = {"operation": "cover_letter_with_prefs"}
+
+
+def _style_evaluator():
+    from evals.evaluators import ApplicationMessageStyleEvaluator
+
+    return ApplicationMessageStyleEvaluator()
+
+
+def _style_values(text: str, metadata: dict | None = None) -> dict:
+    evals_out = _style_evaluator()(
+        output={"response": text}, metadata=metadata or dict(_STYLE_METADATA)
+    )
+    return {e.name: e.value for e in evals_out}
+
+
+def test_style_evaluator_clean_message_scores_one_on_all_metrics():
+    assert _style_values(_CLEAN_APPLICATION_MESSAGE) == {
+        "style.no_salutation": 1,
+        "style.no_signoff": 1,
+        "style.no_placeholders": 1,
+    }
+
+
+def test_style_evaluator_flags_salutation_line():
+    values = _style_values("Dear Hiring Manager,\n\n" + _CLEAN_APPLICATION_MESSAGE)
+    assert values["style.no_salutation"] == 0
+    assert values["style.no_signoff"] == 1
+    assert values["style.no_placeholders"] == 1
+
+
+def test_style_evaluator_flags_signoff_and_signature_block():
+    values = _style_values(_CLEAN_APPLICATION_MESSAGE + "\n\nSincerely,\nJane Doe")
+    assert values["style.no_signoff"] == 0
+    assert values["style.no_salutation"] == 1
+    assert values["style.no_placeholders"] == 1
+
+
+def test_style_evaluator_flags_bracketed_placeholders():
+    values = _style_values(
+        "I would bring my Python experience to [Company Name] and help "
+        "[Hiring Manager] scale the platform."
+    )
+    assert values["style.no_placeholders"] == 0
+    assert values["style.no_salutation"] == 1
+    assert values["style.no_signoff"] == 1
+
+
+def test_style_evaluator_exempts_case_marked_as_letter_format():
+    """The preferences-override fixture case intentionally requests a formal
+    letter; its metadata marker makes the style evaluator skip (score 1)."""
+    letter = (
+        "Dear Hiring Manager,\n\n"
+        + _CLEAN_APPLICATION_MESSAGE
+        + "\n\nSincerely,\nJane Doe"
+    )
+    values = _style_values(
+        letter, metadata={"operation": "cover_letter_with_prefs", "style_exempt": True}
+    )
+    assert values == {
+        "style.no_salutation": 1,
+        "style.no_signoff": 1,
+        "style.no_placeholders": 1,
+    }
+
+
+def test_style_evaluator_evaluations_carry_comment_and_metadata():
+    evals_out = _style_evaluator()(
+        output={"response": _CLEAN_APPLICATION_MESSAGE}, metadata=dict(_STYLE_METADATA)
+    )
+    assert all(e.comment for e in evals_out)
+    assert all(
+        e.metadata == {"operation": "cover_letter_with_prefs"} for e in evals_out
+    )
+
+
+# --- US-EXT-5 wiring: op evaluators, thresholds, exempt fixture case ---------
+
+def test_cover_letter_with_prefs_op_includes_style_evaluator():
+    from evals.evaluators import ApplicationMessageStyleEvaluator
+
+    _, _, evaluators = run_evals._OPERATIONS["cover_letter_with_prefs"]
+    assert any(isinstance(e, ApplicationMessageStyleEvaluator) for e in evaluators)
+
+
+def test_cover_letter_with_prefs_thresholds_gate_style_metrics():
+    thresholds = run_evals._THRESHOLDS["cover_letter_with_prefs"]
+    assert thresholds.get("style.no_salutation") == 1.0
+    assert thresholds.get("style.no_signoff") == 1.0
+    assert thresholds.get("style.no_placeholders") == 1.0
+
+
+def test_cover_letter_with_prefs_fixtures_include_style_exempt_letter_case():
+    """One fixture case explicitly requests a formal letter via
+    global_preferences and is marked exempt so the style gate skips it."""
+    cases = datasets.load_cases(
+        run_evals._FIXTURES_DIR / "cover_letter_with_prefs_cases.jsonl"
+    )
+
+    def _is_exempt(case: dict) -> bool:
+        return bool(
+            case.get("style_exempt") or (case.get("metadata") or {}).get("style_exempt")
+        )
+
+    exempt = [c for c in cases if _is_exempt(c)]
+    assert exempt, "expected a fixture case marked style_exempt"
+    prefs = " ".join(str(c.get("global_preferences", "")) for c in exempt).lower()
+    assert "letter" in prefs
+    assert "salutation" in prefs or "dear" in prefs or "sign-off" in prefs

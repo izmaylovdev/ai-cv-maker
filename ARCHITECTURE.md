@@ -303,7 +303,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 | `Chat` | Profile-scoped conversational assistant; may read the user's other saved profiles on demand via `list_profiles` / `get_profile` tools (US-AI-13) |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
 | `JobChat` | Side-panel chat over profile summaries + an open job posting (US-EXT-4); answers questions or returns a `fill` proposal carrying a cover-letter draft |
-| `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover letter text |
+| `GenerateCoverLetter` | Job description (+ selected/auto profile) → cover-letter text, styled as a direct application message for a form field rather than a formal letter (US-EXT-5) |
 | `SelectBestProfile` | Job description + profile summaries → best-matching profile id |
 | `Health` | Liveness check |
 

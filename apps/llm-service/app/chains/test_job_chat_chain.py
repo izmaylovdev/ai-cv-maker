@@ -76,3 +76,45 @@ async def test_job_chat_cover_letter_returns_fill_proposal(profiles):
     assert result.proposal is not None
     assert result.proposal.type == "fill"
     assert result.proposal.text.startswith("Dear Hiring Manager")
+
+
+# ---------------------------------------------------------------------------
+# US-EXT-5 / F-EXT-5.4 — cover-letter drafts in the fill proposal follow the
+# same application-message style rules as the auto-fill flow: direct
+# first-person message, no salutation/sign-off/signature/letterhead, no
+# bracketed placeholders. The rules live in _SYSTEM_PROMPT, so we assert on
+# its text (case-insensitive keyword checks, robust to exact wording).
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_forbids_salutation_in_fill_text():
+    from app.chains.job_chat_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "salutation" in lowered or "dear" in lowered
+
+
+def test_system_prompt_forbids_signoff_and_signature_in_fill_text():
+    from app.chains.job_chat_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert any(k in lowered for k in ("sign-off", "signoff", "sign off"))
+    assert "signature" in lowered
+
+
+def test_system_prompt_forbids_letterhead_lines_in_fill_text():
+    from app.chains.job_chat_chain import _SYSTEM_PROMPT
+
+    assert "subject" in _SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_forbids_bracketed_placeholders_in_fill_text():
+    from app.chains.job_chat_chain import _SYSTEM_PROMPT
+
+    assert "placeholder" in _SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_requires_first_person_message_in_fill_text():
+    from app.chains.job_chat_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "first-person" in lowered or "first person" in lowered

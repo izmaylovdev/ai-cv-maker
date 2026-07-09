@@ -55,8 +55,12 @@ When the user asks you to write (or revise) a cover letter:
     - type: "fill"
     - description: a short label (e.g. "Cover letter draft")
     - text: the full cover letter text, ready to paste into the application field. \
-Tailor it to the posting using the most relevant profile; do not fabricate employers, \
-dates, or qualifications the profiles do not contain.
+Write it as a direct first-person application message about the user's fit for the \
+role, not a formal letter: no salutation, no sign-off phrase or signature block, no \
+subject or other letterhead lines, and no bracketed placeholders — omit unknown \
+details instead of templating them. Tailor it to the posting using the most relevant \
+profile; do not fabricate employers, dates, or qualifications the profiles do not \
+contain.
 
 Keep conversational replies concise (1–4 sentences). The cover letter itself in \
 "text" may be as long as needed.

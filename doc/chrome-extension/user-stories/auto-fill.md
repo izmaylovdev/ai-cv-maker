@@ -61,3 +61,17 @@
 - The user remains authenticated using the same stored credentials/token as before; an expired session prompts re-login from within the panel.
 - The side panel can navigate between views; the chat is the default view, and the layout supports adding Settings and Hotkeys views later without re-architecting.
 - The existing hotkey-driven flows (quick fill, optimised-CV download) continue to work.
+
+### US-EXT-5 — Generated application text reads as a direct message, not a formal letter
+
+**As a** job seeker filling an application form field on a job site,
+**I want to** receive generated text written as a direct, first-person application message rather than a formal letter or email,
+**so that** the text looks natural in the website's free-text field and I can submit it without stripping salutations, signatures, and letter formalities by hand.
+
+**Acceptance criteria:**
+- Generated application text (both the hotkey auto-fill flow and cover-letter drafts in the side-panel chat) contains no salutation line (e.g. "Dear Hiring Manager,", "To whom it may concern").
+- The text contains no closing signature block — no sign-off phrase (e.g. "Sincerely,", "Best regards,", "Kind regards,") and no standalone candidate-name line at the end.
+- The text contains no letterhead elements: no date line, no postal-address lines, no "Subject:"/"Re:" line.
+- The text contains no bracketed placeholders (e.g. "[Hiring Manager]", "[Company Name]") — anything unknown is simply omitted.
+- The text opens directly with first-person content about the candidate's fit for the role.
+- Everything else about generation is unchanged: the best-matching profile is still selected, only facts from the profiles are used, and the user's global AI preferences still override the default style.

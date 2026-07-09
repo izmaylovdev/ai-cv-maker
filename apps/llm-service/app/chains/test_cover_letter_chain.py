@@ -182,3 +182,74 @@ def test_system_prompt_preserves_output_contract():
 
     assert "PROFILE_INDEX:" in _SYSTEM_PROMPT
     assert "COVER_LETTER:" in _SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# US-EXT-5 — generated text is a direct application message, not a formal
+# letter. The style rules live in _SYSTEM_PROMPT, so we assert on its text
+# (case-insensitive keyword checks, robust to exact wording).
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_removes_name_greetings_opening_rule():
+    """F-EXT-5.3 — the old "must open with the candidate's name greetings" rule
+    is removed; the message opens directly with first-person content."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    assert "name greetings" not in _SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_forbids_salutation():
+    """F-EXT-5.1 — no salutation line (e.g. "Dear Hiring Manager,")."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "salutation" in lowered or "dear" in lowered
+
+
+def test_system_prompt_forbids_signoff_and_signature():
+    """F-EXT-5.1 — no closing sign-off phrase and no signature block."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert any(k in lowered for k in ("sign-off", "signoff", "sign off"))
+    assert "signature" in lowered
+
+
+def test_system_prompt_forbids_letterhead_lines():
+    """F-EXT-5.1 — no date, postal-address, "Subject:" or "Re:" lines."""
+    import re
+
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "subject" in lowered
+    assert "address" in lowered
+    # word-boundary match: "candidate" contains the substring "date"
+    assert re.search(r"\bdate\b", lowered)
+
+
+def test_system_prompt_forbids_bracketed_placeholders():
+    """F-EXT-5.2 — no bracketed placeholders like [Company Name]; unknown
+    information is omitted, not templated."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    assert "placeholder" in _SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_frames_output_as_form_field_message_not_letter():
+    """F-EXT-5.1 — the output is a message pasted into a free-text field on a
+    job-application website, explicitly not a letter or an email."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "field" in lowered
+    assert "not a letter" in lowered or "not an email" in lowered
+
+
+def test_system_prompt_requires_first_person_opening():
+    """F-EXT-5.3 — the text opens directly with first-person content about the
+    candidate's fit for the role."""
+    from app.chains.cover_letter_chain import _SYSTEM_PROMPT
+
+    lowered = _SYSTEM_PROMPT.lower()
+    assert "first-person" in lowered or "first person" in lowered
