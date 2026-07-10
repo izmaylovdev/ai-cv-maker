@@ -577,8 +577,8 @@ beautifulsoup4 = ">=4.12"
 | F-AI-8.2 | cv-api persists one `LlmUsage` row per LLM call, containing UserId, Operation, PromptTokens, CompletionTokens, ModelName, and CreatedAt. |
 | F-AI-8.3 | Cost is calculated on-the-fly using a price table in `appsettings.json` keyed by model name (`PromptCostPer1M` and `CompletionCostPer1M` in USD). Unknown models fall back to a configurable default entry. |
 | F-AI-8.4 | Admin API exposes `GET /api/admin/usage` returning per-user aggregates (total prompt tokens, completion tokens, estimated cost USD). |
-| F-AI-8.5 | cv-api exposes `GET /api/usage` (authenticated) returning the calling user's aggregate token counts and estimated cost. |
-| F-AI-8.6 | Angular `/settings/usage` page displays the current user's usage summary. |
+| ~~F-AI-8.5~~ | ~~cv-api exposes `GET /api/usage`~~ — removed; the calling user's aggregates are served by `GET /api/billing` (§14). |
+| ~~F-AI-8.6~~ | ~~Angular usage page~~ — removed; token totals are shown on the Billing page (§14). |
 
 ### 8.2 Technical Specification
 
@@ -632,11 +632,6 @@ New table `LlmUsages`:
 
 #### API
 
-`GET /api/usage` — authenticated, returns:
-```json
-{ "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081 }
-```
-
 `GET /api/admin/usage` — admin-authenticated, returns:
 ```json
 [{ "userId": "…", "email": "…", "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081 }]
@@ -644,7 +639,7 @@ New table `LlmUsages`:
 
 #### Angular
 
-New standalone component `UsageComponent` at `features/settings/usage/`. Route: `/settings/usage`. Linked from the settings page.
+No dedicated page — the user's token totals and spend surface on the Billing page (§14). (The original `UsageComponent`/`/usage` page from this story was retired once the Billing page covered the same data.)
 
 ### 8.3 Out of Scope (MVP)
 
@@ -672,7 +667,7 @@ panel.
 | F-AI-9.6 | Admin can read and update the limit: cv-api exposes `GET`/`PUT /api/admin/usage-limit` (API-key auth, ADR-0005); admin-api proxies them; admin-ui provides a control to view and change the value. |
 | F-AI-9.7 | A non-positive or non-numeric limit is rejected (`PUT` returns 400); the limit applies globally to all users. |
 | F-AI-9.8 | When the Angular app receives a 402 `usage_limit_exceeded` from any AI action, it shows a distinct "spending limit reached" message rather than the generic AI-failure message. |
-| F-AI-9.9 | The `/settings/usage` page displays the user's effective spending limit and remaining budget (limit − accrued cost, floored at 0) alongside their accrued cost. |
+| ~~F-AI-9.9~~ | ~~Usage page shows the limit and remaining budget~~ — removed; the allowance, spend, and remaining balance are shown on the Billing page (§14). |
 
 ### 9.2 Technical Specification
 
@@ -733,16 +728,9 @@ the current limit and a Save button that `PUT`s the new value. Shows success/err
 `code === 'usage_limit_exceeded'` to a distinct user-facing message reused by the
 AI entry points (AI chat, CV generation, and any other LLM-backed action).
 
-`GET /api/usage` is extended to include the effective limit:
-
-```json
-{ "promptTokens": 12000, "completionTokens": 3000, "estimatedCostUsd": 0.081, "limitUsd": 0.50 }
-```
-
-(`UsageController` composes `limitUsd` from `UsageService.GetEffectiveLimitAsync()`;
-the shared `Summarize`/admin DTOs are unchanged.) The `/settings/usage` page
-shows the limit and the remaining budget (`limitUsd − estimatedCostUsd`, floored
-at 0) next to the accrued cost.
+The user-facing view of the limit lives on the Billing page: `GET /api/billing`
+(§14) returns the allowance, spend, and balance derived from
+`UsageService.GetEffectiveLimitAsync()` and `Summarize`.
 
 ### 9.3 Out of Scope (MVP)
 
@@ -1054,8 +1042,9 @@ verbatim (`LlmUsage`, `UsageService.Summarize`). §9's enforcement mechanism
 helper) is reused too — the only change is that the threshold it compares
 against is now the requesting user's **own allowance** rather than one global
 value. The global admin limit (§9.6) becomes the **default allowance** applied
-to users without an explicit account. The existing `/usage` page and
-`GET /api/usage` are left unchanged.
+to users without an explicit account. (The standalone `/usage` page and
+`GET /api/usage` endpoint have since been removed — the Billing page is the
+single user-facing view of tokens, spend, and allowance.)
 
 ### 14.1 Functional Requirements
 
@@ -1145,12 +1134,11 @@ GET /api/billing  →  { "allowanceUsd": 0.50, "spentUsd": 0.081, "balanceUsd": 
   `BillingSummary` interface.
 - `features/billing/billing.component.ts` — standalone `BillingComponent`:
   balance / allowance / spent cards in USD, token totals, a spent-vs-allowance
-  progress bar (turns red at ≥ 100%), light/dark styling (mirrors the existing
-  `UsageComponent` visual language).
+  progress bar (turns red at ≥ 100%), light/dark styling.
 - `app.routes.ts` — new lazy route `{ path: 'billing', canActivate: [authGuard],
   loadComponent: … BillingComponent }`.
 - `app.html` — add a "Billing" sidebar link (e.g. `credit_card` material icon)
-  in the authenticated `<nav>`, after the "Usage" link.
+  in the authenticated `<nav>`.
 - No change to `usage-limit.ts` logic — only the server message copy changes.
 
 #### Out of Scope (MVP)
@@ -1161,8 +1149,6 @@ GET /api/billing  →  { "allowanceUsd": 0.50, "spentUsd": 0.081, "balanceUsd": 
 - Currencies other than USD.
 - Resetting / periodic (monthly) allowances — this is a lifetime cumulative
   allowance, like §9.
-- Consolidating or removing the existing `/usage` page — both pages coexist
-  (`/usage` = token focus, `/billing` = money focus).
 - Soft warnings as the balance approaches zero.
 
 ---
