@@ -49,12 +49,6 @@ export const appRoutes: Route[] = [
       import('./features/settings/settings.component').then((m) => m.SettingsComponent),
   },
   {
-    path: 'usage',
-    canActivate: [authGuard],
-    loadComponent: () =>
-      import('./features/usage/usage.component').then((m) => m.UsageComponent),
-  },
-  {
     path: 'billing',
     canActivate: [authGuard],
     loadComponent: () =>

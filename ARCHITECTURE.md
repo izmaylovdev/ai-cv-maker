@@ -111,7 +111,6 @@ Angular 21 standalone-component application served by Nginx. The Nginx container
 | `/job-profiles/:id/pdf` | `PdfPreviewPageComponent` | `authGuard` |
 | `/chat` | `ChatPageComponent` (hosts `<ai-chat-widget>`) | `authGuard` |
 | `/settings` | `SettingsComponent` (global AI preferences) | `authGuard` |
-| `/usage` | `UsageComponent` (token usage & cost) | `authGuard` |
 | `/billing` | `BillingComponent` (per-user $ balance, allowance & spend, US-AI-14; top-up with country-based payment channel, payment country, top-up history, US-BILL-1) | `authGuard` |
 
 **Key features**
@@ -268,7 +267,6 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `POST /api/cover-letter` | `CoverLetterController` | Generate cover letter from job description (auto-selects profile) |
 | `GET /api/settings/preferences` | `SettingsController` | Read user's global AI preferences |
 | `PUT /api/settings/preferences` | `SettingsController` | Update global AI preferences |
-| `GET /api/usage` | `UsageController` | Current user's token usage, estimated cost, and effective spending limit (`limitUsd`) |
 | `GET /api/billing` | `BillingController` | Current user's per-user billing balance: `{ allowanceUsd, spentUsd, balanceUsd, currency, promptTokens, completionTokens, country }` where `balanceUsd = max(0, allowance − spent)` (US-AI-14; `country` added by US-BILL-1, `null` until asked) |
 | `PUT /api/billing/country` | `BillingController` | Set the user's payment country (`{ country: "UA" }`, ISO alpha-2 uppercase; 400 otherwise) — selects the payment channel (US-BILL-1) |
 | `POST /api/billing/top-up` | `BillingController` | Start a balance top-up (`{ amountUsd: 5\|10\|20 }`) → `{ paymentId, channel, redirectUrl }`. Routes by country: `UA` → Monobank invoice, else Stripe Checkout. 409 without a stored country, 502 on provider failure (US-BILL-1) |
