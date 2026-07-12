@@ -81,6 +81,8 @@ def _usage_proto(usage: TokenUsage):
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         model_name=usage.model_name,
+        cache_read_tokens=usage.cache_read_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
     )
 
 

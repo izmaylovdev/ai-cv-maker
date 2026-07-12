@@ -50,7 +50,7 @@ public class LlmService(
     private static LlmTokenUsage MapUsage(CvApi.Grpc.UsageMetadata? usage) =>
         usage is null
             ? LlmTokenUsage.Empty
-            : new LlmTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.ModelName);
+            : new LlmTokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.ModelName, usage.CacheReadTokens, usage.CacheWriteTokens);
 
     /// <summary>
     /// Executes <paramref name="grpcCall"/> inside the Polly resilience pipeline and

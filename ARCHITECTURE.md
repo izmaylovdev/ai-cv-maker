@@ -322,7 +322,7 @@ Controlled entirely by environment variables — no code changes required:
 | `foundry` | `FOUNDRY_DEPLOYMENT_NAME` / `LLM_MODEL` | Azure AI Foundry (e.g., Claude via Anthropic); requires `FOUNDRY_API_KEY` |
 
 **LLM observability — Langfuse ([ADR-0010](doc/adr/0010-langfuse-llm-observability.md))**
-All model calls in llm-service are traced to a self-hosted Langfuse when configured. Both invocation paths are instrumented through `app/observability.py`: the LangChain path (google/openai/azure) via a `CallbackHandler`, and the direct Anthropic path (anthropic/foundry) via a generation span recording model + token usage. A gRPC server interceptor (`app/grpc/trace_interceptor.py`) opens the root trace per RPC.
+All model calls in llm-service are traced to a self-hosted Langfuse when configured. Both invocation paths are instrumented through `app/observability.py`: the LangChain path (google/openai/azure) via a `CallbackHandler`, and the direct Anthropic path (anthropic/foundry) via a generation span recording model + token usage (including `cache_read_input_tokens` / `cache_creation_input_tokens` once prompt caching engages — US-AI-17, [ADR-0019](doc/adr/0019-anthropic-prompt-caching.md)). A gRPC server interceptor (`app/grpc/trace_interceptor.py`) opens the root trace per RPC.
 
 Tracing is **opt-in and no-op when unconfigured** — it activates only when all three vars are set:
 
@@ -402,6 +402,7 @@ LlmUsage  (no FK constraint; UserId nullable for system calls)
  ├── userId (Guid, nullable, indexed)
  ├── operation  — "Generate" | "Extract" | "Chat" | "UserChat" | "JobChat" | "CoverLetter" | "GenerateAuto"
  ├── promptTokens, completionTokens (int)
+ ├── cacheReadTokens, cacheWriteTokens (int, default 0)  — Anthropic prompt-cache counts (US-AI-17, ADR-0019); priced at discounted rates in UsageService
  ├── modelName  — e.g. "claude-sonnet-4-6"
  └── createdAt (UTC, indexed)
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app import observability
 from app import settings as app_settings
+from app.chains.anthropic_cache import cached_system
 from app.chains.cv_chain import (
     _anthropic_text_content,
     _build_anthropic_messages_client,
@@ -99,7 +100,7 @@ async def select_best_profile(
             model=model,
             max_tokens=256,
             temperature=0,
-            system=_SYSTEM_PROMPT,
+            system=cached_system(_SYSTEM_PROMPT),
             messages=[{"role": "user", "content": user_content}],
         )
         raw = _anthropic_text_content(message).strip()

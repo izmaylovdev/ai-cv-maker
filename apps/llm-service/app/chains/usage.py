@@ -6,6 +6,10 @@ class TokenUsage:
     prompt_tokens: int
     completion_tokens: int
     model_name: str
+    # US-AI-17 — Anthropic prompt-caching counters. Zero on the LangChain path
+    # and for providers that don't report cache usage.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
     @staticmethod
     def empty() -> "TokenUsage":
@@ -17,6 +21,8 @@ class TokenUsage:
             prompt_tokens=getattr(usage, "input_tokens", 0),
             completion_tokens=getattr(usage, "output_tokens", 0),
             model_name=model_name,
+            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
         )
 
     @staticmethod

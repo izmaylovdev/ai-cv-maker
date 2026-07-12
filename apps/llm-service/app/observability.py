@@ -209,10 +209,18 @@ def _anthropic_usage(message: Any) -> dict[str, int] | None:
     if usage is None:
         return None
     try:
-        return {
+        details = {
             "input": int(usage.input_tokens),
             "output": int(usage.output_tokens),
         }
+        # US-AI-17 — surface prompt-cache counts under Anthropic's own key names
+        # so Langfuse prices cached reads/writes correctly. Only added when the
+        # provider actually reports them.
+        for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+            value = getattr(usage, key, None)
+            if isinstance(value, int):
+                details[key] = value
+        return details
     except Exception:  # pragma: no cover
         return None
 
