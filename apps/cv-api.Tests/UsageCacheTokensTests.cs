@@ -214,15 +214,9 @@ public class UsageCacheTokensTests
         Assert.Equal(75, summary.CacheWriteTokens);
     }
 
-    [Fact]
-    public void MyUsageDto_ExposesCacheTokenTotals()
-    {
-        // Additive JSON fields on the /api/usage response (F-AI-17.8).
-        var dto = new MyUsageDto(140, 25, 0.5m, 5m, CacheReadTokens: 500, CacheWriteTokens: 75);
-
-        Assert.Equal(500, dto.CacheReadTokens);
-        Assert.Equal(75, dto.CacheWriteTokens);
-    }
+    // MyUsageDto test removed: the Usage page and its GET /api/usage endpoint were
+    // dropped in favor of Billing (PR #7); the calling user's cache totals are
+    // covered by the BillingSummaryDto test above (F-AI-17.8).
 
     // ---- Acceptance: allowance depletes at the discounted rate -----------------
 
