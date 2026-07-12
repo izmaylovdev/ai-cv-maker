@@ -1,0 +1,16 @@
+# Cloudflare Worker config (ADR-0020). Deploy with:
+#   npx wrangler deploy
+# from this directory (wrangler will prompt for login on first use).
+# Routes require the applysy.works zone to be active on the Cloudflare account
+# and a proxied DNS record to exist for each hostname — see README.md.
+
+name = "applysy-host-router"
+main = "worker.js"
+compatibility_date = "2026-07-13"
+
+routes = [
+  { pattern = "applysy.works/*", zone_name = "applysy.works" },
+  { pattern = "www.applysy.works/*", zone_name = "applysy.works" },
+  { pattern = "app.applysy.works/*", zone_name = "applysy.works" },
+  { pattern = "admin.applysy.works/*", zone_name = "applysy.works" },
+]
