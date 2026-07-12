@@ -2,7 +2,9 @@ using CvApi.Domain.Entities;
 
 namespace CvApi.Infrastructure.ExternalServices.Llm;
 
-public record LlmTokenUsage(int PromptTokens, int CompletionTokens, string ModelName)
+// CacheReadTokens / CacheWriteTokens (US-AI-17): prompt-cache hits and writes,
+// counted separately because providers exclude them from PromptTokens.
+public record LlmTokenUsage(int PromptTokens, int CompletionTokens, string ModelName, int CacheReadTokens = 0, int CacheWriteTokens = 0)
 {
     public static LlmTokenUsage Empty => new(0, 0, string.Empty);
 }

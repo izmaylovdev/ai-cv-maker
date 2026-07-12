@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app import observability
 from app import settings as app_settings
+from app.chains.anthropic_cache import cached_system
 from app.chains.usage import TokenUsage
 from app.chains.user_chat_chain import ChatMessage, ProfileSummary
 from app.guards import guard_chat_history, guard_chat_message
@@ -164,7 +165,7 @@ async def _job_chat_with_llm(
             model=model,
             max_tokens=2048,
             temperature=app_settings.llm_temperature(),
-            system=_SYSTEM_PROMPT,
+            system=cached_system(_SYSTEM_PROMPT),
             messages=messages,
         )
         raw = "".join(

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app import observability
 from app import settings as app_settings
+from app.chains.anthropic_cache import cached_system
 from app.chains.usage import TokenUsage
 from app.guards import guard_cv_text
 from app.schemas import (
@@ -250,7 +251,7 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: s
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
         temperature=app_settings.llm_temperature(),
-        system=system_prompt,
+        system=cached_system(system_prompt),
         messages=[{"role": "user", "content": user_content}],
     )
     document = _parse_document_json(_anthropic_text_content(message), kind="CV")
@@ -402,7 +403,7 @@ async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
         temperature=0,
-        system=_EXTRACT_SYSTEM_PROMPT,
+        system=cached_system(_EXTRACT_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": user_content}],
     )
     document = _parse_document_json(_anthropic_text_content(message), kind="extract")

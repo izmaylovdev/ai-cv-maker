@@ -143,6 +143,12 @@ npx nx daemon --stop >/dev/null 2>&1 || true
 echo "[dev] starting docker dependencies: ${deps[*]}"
 docker compose "${compose_files[@]}" up -d "${deps[@]}"
 
+# Host-run cv-api (dotnet watch) doesn't set RunMigrationsOnStartup — only the
+# containerized cv-api does — so pending EF migrations must be applied here or
+# the first request that touches a new column fails at runtime.
+echo "[dev] applying pending cv-api migrations"
+npx nx run cv-api:db-migrate 2>&1 | sed 's/^/[migrate] /'
+
 for entry in "${servers[@]}"; do
   label="${entry%%=*}"
   target="${entry#*=}"

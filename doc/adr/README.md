@@ -73,3 +73,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0016](0016-distributed-tracing-tempo-otel.md) | Distributed tracing with OpenTelemetry and Grafana Tempo | Accepted |
 | [0017](0017-google-signin-token-trust.md) | Bind Google sign-in to our OAuth client and verified email | Accepted |
 | [0018](0018-isolate-tempo-tracer-provider-from-langfuse.md) | Isolate the Tempo tracer provider from Langfuse | Accepted |
+| [0019](0019-anthropic-prompt-caching.md) | Anthropic prompt caching and cache-aware usage accounting | Proposed |

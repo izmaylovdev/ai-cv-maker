@@ -51,6 +51,9 @@ message UsageMetadata {
   int32  prompt_tokens     = 1;
   int32  completion_tokens = 2;
   string model_name        = 3;
+  // US-AI-17 — Anthropic prompt-cache counters (0 on non-Anthropic providers).
+  int32  cache_read_tokens  = 4;
+  int32  cache_write_tokens = 5;
 }
 
 message GenerateRequest {

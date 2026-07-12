@@ -1318,3 +1318,108 @@ No schema change, no migration. No gRPC proto change (session id is call metadat
   llm-service plumbing accepts one generically, but only the `chat-ui` widget is
   wired to send it in this story.
 - Grouping non-chat LLM calls (Generate/Extract/CoverLetter) into Sessions.
+
+## 17. Prompt Caching and Cache-Aware Usage Accounting (US-AI-17)
+
+Decision record: [ADR-0019](../../adr/0019-anthropic-prompt-caching.md). This
+section specifies the observable contract; the why-and-alternatives live in
+the ADR.
+
+### 17.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-AI-17.1 | Every Anthropic-path request (providers `anthropic`, `foundry`, `anthropic_foundry`, `azure_foundry`) sends its system prompt as a content-block list whose last block carries `cache_control: {"type": "ephemeral"}`. All six chains: chat, generate, extract, user_chat, job_chat, cover_letter, profile_selector. |
+| F-AI-17.2 | On the Anthropic path the editor chat chain keeps the conversation prefix byte-stable across turns: the profile document travels in a second `system` content block (after the instruction block), and `messages` carry only what the client echoes back as history — the user's raw message text and assistant replies. Breakpoints (`cache_control: {"type": "ephemeral"}`): one on the document system block, one on the last content block of the final message, re-applied on every request/tool-loop iteration. String message content is converted to block form only where a breakpoint is applied; earlier messages are never mutated. Follow-up turns therefore reuse the cached prefix (tools + system instructions + document + history up to the previous user turn); applying an edit changes the document block and re-warms from there. |
+| F-AI-17.3 | The profile document is embedded as compact JSON (`model_dump_json(exclude_none=True)`, no `indent`) — in the document system block on the Anthropic path, and in the final human message on the LangChain path (whose prompt structure is otherwise unchanged, F-AI-17.10). |
+| F-AI-17.4 | `TokenUsage` carries `cache_read_tokens` and `cache_write_tokens`, populated from Anthropic `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` (0 when absent). The chat tool-loop accumulator sums them across iterations. LangChain-path responses always yield 0/0. |
+| F-AI-17.5 | gRPC `UsageMetadata` gains `int32 cache_read_tokens = 4` and `int32 cache_write_tokens = 5`; the servicer maps them from `TokenUsage`. Additive proto change — old clients remain wire-compatible. |
+| F-AI-17.6 | cv-api maps the new fields into `LlmTokenUsage` and persists them on `LlmUsage` (two new int columns, EF migration, existing rows default 0). `RecordAsync` still skips rows where all four token counts are zero. |
+| F-AI-17.7 | `UsageService.Summarize` prices cache reads and writes per model: explicit `CacheReadCostPer1M` / `CacheWriteCostPer1M` from `LlmPricing` when configured, otherwise `0.1 × PromptCostPer1M` and `1.25 × PromptCostPer1M`. Rows with zero cache counts price exactly as today. |
+| F-AI-17.8 | Usage summary DTOs (`UserUsageSummaryDto`, `MyUsageDto`, `AdminUsageSummaryDto`, `BillingSummaryDto`) expose total `CacheReadTokens` / `CacheWriteTokens` (additive JSON fields). Billing allowance checks (US-AI-14) keep using `EstimatedCostUsd`, which now reflects discounted cache pricing. |
+| F-AI-17.9 | Langfuse generations report `cache_read_input_tokens` / `cache_creation_input_tokens` in `usage_details` alongside `input`/`output` (Anthropic path only; omitted when zero is acceptable but keys must appear whenever the provider reports them). |
+| F-AI-17.10 | Non-Anthropic providers (google, openai, azure_openai) see no behavioural change: no `cache_control` anywhere in their requests, zero cache counts recorded, identical cost math. |
+
+### 17.2 Technical Specification
+
+#### llm-service
+
+- `app/chains/usage.py` — `TokenUsage` gains `cache_read_tokens: int = 0` and
+  `cache_write_tokens: int = 0`; `from_anthropic` reads the two Anthropic usage
+  fields via `getattr(..., 0)`; `empty()` and the LangChain constructors leave
+  them 0. `chat_chain._add_usage` sums all four counts.
+- Helper module `app/chains/anthropic_cache.py`: `cached_system(text) -> list[dict]`
+  returning `[{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]`,
+  and for chat `mark_last_block(messages) -> messages` which non-destructively
+  copies the final message, converts string content to block form, and sets
+  `cache_control` on its last block (works for both text turns and
+  `tool_result` turns). Earlier messages are never mutated (prefix stability).
+- Chat prompt structure (Anthropic path only): `system` is a block list —
+  block 1: instruction prompt (incl. cross-profile guidance when applicable),
+  block 2: `"Current profile (JSON — address nodes by their \"id\"):\n{compact doc json}"`
+  with `cache_control`. The final user message is the raw user message text
+  (matching byte-for-byte what cv-api echoes back as history on the next
+  turn — this is what makes the conversation prefix cache-stable, the flaw
+  found in verification). The LangChain chat path keeps the existing
+  `_build_prompt` document-in-final-message structure.
+- Call sites: `_chat_anthropic` (system blocks + final message, every loop
+  iteration), `_generate_cv_foundry_raw`, `_extract_profile_foundry_raw`, and
+  the Anthropic branches of `user_chat_chain`, `job_chat_chain`,
+  `cover_letter_chain`, `profile_selector_chain` (system only).
+- `chat_chain._build_prompt` — drop `indent=2` (LangChain path).
+- `app/observability.py` — `_anthropic_usage` adds
+  `"cache_read_input_tokens"` / `"cache_creation_input_tokens"` keys when the
+  message usage exposes them.
+- Haiku 4.5 minimum cacheable prefix is 4096 tokens: single-shot chains whose
+  system prompt is shorter simply never populate the cache (no error, no write
+  charge) — the breakpoints are still sent so caching activates automatically
+  where the prefix qualifies.
+
+#### gRPC
+
+`proto/llm_service.proto`:
+
+```proto
+message UsageMetadata {
+  int32  prompt_tokens      = 1;
+  int32  completion_tokens  = 2;
+  string model_name         = 3;
+  int32  cache_read_tokens  = 4;
+  int32  cache_write_tokens = 5;
+}
+```
+
+Regenerate with `npm run grpc:generate` (root `.venv` with `grpcio-tools`).
+
+#### cv-api
+
+- `LlmTokenUsage(int PromptTokens, int CompletionTokens, string ModelName, int CacheReadTokens = 0, int CacheWriteTokens = 0)`;
+  mapping in `LlmService.cs` copies fields 4/5.
+- `LlmUsage` entity + migration `AddCacheTokensToLlmUsage`
+  (`CacheReadTokens`, `CacheWriteTokens`, int, default 0).
+- `LlmPricingModel` gains `decimal? CacheReadCostPer1M` /
+  `decimal? CacheWriteCostPer1M`; `Summarize` applies the fallback multipliers
+  (0.1 / 1.25 × `PromptCostPer1M`) when null.
+- DTO additions per F-AI-17.8.
+
+#### Data model
+
+`LlmUsages`: `+CacheReadTokens int not null default 0`,
+`+CacheWriteTokens int not null default 0`.
+
+#### API
+
+No new endpoints. `GET /api/usage/me`, admin usage summary, and the billing
+summary gain the two additive token fields.
+
+#### Angular
+
+No changes (additive JSON fields are ignored by existing clients).
+
+#### Out of scope (MVP)
+
+- Rendering cache-token columns in admin-ui / usage screens.
+- Cache-friendly history trimming (chunked trim instead of the sliding
+  20-turn window) — noted in ADR-0019 as a follow-up.
+- 1-hour TTL, cache pre-warming, Batch API for evals.
+- Any change to the LangChain provider paths.

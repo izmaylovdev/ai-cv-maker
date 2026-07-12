@@ -16,8 +16,8 @@ public class UsageController(UsageService usageService) : ControllerBase
     {
         var summary = await usageService.GetUserSummaryAsync(UserId);
         var limit = await usageService.GetEffectiveLimitAsync();
-        return new MyUsageDto(summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, limit);
+        return new MyUsageDto(summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, limit, summary.CacheReadTokens, summary.CacheWriteTokens);
     }
 }
 
-public record MyUsageDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd, decimal LimitUsd);
+public record MyUsageDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd, decimal LimitUsd, int CacheReadTokens = 0, int CacheWriteTokens = 0);

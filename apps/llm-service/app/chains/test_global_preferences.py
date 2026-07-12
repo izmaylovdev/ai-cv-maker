@@ -38,6 +38,16 @@ def basic_profile() -> ProfileDocument:
     )
 
 
+def _system_text(system) -> str:
+    """The system prompt text sent to the model. Since US-AI-17 the Anthropic
+    path sends `system` as a content-block list (to carry the prompt-cache
+    breakpoint); the preference-injection semantics under test are about the
+    TEXT, so unwrap it."""
+    if isinstance(system, str):
+        return system
+    return "".join(block.get("text", "") for block in system)
+
+
 def _make_fake_message(text: str) -> MagicMock:
     """Fake Anthropic message response for client.messages.create."""
     content_block = MagicMock()
@@ -72,8 +82,9 @@ async def test_generate_cv_foundry_raw_injects_preferences_into_system_prompt(ba
         await _generate_cv_foundry_raw(inputs, global_preferences="Always use British English.")
 
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert "User preferences (apply to all output):" in call_kwargs["system"]
-        assert "Always use British English." in call_kwargs["system"]
+        system = _system_text(call_kwargs["system"])
+        assert "User preferences (apply to all output):" in system
+        assert "Always use British English." in system
 
 
 @pytest.mark.asyncio
@@ -92,8 +103,8 @@ async def test_generate_cv_foundry_raw_no_preferences_leaves_system_prompt_uncha
         await _generate_cv_foundry_raw(inputs, global_preferences="")
 
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert call_kwargs["system"] == _SYSTEM_PROMPT
-        assert "User preferences" not in call_kwargs["system"]
+        assert _system_text(call_kwargs["system"]) == _SYSTEM_PROMPT
+        assert "User preferences" not in _system_text(call_kwargs["system"])
 
 
 @pytest.mark.asyncio
@@ -112,7 +123,7 @@ async def test_generate_cv_foundry_raw_whitespace_only_preferences_not_injected(
         await _generate_cv_foundry_raw(inputs, global_preferences="   ")
 
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert "User preferences" not in call_kwargs["system"]
+        assert "User preferences" not in _system_text(call_kwargs["system"])
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +157,7 @@ async def test_cover_letter_generate_with_llm_injects_preferences(basic_profile)
         await _generate_with_llm(request)
 
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert "Always write in British English." in call_kwargs["system"]
+        assert "Always write in British English." in _system_text(call_kwargs["system"])
 
 
 @pytest.mark.asyncio
@@ -174,8 +185,8 @@ async def test_cover_letter_generate_with_llm_no_preferences_clean_system_prompt
         await _generate_with_llm(request)
 
         call_kwargs = mock_client.messages.create.call_args[1]
-        assert call_kwargs["system"] == _SYSTEM_PROMPT
-        assert "User preferences" not in call_kwargs["system"]
+        assert _system_text(call_kwargs["system"]) == _SYSTEM_PROMPT
+        assert "User preferences" not in _system_text(call_kwargs["system"])
 
 
 @pytest.mark.asyncio
@@ -203,7 +214,7 @@ async def test_cover_letter_preferences_placed_before_system_prompt(basic_profil
 
         await _generate_with_llm(request)
 
-        system = mock_client.messages.create.call_args[1]["system"]
+        system = _system_text(mock_client.messages.create.call_args[1]["system"])
         prefs_pos = system.index("Use 5 sentences max.")
         system_prompt_pos = system.index(_SYSTEM_PROMPT[:40])
         assert prefs_pos < system_prompt_pos, "preferences must appear before the default system prompt"

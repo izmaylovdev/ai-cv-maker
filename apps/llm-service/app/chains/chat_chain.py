@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app import observability
 from app import settings as app_settings
+from app.chains.anthropic_cache import mark_last_block
 from app.chains.usage import TokenUsage
 from app.guards import guard_chat_history, guard_chat_message
 from app.chains.cv_chain import (
@@ -134,6 +135,13 @@ Current profile (JSON — address nodes by their "id"):
 User message: {message}
 """
 
+# Revised F-AI-17.2/17.3 — on the Anthropic path the profile document travels in
+# a SECOND system block under this header (not in the final user message). The
+# history the client echoes back carries only the raw user text, so turn N's
+# request is a byte-prefix of turn N+1's and the cache-marked document block can
+# actually be read across turns.
+_DOC_BLOCK_PREFIX = 'Current profile (JSON — address nodes by their "id"):\n'
+
 # Tool definitions for the Anthropic tool-use loop (US-AI-13). Resolved
 # in-process by _resolve_tool against the profiles cv-api passed down.
 _TOOLS = [
@@ -241,10 +249,26 @@ def _unparseable_response(raw: str, exc: Exception, *, stop_reason: object = Non
 
 
 def _build_prompt(profile: ProfileDocument, message: str) -> str:
+    # LangChain path only (revised F-AI-17.2 moved the Anthropic-path document
+    # into a system block — see _document_block). Compact JSON (no indent) —
+    # fewer tokens and deterministic output (US-AI-17, F-AI-17.3).
     return _HUMAN_TEMPLATE.format(
-        document=profile.model_dump_json(indent=2, exclude_none=True),
+        document=profile.model_dump_json(exclude_none=True),
         message=message,
     )
+
+
+def _document_block(profile: ProfileDocument) -> dict:
+    """The profile document as the cache-marked second system block.
+
+    Built the same way on every request — model_dump_json is deterministic, so
+    for an unchanged document this block is byte-identical across turns, which
+    is what lets a follow-up turn hit the provider's prompt cache (US-AI-17)."""
+    return {
+        "type": "text",
+        "text": f"{_DOC_BLOCK_PREFIX}{profile.model_dump_json(exclude_none=True)}",
+        "cache_control": {"type": "ephemeral"},
+    }
 
 
 def _first_paragraph_text(node: BlockNode) -> str:
@@ -366,11 +390,14 @@ def _add_usage(acc: Optional[TokenUsage], usage, model: str) -> TokenUsage:
         prompt_tokens=acc.prompt_tokens + turn.prompt_tokens,
         completion_tokens=acc.completion_tokens + turn.completion_tokens,
         model_name=turn.model_name or acc.model_name,
+        cache_read_tokens=acc.cache_read_tokens + turn.cache_read_tokens,
+        cache_write_tokens=acc.cache_write_tokens + turn.cache_write_tokens,
     )
 
 
 async def _chat_anthropic(
     provider: str,
+    profile: ProfileDocument,
     messages: list[dict],
     other_profiles: list[OtherProfile],
 ) -> tuple[ChatResponse, TokenUsage]:
@@ -379,17 +406,26 @@ async def _chat_anthropic(
     model = _get_anthropic_model(provider)
     client = _build_anthropic_messages_client(provider)
     tools_enabled = bool(other_profiles)
-    system = _system_prompt(other_profiles, tools_enabled=tools_enabled)
+    # US-AI-17 (revised F-AI-17.2) — two system blocks: the instructions, then
+    # the profile document carrying the cache breakpoint. Caching is prefix-
+    # based, so the marker on block 2 covers block 1 as well.
+    system = [
+        {"type": "text", "text": _system_prompt(other_profiles, tools_enabled=tools_enabled)},
+        _document_block(profile),
+    ]
 
     total_usage: Optional[TokenUsage] = None
     for _ in range(_MAX_TOOL_ITERATIONS):
+        # US-AI-17 — a second breakpoint on the final message's last block,
+        # re-applied every iteration. mark_last_block copies, so `messages`
+        # (re-sent next iteration as history) stays plain.
         kwargs: dict = dict(
             name="chat",
             model=model,
             max_tokens=_MAX_TOKENS,
             temperature=app_settings.llm_temperature(),
             system=system,
-            messages=messages,
+            messages=mark_last_block(messages),
         )
         if tools_enabled:
             kwargs["tools"] = _TOOLS
@@ -473,17 +509,17 @@ async def _chat_with_llm(
     other_profiles: list[OtherProfile],
 ) -> tuple[ChatResponse, TokenUsage]:
     provider = app_settings.llm_provider()
-    user_content = _build_prompt(profile, message)
-
-    messages: list[dict] = []
-    for h in history:
-        messages.append({"role": h.role, "content": h.content})
-    messages.append({"role": "user", "content": user_content})
 
     if provider in ("anthropic", "foundry", "anthropic_foundry", "azure_foundry"):
-        return await _chat_anthropic(provider, messages, other_profiles)
+        # Revised F-AI-17.2: the document travels in a system block; the final
+        # user message is the RAW text — byte-equal to what the client echoes
+        # back as history next turn, so consecutive turns share a cacheable
+        # prefix.
+        messages: list[dict] = [{"role": h.role, "content": h.content} for h in history]
+        messages.append({"role": "user", "content": message})
+        return await _chat_anthropic(provider, profile, messages, other_profiles)
 
-    return await _chat_langchain(history, user_content, other_profiles)
+    return await _chat_langchain(history, _build_prompt(profile, message), other_profiles)
 
 
 async def chat_reply(

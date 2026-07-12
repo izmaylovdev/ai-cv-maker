@@ -301,3 +301,20 @@ A "conversation" is one continuous use of the chat widget: it begins when the wi
 - When I reload the page (a fresh widget) and send more messages, those messages appear under a *different* Session — not mixed in with the previous one.
 - The Session still shows which user it belongs to (existing per-user attribution is unchanged).
 - With Langfuse not configured (no credentials), the chat works exactly as before — sending a message succeeds and nothing about the user-facing behaviour changes.
+
+---
+
+### US-AI-17 — Pay the discounted cached rate for repeated AI prompt content
+
+**As an** operator paying for the app's LLM usage,
+**I want** the parts of a prompt that repeat across requests — the assistant's standing instructions, the open profile document, and earlier turns of a conversation — to be served from the provider's prompt cache and billed at its discounted cached rate,
+**so that** multi-turn chat and repeated AI operations cost a fraction of today's input-token spend, without any change in what users see.
+
+**Context:** Today every chat turn re-sends the full instructions, the whole profile document, and the entire conversation history at full input-token price, and the in-request tool loop re-sends the growing message list on every iteration. The provider reports cached tokens separately from ordinary input tokens, so usage accounting must also learn the new counts — otherwise recorded usage under-counts prompts and mis-prices requests once caching is on.
+
+**Acceptance criteria:**
+- All AI features (in-editor chat and its edit proposals, CV generation, CV import, cover letter, job chat, the profiles-page assistant) behave exactly as before from the user's perspective — same kinds of replies, valid documents, no new errors.
+- When I send a follow-up message in the same chat conversation, the recorded usage for that turn shows a large share of the prompt served from cache: the trace/usage details in Langfuse show non-zero cached-read input tokens for the second and later turns.
+- Recorded usage (the usage summary an admin sees, and the per-request usage records) includes the cached token counts, and the estimated cost prices cached tokens at the provider's discounted rates instead of the full input price.
+- For requests with no cached content, and for providers without prompt caching (the Google/OpenAI paths), recorded usage and estimated cost are exactly as today — the new counts are simply zero.
+- A user's billing allowance depletes according to the discounted pricing: an identical follow-up turn consumes measurably less of the allowance than its first-turn equivalent.

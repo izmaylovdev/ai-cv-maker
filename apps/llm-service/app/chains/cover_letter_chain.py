@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from app import observability
 from app import settings as app_settings
+from app.chains.anthropic_cache import cached_system
 from app.chains.usage import TokenUsage
 from app.chains.cv_chain import (
     _anthropic_text_content,
@@ -129,7 +130,7 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, Tok
             model=model,
             max_tokens=1024,
             temperature=app_settings.llm_temperature(),
-            system=system_prompt,
+            system=cached_system(system_prompt),
             messages=[{"role": "user", "content": user_content}],
         )
         raw = _anthropic_text_content(message).strip()

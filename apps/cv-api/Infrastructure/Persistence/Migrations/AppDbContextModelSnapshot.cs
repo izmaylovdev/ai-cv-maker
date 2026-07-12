@@ -123,6 +123,12 @@ namespace cv_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("CacheReadTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CacheWriteTokens")
+                        .HasColumnType("integer");
+
                     b.Property<int>("CompletionTokens")
                         .HasColumnType("integer");
 

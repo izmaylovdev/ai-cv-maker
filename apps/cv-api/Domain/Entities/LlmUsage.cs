@@ -7,6 +7,8 @@ public class LlmUsage
     public string Operation { get; set; } = string.Empty;
     public int PromptTokens { get; set; }
     public int CompletionTokens { get; set; }
+    public int CacheReadTokens { get; set; }
+    public int CacheWriteTokens { get; set; }
     public string ModelName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -11,6 +11,13 @@ public class LlmPricingModel
 {
     public decimal PromptCostPer1M { get; set; }
     public decimal CompletionCostPer1M { get; set; }
+
+    /// <summary>
+    /// Explicit cache pricing (US-AI-17). When null, fallback multipliers on
+    /// <see cref="PromptCostPer1M"/> apply: 0.1x for reads, 1.25x for writes.
+    /// </summary>
+    public decimal? CacheReadCostPer1M { get; set; }
+    public decimal? CacheWriteCostPer1M { get; set; }
 }
 
 public class LlmPricingOptions
@@ -53,7 +60,8 @@ public class UsageService(
 
     public async Task RecordAsync(Guid? userId, string operation, LlmTokenUsage usage)
     {
-        if (usage.PromptTokens == 0 && usage.CompletionTokens == 0)
+        if (usage.PromptTokens == 0 && usage.CompletionTokens == 0
+            && usage.CacheReadTokens == 0 && usage.CacheWriteTokens == 0)
             return;
 
         db.LlmUsages.Add(new LlmUsage
@@ -62,6 +70,8 @@ public class UsageService(
             Operation = operation,
             PromptTokens = usage.PromptTokens,
             CompletionTokens = usage.CompletionTokens,
+            CacheReadTokens = usage.CacheReadTokens,
+            CacheWriteTokens = usage.CacheWriteTokens,
             ModelName = usage.ModelName,
         });
         await db.SaveChangesAsync();
@@ -167,7 +177,9 @@ public class UsageService(
             "USD",
             summary.PromptTokens,
             summary.CompletionTokens,
-            country);
+            country,
+            summary.CacheReadTokens,
+            summary.CacheWriteTokens);
     }
 
     public async Task<List<AdminUsageSummaryDto>> GetAllUserSummariesAsync()
@@ -182,7 +194,7 @@ public class UsageService(
             .Select(g =>
             {
                 var summary = Summarize(g.Select(r => r.u).ToList());
-                return new AdminUsageSummaryDto(g.Key.UserId!.Value, g.Key.Email, summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd);
+                return new AdminUsageSummaryDto(g.Key.UserId!.Value, g.Key.Email, summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, summary.CacheReadTokens, summary.CacheWriteTokens);
             })
             .OrderByDescending(s => s.EstimatedCostUsd)
             .ToList();
@@ -192,25 +204,34 @@ public class UsageService(
     {
         var models = pricing.Value.Models;
         decimal totalCost = 0;
-        int totalPrompt = 0, totalCompletion = 0;
+        int totalPrompt = 0, totalCompletion = 0, totalCacheRead = 0, totalCacheWrite = 0;
 
         foreach (var row in rows)
         {
             totalPrompt += row.PromptTokens;
             totalCompletion += row.CompletionTokens;
+            totalCacheRead += row.CacheReadTokens;
+            totalCacheWrite += row.CacheWriteTokens;
 
             var key = models.ContainsKey(row.ModelName) ? row.ModelName : "default";
             if (models.TryGetValue(key, out var model))
             {
+                // Cache tokens are additional to PromptTokens (providers report
+                // input_tokens excluding cached content). Fallback rates per
+                // F-AI-17.7: reads at 0.1x, writes at 1.25x the prompt rate.
+                var cacheReadCost = model.CacheReadCostPer1M ?? 0.1m * model.PromptCostPer1M;
+                var cacheWriteCost = model.CacheWriteCostPer1M ?? 1.25m * model.PromptCostPer1M;
                 totalCost += (decimal)row.PromptTokens / 1_000_000m * model.PromptCostPer1M
-                           + (decimal)row.CompletionTokens / 1_000_000m * model.CompletionCostPer1M;
+                           + (decimal)row.CompletionTokens / 1_000_000m * model.CompletionCostPer1M
+                           + (decimal)row.CacheReadTokens / 1_000_000m * cacheReadCost
+                           + (decimal)row.CacheWriteTokens / 1_000_000m * cacheWriteCost;
             }
         }
 
-        return new UserUsageSummaryDto(totalPrompt, totalCompletion, Math.Round(totalCost, 6));
+        return new UserUsageSummaryDto(totalPrompt, totalCompletion, Math.Round(totalCost, 6), totalCacheRead, totalCacheWrite);
     }
 }
 
-public record UserUsageSummaryDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
-public record AdminUsageSummaryDto(Guid UserId, string Email, int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd);
-public record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens, string? Country = null);
+public record UserUsageSummaryDto(int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+public record AdminUsageSummaryDto(Guid UserId, string Email, int PromptTokens, int CompletionTokens, decimal EstimatedCostUsd, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+public record BillingSummaryDto(decimal AllowanceUsd, decimal SpentUsd, decimal BalanceUsd, string Currency, int PromptTokens, int CompletionTokens, string? Country = null, int CacheReadTokens = 0, int CacheWriteTokens = 0);
