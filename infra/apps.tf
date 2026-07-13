@@ -105,6 +105,15 @@ resource "google_cloud_run_v2_service" "llm_service" {
         }
       }
       env {
+        name = "ANTHROPIC_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.anthropic_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
         name  = "FOUNDRY_BASE_URL"
         value = var.foundry_base_url
       }
@@ -174,6 +183,7 @@ resource "google_cloud_run_v2_service" "llm_service" {
     google_secret_manager_secret_iam_member.google_api_key,
     google_secret_manager_secret_iam_member.openai_api_key,
     google_secret_manager_secret_iam_member.foundry_api_key,
+    google_secret_manager_secret_iam_member.anthropic_api_key,
     google_secret_manager_secret_version.langfuse_public_key,
     google_secret_manager_secret_version.langfuse_secret_key,
     google_secret_manager_secret_iam_member.langfuse_public_key,

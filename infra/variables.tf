@@ -84,6 +84,10 @@ variable "openai_model" {
   default = ""
 }
 
+# --- Anthropic (Claude direct API) ---
+# anthropic_api_key secret value is managed out-of-band in Secret Manager
+# (see infra/secrets.tf), not via a tfvar.
+
 # --- Azure AI Foundry (Claude via Foundry) ---
 
 variable "foundry_api_key" {

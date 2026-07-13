@@ -157,6 +157,27 @@ resource "google_secret_manager_secret_iam_member" "foundry_api_key" {
   member    = "serviceAccount:${google_service_account.llm_service.email}"
 }
 
+resource "google_secret_manager_secret" "anthropic_api_key" {
+  secret_id = "anthropic-api-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.secretmanager]
+}
+
+# NOTE: the secret VALUE (versions) is managed out-of-band via
+#   gcloud secrets versions add anthropic-api-key --data-file=-
+# so the key never lives in terraform.tfvars or state. Terraform owns the
+# secret container + IAM only; llm-service reads version = "latest".
+
+resource "google_secret_manager_secret_iam_member" "anthropic_api_key" {
+  secret_id = google_secret_manager_secret.anthropic_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.llm_service.email}"
+}
+
 # ── shared / default-compute-SA secrets (grafana, admin-api) ───────────────────
 
 resource "google_secret_manager_secret" "postgres_admin_password" {
