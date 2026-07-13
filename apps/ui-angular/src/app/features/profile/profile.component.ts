@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { finalize } from 'rxjs';
 import { ProfileService } from './profile.service';
@@ -38,6 +39,7 @@ interface ChatWidgetElement extends HTMLElement {
 @Component({
   selector: 'app-profile',
   standalone: true,
+  imports: [FormsModule],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   templateUrl: './profile.component.html',
 })
@@ -131,6 +133,35 @@ export class ProfileComponent implements OnInit {
   }
 
   readonly profileName = signal('Job Profile');
+
+  // US-PROF-7: click-to-edit header name. Rename is immediate (PATCH, name only)
+  // and independent of the document Save button.
+  readonly editingName = signal(false);
+  private readonly renameInput = viewChild<ElementRef<HTMLInputElement>>('renameInput');
+  nameDraft = '';
+
+  startRename() {
+    this.nameDraft = this.profileName();
+    this.editingName.set(true);
+    setTimeout(() => this.renameInput()?.nativeElement.focus());
+  }
+
+  cancelRename() {
+    this.editingName.set(false);
+  }
+
+  commitRename() {
+    // Guard: the input's removal fires a final blur after Enter/Escape.
+    if (!this.editingName()) return;
+    this.editingName.set(false);
+    const name = this.nameDraft.trim();
+    // Blank or unchanged → cancel client-side, no API call (F-PROF-7.5).
+    if (!name || name === this.profileName()) return;
+    this.profileService.renameProfile(this.profileId, name).subscribe({
+      next: (updated) => this.profileName.set(updated.name),
+      error: () => this.notify.error('Failed to rename profile.'),
+    });
+  }
 
   // The document to push into the builder — the source of truth for save/PDF.
   // Held as a signal so an effect can (re)seed the element whenever either the

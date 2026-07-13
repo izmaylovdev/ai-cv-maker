@@ -77,6 +77,97 @@ test.describe('Profile page (builder-based)', () => {
   });
 });
 
+// US-PROF-7 — Rename a profile from the editor page header
+test.describe('Rename profile from editor header', () => {
+  let patchBodies: Record<string, unknown>[];
+
+  test.beforeEach(async ({ page }) => {
+    await registerFakeProfileBuilder(page);
+    await setupAuth(page);
+    await mockProfileApi(page);
+    await page.goto(`/job-profiles/${PROFILE_ID}`);
+    await expect(page.getByRole('heading', { name: 'Senior Backend Engineer' })).toBeVisible();
+
+    // Capture name-only PATCH calls (F-PROF-7.3/7.4). Registered after
+    // mockProfileApi so it wins for this URL; other methods fall back.
+    patchBodies = [];
+    await page.route(`${API_URL}/job-profiles/${PROFILE_ID}`, (route) => {
+      if (route.request().method() === 'PATCH') {
+        const body = JSON.parse(route.request().postData() || '{}');
+        patchBodies.push(body);
+        route.fulfill({
+          json: { id: PROFILE_ID, name: body.name, fullName: 'Jane Doe', title: 'Software Engineer' },
+        });
+      } else {
+        route.fallback();
+      }
+    });
+  });
+
+  test('turns the header name into an input and saves on Enter via PATCH', async ({ page }) => {
+    // F-PROF-7.3/7.4 — click-to-edit heading, Enter commits immediately.
+    await page.getByRole('heading', { name: 'Senior Backend Engineer' }).click();
+    const input = page.getByRole('textbox');
+    await expect(input).toBeVisible();
+    await input.fill('Fintech Backend Roles');
+    await input.press('Enter');
+
+    await expect(page.getByRole('heading', { name: 'Fintech Backend Roles' })).toBeVisible();
+    expect(patchBodies).toHaveLength(1);
+    // Name-only payload — the document is never sent by a rename.
+    expect(patchBodies[0]).toEqual({ name: 'Fintech Backend Roles' });
+  });
+
+  test('saves the new header name on click-away (blur)', async ({ page }) => {
+    // F-PROF-7.3 — blur commits the edit.
+    await page.getByRole('heading', { name: 'Senior Backend Engineer' }).click();
+    const input = page.getByRole('textbox');
+    await input.fill('Platform Roles');
+    await page.locator('applysy-profile-builder').click({ force: true });
+
+    await expect(page.getByRole('heading', { name: 'Platform Roles' })).toBeVisible();
+    expect(patchBodies).toHaveLength(1);
+    expect(patchBodies[0]).toEqual({ name: 'Platform Roles' });
+  });
+
+  test('Escape restores the previous header name without saving', async ({ page }) => {
+    // F-PROF-7.3 — Escape cancels.
+    await page.getByRole('heading', { name: 'Senior Backend Engineer' }).click();
+    const input = page.getByRole('textbox');
+    await input.fill('Discarded Name');
+    await input.press('Escape');
+
+    await expect(page.getByRole('heading', { name: 'Senior Backend Engineer' })).toBeVisible();
+    expect(patchBodies).toHaveLength(0);
+  });
+
+  test('a blank header name is rejected and the previous name restored', async ({ page }) => {
+    // F-PROF-7.5 — whitespace-only edit cancelled client-side, no API call.
+    await page.getByRole('heading', { name: 'Senior Backend Engineer' }).click();
+    const input = page.getByRole('textbox');
+    await input.fill('   ');
+    await input.press('Enter');
+
+    await expect(page.getByRole('heading', { name: 'Senior Backend Engineer' })).toBeVisible();
+    expect(patchBodies).toHaveLength(0);
+  });
+
+  test('renaming leaves the loaded document untouched', async ({ page }) => {
+    // US-PROF-7 — rename never changes the profile's document content.
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-full-name', 'Jane Doe');
+
+    await page.getByRole('heading', { name: 'Senior Backend Engineer' }).click();
+    const input = page.getByRole('textbox');
+    await input.fill('Renamed Profile');
+    await input.press('Enter');
+
+    await expect(page.getByRole('heading', { name: 'Renamed Profile' })).toBeVisible();
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-full-name', 'Jane Doe');
+    await expect(page.locator('applysy-profile-builder')).toHaveAttribute('data-title', 'Software Engineer');
+    expect(patchBodies[0]).not.toHaveProperty('document');
+  });
+});
+
 test.describe('Profile page error state', () => {
   test('shows error UI when API fails to load', async ({ page }) => {
     await registerFakeProfileBuilder(page);

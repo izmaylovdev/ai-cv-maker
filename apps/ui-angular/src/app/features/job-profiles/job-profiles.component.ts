@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Router } from '@angular/router';
@@ -38,6 +38,11 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
 
   newName = '';
 
+  // US-PROF-7: which row is in inline rename mode, and its draft name.
+  readonly editingId = signal<string | null>(null);
+  private readonly renameInput = viewChild<ElementRef<HTMLInputElement>>('renameInput');
+  editName = '';
+
   ngOnInit() {
     this.load();
   }
@@ -75,7 +80,8 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
   }
 
   create() {
-    const name = this.newName.trim() || 'My Profile';
+    const typedName = this.newName.trim();
+    const name = typedName || 'My Profile';
     const file = this.cvFile();
     this.saving.set(true);
     this.profileService.createProfile(name).subscribe({
@@ -87,8 +93,9 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
         }
         this.profileService.extractFromCv(profile.id, file).subscribe({
           next: (extracted) => {
-            // Keep the user-entered name; persist the extracted document.
-            this.profileService.updateProfile(profile.id, { name, document: extracted.document }).pipe(
+            // A typed name wins; a blank one is derived from the CV (US-PROF-8).
+            const finalName = typedName || extracted.name?.trim() || 'My Profile';
+            this.profileService.updateProfile(profile.id, { name: finalName, document: extracted.document }).pipe(
               finalize(() => this.saving.set(false))
             ).subscribe({
               next: () => this.router.navigate(['/job-profiles', profile.id]),
@@ -150,6 +157,32 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
     this.deletingId.set(id);
     this.profileService.deleteProfile(id).pipe(finalize(() => this.deletingId.set(null))).subscribe({
       next: () => this.profiles.update((list) => list.filter((p) => p.id !== id)),
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      error: () => {},
+    });
+  }
+
+  // US-PROF-7: inline rename on the dashboard row.
+  startRename(profile: JobProfileListItem, event: Event) {
+    event.stopPropagation();
+    this.editingId.set(profile.id);
+    this.editName = profile.name;
+    setTimeout(() => this.renameInput()?.nativeElement.focus());
+  }
+
+  cancelRename() {
+    this.editingId.set(null);
+  }
+
+  commitRename(profile: JobProfileListItem) {
+    // Guard: the input's removal fires a final blur after Enter/Escape.
+    if (this.editingId() !== profile.id) return;
+    this.editingId.set(null);
+    const name = this.editName.trim();
+    // Blank or unchanged → cancel client-side, no API call (F-PROF-7.5).
+    if (!name || name === profile.name) return;
+    this.profileService.renameProfile(profile.id, name).subscribe({
+      next: (updated) => this.profiles.update((list) => list.map((p) => (p.id === updated.id ? updated : p))),
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       error: () => {},
     });

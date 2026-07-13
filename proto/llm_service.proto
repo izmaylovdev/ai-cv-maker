@@ -74,6 +74,7 @@ message ExtractProfileRequest {
 message ExtractProfileResponse {
   ProfileDocumentProto document = 1;
   UsageMetadata usage = 2;
+  string profile_name = 3; // US-PROF-8: LLM-suggested short role label ("" if none)
 }
 
 message ChatMessage {

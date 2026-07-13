@@ -253,9 +253,10 @@ The central backend. Exposes a JSON REST API, owns the database, generates PDFs,
 | `POST /api/job-profiles` | `JobProfileController` | Create profile |
 | `GET /api/job-profiles/:id` | `JobProfileController` | Get full profile → `{ id, name, document }` (ADR-0013) |
 | `PUT /api/job-profiles/:id` | `JobProfileController` | Replace profile content (`{ name, document }`) |
+| `PATCH /api/job-profiles/:id` | `JobProfileController` | Rename profile (`{ name }` only — never touches the document; US-PROF-7) |
 | `DELETE /api/job-profiles/:id` | `JobProfileController` | Delete profile |
 | `POST /api/job-profiles/:id/chat` | `JobProfileController` | Profile-scoped AI chat against the **saved** document (reply + optional patch proposal). Not used by the in-editor chat, which sends the live document to `/api/chat` (US-AI-9); retained for callers that want to edit by stored profile id |
-| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) → `{ name, document }` |
+| `POST /api/job-profiles/:id/extract` | `JobProfileController` | Import profile from CV file (PDF/text, ≤10 MB) → `{ name, document }`; `name` is an LLM-suggested role label from the CV when derivable, else the profile's current name (US-PROF-8) |
 | `GET /api/job-profiles/:id/cvs` | `CvController` | List generated CVs |
 | `POST /api/job-profiles/:id/cvs` | `CvController` | Generate new tailored CV via LLM |
 | `GET /api/job-profiles/:id/cvs/:cvId/pdf` | `CvController` | Download generated CV as PDF |
@@ -304,7 +305,7 @@ A thin async service exposing LLM operations over gRPC only. `app/main.py` runs 
 | Operation | Description |
 |---|---|
 | `Generate` | Takes a profile document + optional notes → returns a tailored `ProfileDocument` (ADR-0013) |
-| `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) |
+| `ExtractProfile` | Takes raw CV text → returns a `ProfileDocument` (header + a `body` block tree inferred from the CV) plus a `profile_name` — an LLM-suggested role label for the profile (US-PROF-8, `""` if none derivable) |
 | `Chat` | Profile-scoped conversational assistant; may read the user's other saved profiles on demand via `list_profiles` / `get_profile` tools (US-AI-13) |
 | `UserChat` | Account-wide chat over profile summaries; may return a `PreferencesUpdate` that cv-api persists to `User.GlobalPreferences` |
 | `JobChat` | Side-panel chat over profile summaries + an open job posting (US-EXT-4); answers questions or returns a `fill` proposal carrying a cover-letter draft |

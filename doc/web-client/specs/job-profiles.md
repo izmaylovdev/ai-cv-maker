@@ -1,6 +1,6 @@
 # Spec: Job Profiles
 
-**Source user stories:** US-PROF-1 – US-PROF-5  
+**Source user stories:** US-PROF-1 – US-PROF-8  
 **Feature area:** Creating and managing multiple job profiles  
 **Status:** Draft
 
@@ -67,6 +67,28 @@ A **Job Profile** is the central data entity of the application. Users may creat
 | F-PROF-6.5 | The seeded document passes `ProfileDocumentSchema.Validate` (block-tree schema, ADR-0014 §13). |
 | F-PROF-6.6 | The template only applies to the blank-create path; bootstrap-from-CV (US-PROF-3) continues to seed from extracted data, not the template. |
 | F-PROF-6.7 | Empty template nodes render as editable scaffolding in the profile editor; the PDF walk skips empty nodes (graceful degradation), so an untouched new profile still yields a near-empty PDF by design. |
+
+### 2.7 Rename a Profile (US-PROF-7)
+
+| # | Requirement |
+|---|-------------|
+| F-PROF-7.1 | Each profile row on the dashboard has a visible rename action (pencil icon) that turns the row's name into an inline text input. |
+| F-PROF-7.2 | Enter or clicking away (blur) saves the new name; Escape cancels and restores the previous name. Activating the rename action never navigates into the profile. |
+| F-PROF-7.3 | The profile name in the editor page header (`/job-profiles/:id`) is editable in place with the same Enter / blur / Escape semantics; a confirmed change is saved immediately (independent of the document Save button). |
+| F-PROF-7.4 | Rename persists via a dedicated name-only API call (`PATCH /api/job-profiles/:id`); the profile's document is never sent or modified by a rename. |
+| F-PROF-7.5 | A blank or whitespace-only name is not saved: the edit is cancelled client-side and the previous name is restored; the API rejects blank names with 400. |
+| F-PROF-7.6 | The saved name survives a full page reload and is consistent on the dashboard list and the editor header. |
+
+### 2.8 Meaningful Name on CV Import (US-PROF-8)
+
+| # | Requirement |
+|---|-------------|
+| F-PROF-8.1 | The LLM extraction call (`ExtractProfile`) additionally returns a suggested profile name — a short role-oriented label (≤ 100 chars) — produced in the same LLM call as the document extraction (no extra round-trip). |
+| F-PROF-8.2 | Name derivation preference order: the CV's stated professional title → a title inferred from the most recent role → the candidate's full name. If none is derivable, the suggested name is empty. |
+| F-PROF-8.3 | `POST /api/job-profiles/:id/extract` returns the suggested name in its `name` field when the LLM produced one; otherwise it returns the profile's current name (existing behaviour). |
+| F-PROF-8.4 | In the create-with-CV flow, a user-typed name always wins; only when the name field was left blank is the suggested name applied to the profile. |
+| F-PROF-8.5 | If extraction fails or yields no usable name, the profile keeps the `"My Profile"` default (existing behaviour). |
+| F-PROF-8.6 | The create form's existing hint "(optional — will be set from CV if blank)" now reflects real behaviour — wording stays as is. |
 
 ---
 
@@ -263,6 +285,88 @@ EF migration change: the document lives in the existing jsonb column.
 
 **Angular:** no component or route change — the editor loads the document via
 `GET /api/profiles/:id` and renders whatever block tree it receives.
+
+---
+
+### 3.7 Rename a Profile (US-PROF-7)
+
+#### API
+
+`PATCH /api/job-profiles/{id}`
+
+Renames the profile without touching its document. JWT required.
+
+Request body:
+```json
+{ "name": "Senior Backend Engineer" }
+```
+
+Response 200:
+```json
+{ "id": "uuid", "name": "Senior Backend Engineer", "fullName": "…", "title": "…" }
+```
+(`JobProfileListItemDto` — same shape as the list/create endpoints.)
+
+Error responses: 400 — name missing, blank, or > 100 chars after trim; 404 — profile not found or not owned by the caller.
+
+**Service:** new `RenameAsync(Guid id, Guid userId, string name)` on `IJobProfileService` / `JobProfileService`. Trims the name, updates `Profile.Name` only. No EF migration (column exists).
+
+> Why a new verb: `PUT /api/job-profiles/{id}` replaces the document (`request.Document ?? Empty()`), so a name-only PUT would wipe the document. PATCH isolates rename semantics (F-PROF-7.4).
+
+#### Angular
+
+- `ProfileService.renameProfile(id, name)` → `PATCH`, returns `JobProfileListItem`.
+- `JobProfilesComponent` (dashboard): per-row pencil button (`event.stopPropagation()`); row enters edit mode (`editingId` signal + name input). Enter/blur → save if trimmed name non-empty and changed, else cancel; Escape → cancel. On success, update the row in the `profiles` signal.
+- `ProfileComponent` (editor header): the `<h1>` name becomes click-to-edit (plus a pencil affordance). Same key semantics; on confirm calls `renameProfile` immediately and updates the `profileName` signal. The existing document Save flow (PUT with `name: profileName()`) is unchanged and stays consistent because the signal holds the new name.
+
+### 3.8 Meaningful Name on CV Import (US-PROF-8)
+
+#### gRPC (proto change — contract source of truth)
+
+`proto/llm_service.proto`:
+
+```proto
+message ExtractProfileResponse {
+  ProfileDocumentProto document = 1;
+  UsageMetadata usage = 2;
+  string profile_name = 3;   // US-PROF-8: LLM-suggested short role label ("" if none)
+}
+```
+
+Regenerate stubs:
+```bash
+npm run grpc:generate
+```
+
+#### llm-service
+
+- `_EXTRACT_SYSTEM_PROMPT` (`app/chains/cv_chain.py`): the model now returns
+  `{ "profileName": str, "document": ProfileDocument }` — one JSON object, same single call.
+  Prompt rules for `profileName`: short role-oriented label (e.g. "Senior Backend Engineer"),
+  ≤ 100 chars; prefer the CV's stated professional title, else infer from the most recent
+  role, else use the candidate's full name; never invent a role not supported by the CV.
+- `ExtractResponse` (`app/schemas.py`) gains `profile_name: str = ""`.
+- Parsing (both Anthropic-direct and LangChain paths): parse the wrapper object; if the model
+  returned a bare `ProfileDocument` (legacy shape), fall back to parsing it as before with
+  `profile_name=""` — extraction must never fail because of the name field.
+- Code-side fallback when the model's `profileName` is blank: `header.title`, then
+  `header.fullName`, else `""`.
+- `servicer.ExtractProfile` maps `result.profile_name` → `profile_name` on the proto response.
+
+#### cv-api
+
+- `LlmExtractResponse` gains `string ProfileName` (`""` when absent); `LlmService.ExtractAsync` maps it from the proto reply.
+- `JobProfileService.ExtractAsync`: returns `new UpdateProfileRequest(suggestedName, document)` where `suggestedName` = trimmed LLM name capped at 100 chars if non-blank, else `profile.Name` (F-PROF-8.3). No controller change — the `name` field already exists on the response DTO.
+
+#### Angular
+
+`JobProfilesComponent.create()`: remember whether the user typed a name (`typedName = this.newName.trim()`). After extraction, the follow-up `updateProfile` uses `typedName || extracted.name || 'My Profile'` — typed name wins, LLM suggestion fills the blank, placeholder is last resort (F-PROF-8.4/8.5). Extraction-failure path is unchanged (profile keeps its creation name).
+
+#### Out of scope (MVP)
+
+- Renaming from within the AI chat / profile-builder web component.
+- Re-suggesting a name when a CV is re-imported into an existing profile from the editor (no such flow exists today).
+- De-duplicating repeated imports of the same CV (two imports may yield two profiles with the same suggested name).
 
 ---
 

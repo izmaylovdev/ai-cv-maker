@@ -17,7 +17,8 @@ public record LlmGenerateRequest(ProfileDocument Profile, string? Message = null
 public record LlmGenerateResponse(ProfileDocument Document, LlmTokenUsage Usage);
 
 public record LlmExtractRequest(string CvText);
-public record LlmExtractResponse(ProfileDocument Document, LlmTokenUsage Usage);
+// ProfileName (US-PROF-8): the LLM-suggested profile name; "" when the model produced none.
+public record LlmExtractResponse(ProfileDocument Document, LlmTokenUsage Usage, string ProfileName = "");
 
 public record LlmChatMessage(string Role, string Content);
 // US-AI-13 — one of the user's other saved profiles, so the in-editor agent can

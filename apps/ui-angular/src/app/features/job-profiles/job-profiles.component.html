@@ -110,7 +110,18 @@
               <span class="material-icons text-base text-blue-600 dark:text-blue-400">work</span>
             </div>
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-semibold text-gray-800 dark:text-white">{{ profile.name }}</p>
+              @if (editingId() === profile.id) {
+                <!-- US-PROF-7: inline rename input. Stops propagation so editing never navigates. -->
+                <input #renameInput type="text" [(ngModel)]="editName"
+                  aria-label="Profile name"
+                  (click)="$event.stopPropagation()"
+                  (keydown.enter)="$event.stopPropagation(); commitRename(profile)"
+                  (keydown.escape)="$event.stopPropagation(); cancelRename()"
+                  (blur)="commitRename(profile)"
+                  class="w-full max-w-xs border border-blue-300 dark:border-blue-600 rounded-lg px-2 py-1 text-sm font-semibold bg-white dark:bg-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+              } @else {
+                <p class="truncate text-sm font-semibold text-gray-800 dark:text-white">{{ profile.name }}</p>
+              }
               @if (profile.fullName || profile.title) {
                 <p class="mt-0.5 truncate text-xs text-gray-400 dark:text-zinc-500">
                   {{ subtitle(profile) }}
@@ -118,6 +129,11 @@
               }
             </div>
             <div class="flex shrink-0 items-center gap-1">
+              <button type="button" (click)="startRename(profile, $event)"
+                title="Rename profile"
+                class="flex h-8 w-8 items-center justify-center rounded-lg bg-transparent border-0 text-gray-400 dark:text-zinc-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer">
+                <span class="material-icons text-base">edit</span>
+              </button>
               <button type="button" (click)="openDefaultPdf(profile, $event)"
                 [disabled]="openingPdfId() === profile.id"
                 title="Open default CV"

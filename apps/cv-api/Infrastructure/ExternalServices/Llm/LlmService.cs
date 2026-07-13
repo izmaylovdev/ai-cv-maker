@@ -116,7 +116,7 @@ public class LlmService(
                 CvText = request.CvText,
             }, BuildCallOptions(null)));
 
-        return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage));
+        return new LlmExtractResponse(FromProto(reply.Document), MapUsage(reply.Usage), reply.ProfileName);
     }
 
     public async Task<LlmChatResponse> ChatAsync(LlmChatRequest request)

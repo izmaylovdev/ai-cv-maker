@@ -12,6 +12,9 @@ public record CreateJobProfileRequest(string Name);
 
 public record UpdateProfileRequest(string Name, ProfileDocument Document);
 
+// US-PROF-7 — name-only rename via PATCH; never carries a document.
+public record RenameProfileRequest(string Name);
+
 public record ChatMessageDto(string Role, string Content);
 public record ChatRequest(string Message, List<ChatMessageDto>? History = null);
 // `PatchJson` carries an "edit" proposal's patch; `Text` a "fill" proposal's

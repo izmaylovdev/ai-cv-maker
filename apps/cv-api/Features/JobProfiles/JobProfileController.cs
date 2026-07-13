@@ -44,6 +44,18 @@ public class JobProfileController(IJobProfileService jobProfileService) : Contro
         return result is null ? NotFound() : Ok(result);
     }
 
+    // US-PROF-7 — name-only rename; the profile's document is never touched.
+    [HttpPatch("{id:guid}")]
+    public async Task<ActionResult<JobProfileListItemDto>> Rename(Guid id, RenameProfileRequest request)
+    {
+        var name = request.Name?.Trim();
+        if (string.IsNullOrEmpty(name) || name.Length > 100)
+            return BadRequest(new { error = "Name is required and must be at most 100 characters." });
+
+        var result = await jobProfileService.RenameAsync(id, UserId, name);
+        return result is null ? NotFound() : Ok(result);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
