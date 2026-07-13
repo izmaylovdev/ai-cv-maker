@@ -1,6 +1,6 @@
 # ADR-0007: Landing page deployment on Cloud Run behind the shared LB
 
-- **Status:** Accepted
+- **Status:** Accepted (LB routing superseded by ADR-0020; the landing service itself is unchanged)
 - **Date:** 2026-06-16
 
 ## Context

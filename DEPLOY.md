@@ -110,7 +110,7 @@ terraform apply
 cd ..
 ```
 
-This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), load balancer, SSL certificates, and Secret Manager secrets.
+This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), and Secret Manager secrets. Public hostnames (TLS + host routing) are served by Cloudflare, configured outside Terraform — see `infra/cloudflare/README.md` (ADR-0020).
 
 **Secrets:** sensitive values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
 
@@ -204,10 +204,10 @@ gcloud run services update admin-ui    --region $REGION --image $AR/admin-ui:lat
 Open https://app.applysy.works — the Angular UI should load and sign in via Google.
 Open https://applysy.works — the marketing landing page should load.
 
-> **DNS:** point A records for `applysy.works`, `www.applysy.works`,
-> `app.applysy.works`, and `admin.applysy.works` at the load balancer IP
-> (`terraform output dns_a_record`). Google-managed certs stay in `PROVISIONING`
-> until each name resolves to that IP.
+> **DNS:** `applysy.works`, `www.applysy.works`, `app.applysy.works`, and
+> `admin.applysy.works` are proxied through Cloudflare, and a Worker routes
+> each host to its Cloud Run origin. Setup and cutover runbook:
+> `infra/cloudflare/README.md` (ADR-0020).
 
 Quick smoke test:
 ```bash

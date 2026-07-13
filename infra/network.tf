@@ -1,7 +1,10 @@
 # Project VPC for Cloud Run Direct VPC egress and Cloud SQL private IP.
 # See doc/adr/0001-llm-service-network-privacy.md for the full decision record.
 
-# compute.googleapis.com is already enabled in lb.tf
+resource "google_project_service" "compute" {
+  service            = "compute.googleapis.com"
+  disable_on_destroy = false
+}
 
 resource "google_project_service" "servicenetworking" {
   service            = "servicenetworking.googleapis.com"

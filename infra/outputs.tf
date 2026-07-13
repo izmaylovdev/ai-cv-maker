@@ -8,11 +8,6 @@ output "landing_url" {
   value       = "https://applysy.works"
 }
 
-output "dns_a_record" {
-  description = "Point these A records at <value>: applysy.works, www.applysy.works, app.applysy.works, admin.applysy.works"
-  value       = google_compute_global_address.app.address
-}
-
 output "ar_repository" {
   description = "Artifact Registry repository — use as image prefix when pushing."
   value       = local.ar_repository

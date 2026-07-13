@@ -61,7 +61,7 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0004](0004-admin-api-main-db-access.md) | admin-api read-only access to the main database | Superseded by 0005 |
 | [0005](0005-admin-api-via-cv-api.md) | admin-api reads user data via a cv-api endpoint | Accepted |
 | [0006](0006-cicd-workload-identity.md) | CI/CD deploys via Workload Identity Federation | Accepted |
-| [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted |
+| [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted (LB routing superseded by 0020) |
 | [0008](0008-cloud-run-scale-to-zero.md) | Scale-to-zero and request-based billing for idle Cloud Run services | Accepted |
 | [0009](0009-smallest-db-tier.md) | Smallest Cloud SQL tier (db-f1-micro) for the idle platform | Accepted |
 | [0010](0010-langfuse-llm-observability.md) | Langfuse for LLM observability (self-hosted, opt-in) | Accepted |
@@ -74,3 +74,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0017](0017-google-signin-token-trust.md) | Bind Google sign-in to our OAuth client and verified email | Accepted |
 | [0018](0018-isolate-tempo-tracer-provider-from-langfuse.md) | Isolate the Tempo tracer provider from Langfuse | Accepted |
 | [0019](0019-anthropic-prompt-caching.md) | Anthropic prompt caching and cache-aware usage accounting | Proposed |
+| [0020](0020-cloudflare-worker-replaces-lb.md) | Replace the global HTTPS load balancer with a Cloudflare Worker proxy | Proposed |

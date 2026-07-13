@@ -459,7 +459,7 @@ The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto hea
 
 ## Infrastructure (GCP)
 
-Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. A global HTTPS load balancer (serverless NEGs) does host-based routing on one IP: `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0007](doc/adr/0007-landing-page-deployment.md)).
+Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. Public hostnames are served through **Cloudflare** (free plan, not in Terraform): Cloudflare terminates TLS and a Worker (`infra/cloudflare/`) does host-based routing to the `run.app` origins — `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0020](doc/adr/0020-cloudflare-worker-replaces-lb.md); it replaced the global HTTPS load balancer of [ADR-0007](doc/adr/0007-landing-page-deployment.md)).
 
 | Cloud Run service | Instances | Ingress | Invoker | VPC egress |
 |---|---|---|---|---|
