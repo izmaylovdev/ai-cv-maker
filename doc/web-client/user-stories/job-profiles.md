@@ -83,3 +83,34 @@ A Job Profile is the central entity of the application. Users can maintain multi
 - The template contains no fake personal data — the header (name, contact) and all content fields start empty; only the structure is provided.
 - Creating a profile by bootstrapping from an existing CV (US-PROF-3) is unaffected — extracted data still drives the document, not the template.
 - The seeded document is valid per the block-tree schema and renders correctly in both the editor and the PDF.
+
+---
+
+### US-PROF-7 — Rename a profile
+
+**As a** user with existing job profiles,
+**I want to** rename a profile after it has been created,
+**so that** its name stays meaningful as my goals change (or fix a name I got wrong at creation).
+
+**Acceptance criteria:**
+- Each profile row on the Job Profiles dashboard has a visible rename action.
+- Activating it lets me edit the name in place; confirming (Enter or clicking away) saves the new name, Escape cancels and restores the old name.
+- The profile name shown as the page title in the profile editor header is also editable in place: activating it turns it into an input with the same Enter / click-away / Escape semantics, and the change is saved immediately.
+- The new name is persisted: it is still shown after a full page reload, on the dashboard list, and in the profile editor page header.
+- Renaming never changes the profile's document content.
+- A blank name is rejected: the previous name is kept.
+
+---
+
+### US-PROF-8 — Imported profiles get a meaningful name
+
+**As a** user who creates a profile by uploading an existing CV,
+**I want** the new profile to be automatically named from the CV's content when I don't type a name myself,
+**so that** my dashboard doesn't fill up with profiles all called "My Profile".
+
+**Acceptance criteria:**
+- When I create a profile with the name field left blank and a CV file attached, the AI extraction step also produces a suggested profile name from the CV content, and the created profile is given that name.
+- The suggested name is a short role-oriented label (e.g. "Senior Backend Engineer"), extracted by the LLM as part of the same import call — no extra AI round-trip. When the CV states a clear professional title it is used; otherwise a name is inferred from the most recent role; failing that, the person's full name is used.
+- The derived name appears on the dashboard list and in the profile editor header — not the "My Profile" placeholder.
+- If I do type a name while also attaching a CV, my typed name wins over the derived one.
+- If extraction fails or the LLM returns no usable name, the profile falls back to the "My Profile" default (current behaviour).

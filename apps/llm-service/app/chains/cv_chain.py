@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 from anthropic import AsyncAnthropic, AsyncAnthropicFoundry
@@ -377,17 +378,55 @@ each entry's `title` is "<degree> in <field> · <institution>" and `dates` the y
 - For skills/tools: emit a title node with text "Skills" followed by a chips node with one \
 chip per skill/tool; normalise names (e.g. "TypeScript" not "typescript").
 - Only include sections that have content. Mint a short unique id for every node.
-- Return ONLY valid JSON for the ProfileDocument. No markdown, no extra text.
+- Also suggest a profile name (US-PROF-8): a short role-oriented label for this profile, \
+e.g. "Senior Backend Engineer", at most 100 characters. Prefer the CV's stated professional \
+title; else infer a title from the most recent role; else use the candidate's full name. \
+Never invent a role not supported by the CV. Use "" if nothing is derivable.
+- Return ONLY one valid JSON object shaped {{ "profileName": str, "document": ProfileDocument }}. \
+No markdown, no extra text.
 
 {schema}
 """.format(schema=_DOCUMENT_SCHEMA)
 
 _EXTRACT_HUMAN_PROMPT = """\
-Extract the profile from the following CV text and return the ProfileDocument JSON.
+Extract the profile from the following CV text and return the {{"profileName", "document"}} JSON object.
 
 CV Text:
 {cv_text}
 """
+
+
+def _fallback_profile_name(document: ProfileDocument) -> str:
+    """F-PROF-8.2 code-side fallback: header.title, then header.fullName, else ""."""
+    return document.header.title or document.header.fullName or ""
+
+
+def _parse_extract_response(text: str) -> ExtractResponse:
+    """Parse the extraction answer: `{"profileName", "document"}` wrapper (US-PROF-8),
+    falling back to a bare ProfileDocument (legacy shape) — the name field must
+    never make extraction fail."""
+    cleaned = _strip_optional_json_fence(text)
+    try:
+        payload = json.loads(cleaned)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and "document" in payload:
+        try:
+            document = ProfileDocument.model_validate(payload["document"])
+        except ValidationError as exc:
+            snippet = text[:2000] + ("…" if len(text) > 2000 else "")
+            raise ValueError(
+                f"Model did not return valid extract document JSON: {exc}\n---\n{snippet}"
+            ) from exc
+        raw_name = payload.get("profileName")
+        profile_name = raw_name.strip() if isinstance(raw_name, str) else ""
+        return ExtractResponse(
+            document=document,
+            profile_name=profile_name[:100] or _fallback_profile_name(document),
+        )
+    # Legacy shape: the model returned a bare ProfileDocument.
+    document = _parse_document_json(text, kind="extract")
+    return ExtractResponse(document=document, profile_name=_fallback_profile_name(document))
 
 
 async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
@@ -406,8 +445,8 @@ async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
         system=cached_system(_EXTRACT_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": user_content}],
     )
-    document = _parse_document_json(_anthropic_text_content(message), kind="extract")
-    return ExtractResponse(document=document), message.usage
+    result = _parse_extract_response(_anthropic_text_content(message))
+    return result, message.usage
 
 
 async def _extract_profile_foundry(cv_text: str, provider: str = "foundry") -> tuple[ExtractResponse, TokenUsage]:
@@ -430,6 +469,6 @@ async def extract_profile(cv_text: str) -> tuple[ExtractResponse, TokenUsage]:
         HumanMessage(content=_EXTRACT_HUMAN_PROMPT.format(cv_text=cv_text)),
     ]
     response = await observability.lc_invoke(llm, messages, name="extract")
-    document = _parse_document_json(str(response.content), kind="extract")
+    result = _parse_extract_response(str(response.content))
     usage = TokenUsage.from_langchain_response(response, _llm_model_name())
-    return ExtractResponse(document=document), usage
+    return result, usage

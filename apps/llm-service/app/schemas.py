@@ -143,3 +143,5 @@ class ExtractRequest(BaseModel):
 
 class ExtractResponse(BaseModel):
     document: ProfileDocument
+    # US-PROF-8: LLM-suggested short role label ("" if none derivable).
+    profile_name: str = ""

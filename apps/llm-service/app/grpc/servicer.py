@@ -108,6 +108,7 @@ class LlmServiceImpl(llm_service_pb2_grpc.LlmServiceServicer):
             return llm_service_pb2.ExtractProfileResponse(
                 document=_document_to_proto(result.document),
                 usage=_usage_proto(usage),
+                profile_name=result.profile_name,
             )
         except _INVALID_ARG_EXCEPTIONS as exc:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))

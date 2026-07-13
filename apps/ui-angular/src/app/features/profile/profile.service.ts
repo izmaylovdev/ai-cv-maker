@@ -35,6 +35,11 @@ export class ProfileService {
     return this.http.put<JobProfile>(`${BASE}/${id}`, update);
   }
 
+  /** Renames a profile without touching its document (US-PROF-7). */
+  renameProfile(id: string, name: string) {
+    return this.http.patch<JobProfileListItem>(`${BASE}/${id}`, { name });
+  }
+
   /** Extracts a document (and a suggested name) from an uploaded CV file. */
   extractFromCv(id: string, file: File) {
     const formData = new FormData();

@@ -67,6 +67,17 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         return new ProfileDto(profile.Id, profile.Name, profile.Document);
     }
 
+    // US-PROF-7: name-only rename — the document is never read or written here.
+    public async Task<JobProfileListItemDto?> RenameAsync(Guid id, Guid userId, string name)
+    {
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        if (profile is null) return null;
+
+        profile.Name = name.Trim();
+        await db.SaveChangesAsync();
+        return new JobProfileListItemDto(profile.Id, profile.Name, profile.Document.Header.FullName, profile.Document.Header.Title);
+    }
+
     public async Task<bool> DeleteAsync(Guid id, Guid userId)
     {
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
@@ -110,7 +121,14 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
 
         // Migrate any legacy section nodes the LLM may still emit (transition period).
         var document = ProfileDocumentSchema.MigrateLegacySections(llmResponse.Document);
-        return new UpdateProfileRequest(profile.Name, document);
+
+        // F-PROF-8.3: prefer the LLM-suggested profile name (trimmed, capped at
+        // 100 chars); fall back to the current name when the LLM produced none.
+        var llmName = llmResponse.ProfileName.Trim();
+        var suggestedName = llmName.Length == 0
+            ? profile.Name
+            : llmName.Length > 100 ? llmName[..100] : llmName;
+        return new UpdateProfileRequest(suggestedName, document);
     }
 
     public async Task<ChatResponse?> ChatAsync(Guid id, Guid userId, ChatRequest request)
