@@ -75,3 +75,17 @@
 - The text contains no bracketed placeholders (e.g. "[Hiring Manager]", "[Company Name]") — anything unknown is simply omitted.
 - The text opens directly with first-person content about the candidate's fit for the role.
 - Everything else about generation is unchanged: the best-matching profile is still selected, only facts from the profiles are used, and the user's global AI preferences still override the default style.
+
+### US-EXT-7 — Extension activates only on the tab where it is invoked
+
+**As a** job seeker who keeps many unrelated tabs open while applying for jobs,
+**I want** the extension's side panel and page scripts to appear only on the tab where I invoked them,
+**so that** the panel doesn't follow me to every tab and the extension doesn't run code on pages I never used it on.
+
+**Acceptance criteria:**
+- Clicking the extension's toolbar icon opens the side panel on the current tab only: switching to another tab hides the panel, and switching back to the original tab shows it again with its state intact.
+- A tab where the extension was never invoked shows no side panel, even while the panel is open on another tab in the same window.
+- The panel can be open on two tabs independently: invoking it on a second tab shows a panel there without closing or affecting the first tab's panel.
+- A freshly loaded page on which the extension has not been invoked runs no extension code (no content script is present at page load).
+- The hotkey flows still work on the current tab exactly as before: `Alt+Shift+F` detects fields and fills a cover letter, `Alt+Shift+D` downloads an optimised CV — including on pages loaded before the extension was ever invoked (the page script is injected on demand).
+- When the user is signed out, pressing a hotkey opens the side panel on the current tab (to prompt login) instead of failing silently.
