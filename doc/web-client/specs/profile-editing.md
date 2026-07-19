@@ -1201,3 +1201,142 @@ Example paragraph "See my portfolio here." with "portfolio" linked:
   plain fields).
 - Editing a link's *label* in the floating editor (URL only); caret-inserted
   links show the URL as the label, selection links keep the selected text.
+
+## 16. Inline Link Display Text (US-EDIT-22)
+
+Extends §15. The floating inline-link editor gains a **Text** field alongside
+the URL field, so a link can read "my portfolio" instead of exposing a raw URL
+in running prose. This supersedes the §15 out-of-scope note "Editing a link's
+*label* in the floating editor (URL only)".
+
+**Scope: `apps/profile-builder-ui` only.** No model, cv-api, llm-service, proto
+or PDF changes are required — `InlineLinkNode.attrs.text` already exists
+(§15.2), `serialize.ts` already derives the label from the link's text content,
+and `PdfService.RenderParagraph` already emits the label as the hyperlink text.
+The round-trip and PDF requirements below are therefore **regression** coverage.
+
+### 16.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EDIT-22.1 | The floating inline-link editor exposes two labelled fields: **Link text** and **Link URL** (mirroring the block link line's editor, `LinkComponent.tsx`). |
+| F-EDIT-22.2 | Opening the editor pre-fills URL with the link's current URL and Text with the link's current visible label — except when the label *mirrors* the URL (a caret-inserted link, §15 F-EDIT-21.3), where Text opens **empty** so mirroring stays live until the user types their own label. |
+| F-EDIT-22.3 | Committing (Enter in either field, or ✓) sets the link's visible label to the Text field's value. |
+| F-EDIT-22.4 | If Text is empty on commit, the label falls back to the URL, so a link is never rendered invisible. |
+| F-EDIT-22.5 | Once the user has supplied a Text value, later URL-only edits must not overwrite it. (Falls out of F-EDIT-22.3/22.4: the label is always `text || url`.) |
+| F-EDIT-22.6 | Committing an **empty URL** still removes the link, regardless of the Text field (unchanged from F-EDIT-21.4). |
+| F-EDIT-22.7 | Escape dismisses the editor leaving both the label and the URL as they were when it opened. |
+| F-EDIT-22.8 | Clicking ✓ closes the editor and it does not immediately re-open — including when the link is the **last node in its paragraph**. |
+| F-EDIT-22.9 | After a ✓ commit the caret sits in the document **after** the link (outside it), so continued typing extends the running text rather than the link label. |
+| F-EDIT-22.10 | An edited label round-trips: editor → `ProfileDocument` → cv-api persistence → reload, and renders as the hyperlink's text in the generated PDF. |
+
+### 16.2 Technical Specification
+
+#### `InlineLinkEditorPlugin` (`apps/profile-builder-ui/src/ProfileBuilder.tsx`)
+
+State: replace the single `inputVal` with `textVal` + `urlVal`, and add
+`originalText` alongside the existing `originalUrl` ref (both captured when the
+bar opens on a *new* node key, per the existing "don't clobber what the user is
+typing" guard).
+
+Open/prefill (in the existing `registerUpdateListener`, the `key !==
+activeNodeKey.current` branch):
+
+```
+const url = linkNode.getURL();
+const label = linkNode.getTextContent();
+originalUrl.current = url;
+originalText.current = label;
+setUrlVal(url === LINK_URL_PLACEHOLDER ? '' : url);
+// Mirrored label (caret-inserted) → leave Text empty so mirroring stays live.
+setTextVal(label === url || label === LINK_URL_PLACEHOLDER ? '' : label);
+```
+
+Commit — `applyUrl(url)` becomes `commit(text, url)`:
+
+- Empty/whitespace URL → `removeByKey(key)` (unchanged).
+- Otherwise, in `editor.update`: `node.setURL(url)` and set the label to
+  `text.trim() || url`. **Delete** the current `label.getTextContent() ===
+  oldUrl` mirroring condition — the `text || url` rule subsumes it and is what
+  makes F-EDIT-22.5 hold.
+- Write the label by setting the text content of the link's first child when it
+  is a `PbTextNode`; if the link has no text child (defensive), create one.
+
+`closeWithoutSaving` (Escape) restores `originalUrl.current` **and**
+`originalText.current`.
+
+#### ✓ commits but the bar re-opens (F-EDIT-22.8 / 22.9)
+
+Suspected root cause — **the implementer must confirm this before fixing, not
+assume it**: `caretAfter` (ProfileBuilder.tsx §15) falls back to
+`node.getParent().selectEnd()` when the link has no next sibling. `selectEnd()`
+descends into the block's *last descendant*, which for a trailing link is the
+link's own text node. The caret therefore lands back **inside** the link, the
+update listener matches `$isInlineLinkNode` again, and `setOpen(true)` re-opens
+the bar the same tick it was closed.
+
+Fix: `caretAfter` must guarantee the caret is outside the link.
+
+- Next sibling exists → select its start (unchanged).
+- No next sibling → append a new empty `PbTextNode` immediately after the link
+  and select it, so there is a real position outside the link to land on.
+
+Only if the verifier shows the bar still re-opens after this fix, add a
+`suppressReopenKey` ref that the update listener honours for one cycle. Do not
+add it pre-emptively.
+
+**As built:** the diagnosis was confirmed empirically (a probe on a trailing
+link reported `hasNext=false` with the anchor inside the link's own `pb-text`
+child). The `caretAfter` fix alone resolved it — `suppressReopenKey` was **not**
+needed and was not added.
+
+**Known cosmetic residue.** The appended tail node persists as an empty text
+run: `serialize.ts` does not filter empty runs, and `PbTextNode` is not a
+Lexical "simple text" node, so it is never normalized away. It reaches the saved
+`ProfileDocument` as `{"type":"text","attrs":{"text":""}}`. Verified behaviour —
+it is **bounded at exactly one per paragraph** (the existing tail is reused, so
+repeat commits and further trailing links add no more), it produces no visible
+artifact in the editor or the PDF, and it becomes the carrier for whatever the
+user types next. It also outlives removing the link. Accepted as a
+data-cleanliness nit rather than a defect; filtering empty text runs in
+`serialize.ts` would close it if the persisted JSON must be pristine.
+
+#### Markup and styles
+
+Two inputs inside `.pb-inline-link-editor`, in order Text then URL:
+
+- `.pb-inline-link-editor__input .pb-inline-link-editor__input--text`,
+  `aria-label="Link text"`, `placeholder="Text"` plus
+  `title="Display text — defaults to the URL when left empty"`. (The longer
+  placeholder this spec first called for clipped mid-word at the field's
+  ~135px width, so the hint moved to the tooltip.)
+- `.pb-inline-link-editor__input .pb-inline-link-editor__input--url`,
+  `aria-label="Link URL"`, `placeholder="https://…"`.
+
+Enter in either field commits both; Escape in either field cancels. The ✕
+button and the container's `onMouseDown` preventDefault are unchanged; the ✓
+button's `aria-label` becomes `"Apply link"` (it no longer applies only a URL).
+
+On open, focus goes to the **URL** field when the link has no URL yet (a
+just-inserted link, whose only required field is the URL) and to the **Text**
+field otherwise (an existing link is more often opened to retitle it).
+
+`ProfileBuilder.css` (~L607–644): the bar stays a flex row; narrow
+`.pb-inline-link-editor__input` from `width: 220px` to a shared
+`flex: 1; min-width: 0` with `--text` ~140px and `--url` ~200px basis, so the
+two-field bar does not overflow narrow viewports.
+
+#### Existing tests to update
+
+`apps/profile-builder-ui/e2e/link-inline.spec.ts` (§15 coverage) selects
+`.pb-inline-link-editor__input`, which becomes ambiguous with two inputs.
+Re-point those to `.pb-inline-link-editor__input--url`. Their assertions are
+unchanged — a URL-only commit must still mirror the URL as the label.
+
+#### Out of scope (MVP)
+
+- Text/URL editing for the standalone **block** link line — it already has both
+  fields (`LinkComponent.tsx`).
+- Rich (bold/italic) content inside a link label — the label stays a single
+  plain-text run.
+- Link title/tooltip, `target`, or `rel` controls.

@@ -374,3 +374,36 @@ onto its own line, and without losing the URL I just entered.
 - The floating editor exposes a single URL field (no "open in new tab" control).
 - Caret-inserted inline links round-trip through serialization, the neutral
   `ProfileDocument` model, cv-api persistence/validation, and PDF rendering.
+
+### US-EDIT-22 — Edit an inline link's display text
+
+**As a** user editing my profile,
+**I want to** set the words an inline link shows, separately from its URL,
+**so that** my prose reads "see my portfolio" instead of exposing a raw
+`https://…` in the middle of a sentence.
+
+Supersedes the US-EDIT-21 out-of-scope note "Editing a link's *label* in the
+floating editor (URL only)".
+
+**Acceptance criteria:**
+- The floating inline-link editor shows two fields: **Text** and **URL**,
+  labelled so it is clear which is which.
+- Opening the editor on an existing inline link pre-fills Text with the link's
+  current visible label and URL with its current URL.
+- Committing the editor (Enter or the ✓ button) updates the link's visible text
+  in the document to what was typed in the Text field, leaving the surrounding
+  sentence intact and the link still inline.
+- If the Text field is left empty on commit, the link displays its URL instead,
+  so a link is never invisible.
+- Committing an empty URL still removes the link (unchanged).
+- Escape dismisses the editor without changing either the text or the URL.
+- For a link inserted at a collapsed caret, the label continues to mirror the
+  URL until the user types their own Text, at which point the typed Text wins
+  and later URL edits no longer overwrite it.
+- The edited display text survives a save and reload, and appears as the link's
+  text in the generated PDF.
+- Clicking ✓ commits both fields and closes the editor — the bar disappears and
+  does not immediately re-open. This holds wherever the link sits in the
+  paragraph, including when it is the last thing on the line.
+- After ✓ the caret is back in the document, positioned after the link, so
+  typing continues the sentence rather than re-entering the link.

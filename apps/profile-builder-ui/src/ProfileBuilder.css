@@ -604,7 +604,7 @@
 /* Inline link (created via selection → Link button). */
 .pb-content a { color: var(--pb-accent); text-decoration: underline; text-underline-offset: 2px; }
 
-/* Floating URL bar for inline link editing. */
+/* Floating Text/URL bar for inline link editing. */
 .pb-inline-link-editor {
   display: flex;
   align-items: center;
@@ -624,8 +624,13 @@
   border: 1px solid var(--pb-rule);
   border-radius: 5px;
   padding: 3px 8px;
-  width: 220px;
+  /* Two fields share the row: flex-basis sets their relative widths and
+     `min-width: 0` lets them shrink rather than overflow a narrow viewport. */
+  flex: 1;
+  min-width: 0;
 }
+.pb-inline-link-editor__input--text { flex-basis: 140px; }
+.pb-inline-link-editor__input--url { flex-basis: 200px; }
 .pb-inline-link-editor__input:focus { outline: none; border-color: var(--pb-accent); }
 .pb-inline-link-editor__btn {
   border: none;
