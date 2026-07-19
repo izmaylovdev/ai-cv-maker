@@ -787,6 +787,7 @@ drag pipeline):
 | F-EDIT-17.3 | An **empty timeline entry description** renders a full-width slot with a *"Describe it — …"* hint, so an inserted timeline reads as fillable rather than blank. |
 | F-EDIT-17.4 | All markers disappear as soon as the region has content; sections/fields with content show no marker (clean résumé output). |
 | F-EDIT-17.5 | A timeline entry's subsections (title, dates, description) are **required and non-removable**: editing may clear a field's text but must not delete or merge the field/line. Backspace at the start — or Delete at the end — of an entry subsection is a no-op; ordinary mid-text editing is unaffected. The entry always round-trips with its title/dates/description structure. |
+| F-EDIT-17.6 | Pasting into a **single-line field** (section heading, entry title, entry dates, title) inserts the clipboard as **one line of plain text inside that field**. Multi-paragraph or rich clipboard content is flattened to a single line — it must never spill out as sibling blocks beside the field, nor split the entry's title/dates/description structure. Pasting into a **description or other flow region** is unaffected and keeps its block structure (paragraphs, lists). |
 
 ### 11.2 Technical Specification
 
@@ -822,6 +823,23 @@ expressible in jsdom), consistent with the other browser-verified editor paths.
 
 Verified by Playwright (`e2e/timeline-entry.spec.ts`) with real keypresses and
 caret placement synced to Lexical, asserting on the serialized `document`.
+
+**Single-line paste (F-EDIT-17.6).** A `SingleLinePastePlugin`
+(ProfileBuilder.tsx) registers `PASTE_COMMAND` at `COMMAND_PRIORITY_HIGH` —
+above `registerRichText`'s own handler, which sits at `COMMAND_PRIORITY_EDITOR`.
+When the caret resolves to an `EntryFieldNode`, `SectionHeadingNode`, or
+`PbTitleNode`, it consumes the event and inserts `text/plain` with whitespace
+collapsed to single spaces.
+
+This is needed because Lexical's default rich-text paste converts clipboard HTML
+to block nodes and calls `RangeSelection.insertNodes`, whose "at least one block"
+branch merges only the **first** block into the caret's block and then
+`insertRangeAfter()`s the rest — landing them as *siblings of the field*. In an
+entry that put a stray paragraph between the title and dates rows: the pasted
+text rendered after the field rather than in it, breaking F-EDIT-17.5.
+
+Verified by Playwright (`e2e/paste-single-line.spec.ts`), which also asserts the
+description path still accepts real block content.
 
 ### 11.3 Out of Scope (this change)
 

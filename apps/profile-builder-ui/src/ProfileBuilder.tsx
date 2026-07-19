@@ -27,6 +27,7 @@ import {
   KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
   LexicalNode,
+  PASTE_COMMAND,
   PointType,
 } from 'lexical';
 import {
@@ -39,6 +40,7 @@ import {
   WIDGET_NODES,
   $isTitleNode,
   $isEntryNode, $isEntryFieldNode, $isTimelineNode, $isPbListNode, $isPbTextNode, $isInlineLinkNode,
+  $isSectionHeadingNode,
   $createEntryNode, $createEntryFieldNode, $createPbTextNode, $createPbParagraphNode, $createInlineLinkNode,
 } from './lexical/widget-nodes';
 import { $createLexicalNode, $readBody, loadDocument } from './serialize';
@@ -120,6 +122,7 @@ export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
         <HistoryPlugin />
         <ListPlugin />
         <EntryStructureGuardPlugin />
+        <SingleLinePastePlugin />
         <TrailingParagraphPlugin />
         <LinkPlugin />
         <InlineLinkEditorPlugin />
@@ -155,6 +158,51 @@ function LoadBodyPlugin({
     bodyJsonRef.current = json;
     loadDocument(editor, body);
   }, [editor, body, bodyJsonRef]);
+  return null;
+}
+
+/**
+ * Single-line fields (entry title/dates, section heading, title) must stay
+ * single-line on paste.
+ *
+ * Lexical's default rich-text paste turns clipboard HTML into block nodes and
+ * hands them to RangeSelection.insertNodes. Its "at least one block" branch
+ * merges only the FIRST block into the caret's block and then calls
+ * insertRangeAfter() for the rest — which drops those blocks in as *siblings of
+ * the field*. Inside an entry that lands a stray paragraph between the title and
+ * dates rows, breaking the title → dates → description contract; the pasted text
+ * renders after the field instead of in it.
+ *
+ * These fields hold one line of plain text (the serializer lifts them into
+ * `attrs`), so flattening the clipboard to a single line is both the correct
+ * shape and what the user expects.
+ */
+function SingleLinePastePlugin() {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return false;
+
+        let node: LexicalNode | null = selection.anchor.getNode();
+        while (node && !$isEntryFieldNode(node) && !$isSectionHeadingNode(node) && !$isTitleNode(node)) {
+          node = node.getParent();
+        }
+        if (!node) return false;
+
+        const text = event.clipboardData?.getData('text/plain');
+        if (!text) return false;
+
+        event.preventDefault();
+        // Collapse any newlines/tabs so a multi-line clipboard cannot split the field.
+        selection.insertText(text.replace(/\s+/g, ' ').trim());
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+  }, [editor]);
   return null;
 }
 
