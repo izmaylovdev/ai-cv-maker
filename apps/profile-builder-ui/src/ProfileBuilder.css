@@ -700,30 +700,37 @@
 .pb-content .pb-list .pb-list__item::marker { color: var(--pb-muted); }
 .pb-content .pb-list .pb-list .pb-list__item { list-style: circle; }
 
-/* Empty editable regions (US-EDIT-17). A structural field is "empty" when its
-   only content is Lexical's empty text span (`<span data-lexical-text>` with no
-   text). Empty regions show their data-placeholder as a ghost hint. */
-.pb-content [data-pb='title']:empty::before,
-.pb-content [data-pb='entry-title']:empty::before,
-.pb-content [data-pb='entry-dates']:empty::before,
-.pb-content [data-pb='title']:has(> span[data-lexical-text]:empty)::before,
-.pb-content [data-pb='entry-title']:has(> span[data-lexical-text]:empty)::before,
-.pb-content [data-pb='entry-dates']:has(> span[data-lexical-text]:empty)::before {
+/* Empty editable regions (US-EDIT-17). A region is "empty" when it has no
+   element children beyond Lexical's empty text spans (`<span data-lexical-text>`
+   with no text). Empty regions show their placeholder as a ghost hint.
+
+   Test for the *absence of real content*, not the presence of an empty span: a
+   populated region carries empty spans too. Committing an inline link leaves one
+   behind on purpose, as the caret's landing spot after the link (US-EDIT-22), so
+   `:has(> span[data-lexical-text]:empty)` matched paragraphs full of text and
+   rendered the hint in front of them. */
+.pb-content [data-pb='title']:not(:has(> *:not(span[data-lexical-text]:empty)))::before,
+.pb-content [data-pb='entry-title']:not(:has(> *:not(span[data-lexical-text]:empty)))::before,
+.pb-content [data-pb='entry-dates']:not(:has(> *:not(span[data-lexical-text]:empty)))::before {
   content: attr(data-placeholder);
   color: var(--pb-muted);
   opacity: 0.7;
   pointer-events: none;
 }
 
-.pb-content [data-pb='entry-title']:has(> span[data-lexical-text]:empty),
-.pb-content [data-pb='entry-dates']:has(> span[data-lexical-text]:empty) {
+.pb-content [data-pb='entry-title']:not(:has(> *:not(span[data-lexical-text]:empty))),
+.pb-content [data-pb='entry-dates']:not(:has(> *:not(span[data-lexical-text]:empty))) {
   min-height: 1.5em;
 }
 
-.pb-content [data-pb='entry'] > p.pb-paragraph:last-child:has(> span[data-lexical-text]:empty) {
+.pb-content
+  [data-pb='entry']
+  > p.pb-paragraph:last-child:not(:has(> *:not(span[data-lexical-text]:empty))) {
   min-height: 1.6em;
 }
-.pb-content [data-pb='entry'] > p.pb-paragraph:last-child:has(> span[data-lexical-text]:empty)::before {
+.pb-content
+  [data-pb='entry']
+  > p.pb-paragraph:last-child:not(:has(> *:not(span[data-lexical-text]:empty)))::before {
   content: 'Describe it — scope, impact, results…';
   color: var(--pb-muted);
   opacity: 0.7;
