@@ -67,7 +67,7 @@ export function timelineNode(entries: EntryNode[] = [entryNode()]): TimelineNode
   return { type: 'timeline', id: newId(), children: entries };
 }
 
-export function titleNode(text = 'Section heading'): TitleNode {
+export function titleNode(text = ''): TitleNode {
   return { type: 'title', id: newId(), attrs: { text } };
 }
 
