@@ -6,4 +6,4 @@ See also: [user-stories](../user-stories/)
 
 | File | Feature Area | Source Stories |
 |------|-------------|----------------|
-| [auto-fill.md](auto-fill.md) | Job application auto-fill | US-EXT-1 |
+| [auto-fill.md](auto-fill.md) | Job application auto-fill | US-EXT-1 … US-EXT-7 |

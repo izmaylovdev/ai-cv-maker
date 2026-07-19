@@ -1,10 +1,23 @@
 import { clearAuthMethod, clearToken, generateCoverLetter, generateAndDownloadCv, getSelectedProfile, getToken } from "./popup/api";
 
-// US-EXT-4 — clicking the toolbar icon opens the side panel (the popup is gone).
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// US-EXT-7 — the side panel is tab-scoped: clicking the toolbar icon enables
+// the panel for that tab only (sidePanel.setOptions) and then opens it. No
+// window-global panel behaviour (setPanelBehavior) and no manifest default.
+const PANEL_PATH = "panel/index.html";
+
+async function openPanelForTab(tabId: number): Promise<void> {
+  try {
+    // chrome.sidePanel.open() requires a user gesture; action.onClicked and
+    // commands.onCommand both qualify, and the gesture survives the awaited
+    // setOptions call.
+    await chrome.sidePanel.setOptions({ tabId, path: PANEL_PATH, enabled: true });
+    await chrome.sidePanel.open({ tabId });
+  } catch { /* sidePanel API unavailable */ }
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id !== undefined) void openPanelForTab(tab.id);
 });
-chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
 async function ensureContentScript(tabId: number): Promise<boolean> {
   try {
@@ -43,7 +56,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (!tab?.id) return;
 
     const token = await getToken();
-    if (!token) { await chrome.sidePanel?.open({ tabId: tab.id }).catch(() => {}); return; }
+    if (!token) { await openPanelForTab(tab.id); return; }
 
     const ready = await ensureContentScript(tab.id);
     if (!ready) return;
@@ -92,7 +105,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   const tabId = tab.id;
   const token = await getToken();
   if (!token) {
-    await chrome.sidePanel?.open({ tabId }).catch(() => {});
+    await openPanelForTab(tabId);
     return;
   }
 

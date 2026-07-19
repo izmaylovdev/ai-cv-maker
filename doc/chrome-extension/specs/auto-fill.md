@@ -564,3 +564,75 @@ No changes.
 - Extension-side or UI changes (the extension pastes whatever text the API returns, unchanged).
 - Per-field style variants driven by `field_context` (e.g. shorter text for "why us" fields) — the field context keeps its current advisory role.
 - Localisation of style rules for non-English postings.
+
+## 6. Tab-Scoped Extension Activation (US-EXT-7)
+
+### 6.1 Functional Requirements
+
+| # | Requirement |
+|---|-------------|
+| F-EXT-7.1 | The side panel has no window-global default: `side_panel.default_path` is removed from `manifest.json` and `setPanelBehavior({ openPanelOnActionClick: true })` is removed from the background script. The panel is enabled per tab, on demand, via `chrome.sidePanel.setOptions({ tabId, path: "panel/index.html", enabled: true })`. |
+| F-EXT-7.2 | Clicking the toolbar icon (`chrome.action.onClicked`) enables and opens the side panel for the clicked tab only. Tabs where the extension was not invoked show no panel; a tab-scoped panel reappears (state intact) when the user returns to its tab. |
+| F-EXT-7.3 | The two signed-out fallbacks in the command handlers (`fill-fields`, `download-optimised-cv`) open the panel on the current tab by calling the same per-tab enable-then-open helper. |
+| F-EXT-7.4 | `content.js` is no longer injected declaratively: the `content_scripts` block is removed from `manifest.json`. The script reaches a page only through the existing `ensureContentScript()` programmatic injection (`chrome.scripting.executeScript`, all frames), which every message-sending path already calls first. |
+| F-EXT-7.5 | Both hotkey flows and the side-panel relay (`PANEL_GET_PAGE_CONTEXT` / `PANEL_INSERT_TEXT`) work unchanged on pages loaded before the extension was invoked, because injection happens on demand at invocation time. |
+| F-EXT-7.6 | Manifest permissions are unchanged (`activeTab`, `scripting`, `sidePanel`, `host_permissions: <all_urls>` all stay). |
+
+### 6.2 Technical Specification
+
+Extension-only change: `apps/chrome-extension/manifest.json` and `apps/chrome-extension/src/background.ts`. No API, gRPC, data-model, or Angular changes.
+
+#### manifest.json
+
+- Delete the `content_scripts` array.
+- Delete the `side_panel` key (`default_path` was its only member). The `"sidePanel"` entry in `permissions` stays — it is what enables the API; the panel path moves to code.
+- Everything else (permissions, host_permissions, commands, oauth2, background) unchanged.
+
+#### background.ts
+
+- Remove both `chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true })` calls (top-of-file and inside `onInstalled`).
+- Add a helper and wire the toolbar icon to it:
+
+```ts
+const PANEL_PATH = "panel/index.html";
+
+async function openPanelForTab(tabId: number): Promise<void> {
+  try {
+    await chrome.sidePanel.setOptions({ tabId, path: PANEL_PATH, enabled: true });
+    await chrome.sidePanel.open({ tabId });
+  } catch { /* sidePanel API unavailable */ }
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id !== undefined) void openPanelForTab(tab.id);
+});
+```
+
+  `chrome.sidePanel.open()` must run in response to a user gesture; both `action.onClicked` and `commands.onCommand` qualify, and the gesture survives the awaited `setOptions` call (extension-API promise chains keep the gesture context).
+- Replace the two signed-out fallbacks `chrome.sidePanel?.open({ tabId }).catch(() => {})` in the command handlers with `openPanelForTab(tabId)`.
+- `ensureContentScript()`, the relay listeners, and all message flows are untouched.
+
+#### Behaviour notes
+
+- A panel enabled via `setOptions({ tabId })` is tab-bound: Chrome hides it when the user switches tabs and restores it (same document, state intact) when they return. Closing the tab discards it.
+- Independent tabs each get their own panel instance when invoked; there is no shared window-level panel any more.
+- The tab-scoped panel persists across in-tab navigations (the `enabled` option is keyed to the tab, not the URL).
+
+#### Tests (vitest, `apps/chrome-extension`)
+
+- New `src/background.test.ts` (mocked `chrome` global, same style as `content.test.ts`):
+  - loading the module registers `chrome.action.onClicked` and never calls `setPanelBehavior`;
+  - firing the `onClicked` handler with a tab calls `sidePanel.setOptions({ tabId, path: "panel/index.html", enabled: true })` then `sidePanel.open({ tabId })`;
+  - firing the `fill-fields` / `download-optimised-cv` command with no stored token calls the same setOptions+open pair for the active tab.
+- New `src/manifest.test.ts`: parse `manifest.json` and assert `content_scripts` is absent, `side_panel` is absent, and `permissions` still contains `sidePanel`, `activeTab`, `scripting`.
+
+#### Verification (real browser)
+
+Playwright launches a persistent Chromium context with `--load-extension` pointing at `dist/apps/chrome-extension`; per-tab panel state is asserted via the extension service worker (`chrome.sidePanel.getOptions({ tabId })`) and content-script absence via `chrome.tabs.sendMessage` PING failing on an un-invoked tab.
+
+### 6.3 Out of scope (MVP)
+
+- Tightening `host_permissions` from `<all_urls>` (still needed so the side-panel relay can inject into cross-origin frames without a fresh `activeTab` grant).
+- Restricting activation to known job-board domains.
+- A UI affordance to close/disable the panel for a tab from within the panel.
+- Migrating existing users' expectations (no onboarding note about the panel no longer following tabs).

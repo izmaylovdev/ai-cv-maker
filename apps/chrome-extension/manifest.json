@@ -28,19 +28,8 @@
   "action": {
     "default_title": "Applysy — Job Fill"
   },
-  "side_panel": {
-    "default_path": "panel/index.html"
-  },
   "oauth2": {
     "client_id": "1055599278171-5hcpj39nu8hf1jg52554a2mt2hms4rlb.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile", "openid"]
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle",
-      "all_frames": true
-    }
-  ]
+  }
 }
