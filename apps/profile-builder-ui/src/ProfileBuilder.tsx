@@ -229,21 +229,31 @@ function EntryStructureGuardPlugin() {
 const LINK_URL_PLACEHOLDER = 'https://';
 
 /**
- * Floating URL bar for inline links (spec §15). Appears below the link while the
- * caret is inside one; ✓/Enter commits the URL, Escape closes without saving, ✕
- * removes the link. All commits target the link by its node key captured when the
- * bar opened — NOT the live selection — because focusing the URL input blurs the
- * editor (clearing the selection), and an earlier version then dropped the typed
- * URL on the floor (US-EDIT-21 / F-EDIT-21.4).
+ * Floating Text/URL bar for inline links (spec §15, extended by §16). Appears
+ * below the link while the caret is inside one; ✓/Enter commits both fields,
+ * Escape closes without saving, ✕ removes the link. All commits target the link
+ * by its node key captured when the bar opened — NOT the live selection —
+ * because focusing an input blurs the editor (clearing the selection), and an
+ * earlier version then dropped the typed URL on the floor (F-EDIT-21.4).
+ *
+ * The visible label is always `text || url` (F-EDIT-22.3/22.4). That single rule
+ * replaces the old "rewrite the label only when it still mirrors the URL" check:
+ * because the committed label is re-derived from the Text field every time, a
+ * later URL-only edit re-commits the user's label unchanged instead of
+ * clobbering it (F-EDIT-22.5), and an empty Text can never leave the link
+ * rendered invisible.
  */
 function InlineLinkEditorPlugin() {
   const [editor] = useLexicalComposerContext();
   const activeNodeKey = useRef<string | null>(null);
   const originalUrl = useRef<string>('');
+  const originalText = useRef<string>('');
   const [open, setOpen] = useState(false);
-  const [inputVal, setInputVal] = useState('');
+  const [textVal, setTextVal] = useState('');
+  const [urlVal, setUrlVal] = useState('');
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
@@ -261,8 +271,13 @@ function InlineLinkEditorPlugin() {
         // Only reset the input when entering a *different* link — don't clobber what the user is typing.
         if (key !== activeNodeKey.current) {
           const url = linkNode.getURL();
+          const label = linkNode.getTextContent();
           originalUrl.current = url;
-          setInputVal(url === LINK_URL_PLACEHOLDER ? '' : url);
+          originalText.current = label;
+          setUrlVal(url === LINK_URL_PLACEHOLDER ? '' : url);
+          // A label that mirrors its URL is a caret-inserted link the user has
+          // not named yet — open Text empty so mirroring stays live (F-EDIT-22.2).
+          setTextVal(label === url || label === LINK_URL_PLACEHOLDER ? '' : label);
           activeNodeKey.current = key;
         }
         setOpen(true);
@@ -276,15 +291,27 @@ function InlineLinkEditorPlugin() {
   }, [editor]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (!open) return;
+    // A link with no URL yet was just inserted, and the URL is its only required
+    // field — start there. An existing link is more often opened to retitle it,
+    // so focus Text.
+    (urlVal ? inputRef : urlInputRef).current?.focus();
   }, [open]);
 
-  // Place the caret just after the link (or at the end of its block) once a
-  // commit/restore finishes, so typing continues in the running text.
+  // Place the caret just after the link once a commit/restore finishes, so
+  // typing continues in the running text. The caret MUST land outside the link:
+  // the old fallback, `parent.selectEnd()`, descends into the block's last
+  // descendant, which for a trailing link is the link's own text node — the
+  // caret lands back inside the link, the update listener matches
+  // $isInlineLinkNode again and re-opens the bar the same tick it closed
+  // (F-EDIT-22.8/22.9). With no next sibling there is no position outside the
+  // link yet, so create one.
   const caretAfter = (node: LexicalNode) => {
     const next = node.getNextSibling();
-    if (next) next.selectStart();
-    else (node.getParent() as ElementNode | null)?.selectEnd();
+    if (next) { next.selectStart(); return; }
+    const tail = $createPbTextNode(undefined, '');
+    node.insertAfter(tail);
+    tail.selectEnd();
   };
 
   // Remove the link by key. A link whose label still mirrors its URL (a freshly
@@ -313,24 +340,27 @@ function InlineLinkEditorPlugin() {
     });
   };
 
-  const applyUrl = (url: string) => {
+  // Write `label` as the link's single plain-text run. Defensively creates the
+  // text child when the link has none, so a label can never go missing.
+  const setLabel = (node: LexicalNode, label: string) => {
+    if (!$isInlineLinkNode(node)) return;
+    const first = node.getFirstChild();
+    if ($isPbTextNode(first)) first.setTextContent(label);
+    else node.append($createPbTextNode(undefined, label));
+  };
+
+  const commit = (text: string, url: string) => {
     const key = activeNodeKey.current;
     if (!key) return;
+    // An empty URL removes the link whatever the Text field holds (F-EDIT-22.6).
     if (!url.trim()) { removeByKey(key); return; }
     setOpen(false);
     activeNodeKey.current = null;
     editor.update(() => {
       const node = $getNodeByKey(key);
       if (!$isInlineLinkNode(node)) return;
-      const oldUrl = node.getURL();
       node.setURL(url);
-      // A caret-inserted link mirrors its URL as the visible label (F-EDIT-21.3);
-      // a selection-wrapped link keeps the selected text, so only rewrite the
-      // label when it still equals the previous URL.
-      const label = node.getFirstChild();
-      if ($isPbTextNode(label) && label.getTextContent() === oldUrl) {
-        label.setTextContent(url);
-      }
+      setLabel(node, text.trim() || url);
       caretAfter(node);
     });
   };
@@ -338,14 +368,16 @@ function InlineLinkEditorPlugin() {
   const closeWithoutSaving = () => {
     const key = activeNodeKey.current;
     if (!key) return;
-    if (!inputVal.trim()) { removeByKey(key); return; }
-    const saved = originalUrl.current;
+    if (!urlVal.trim()) { removeByKey(key); return; }
+    const savedUrl = originalUrl.current;
+    const savedText = originalText.current;
     setOpen(false);
     activeNodeKey.current = null;
     editor.update(() => {
       const node = $getNodeByKey(key);
       if (!$isInlineLinkNode(node)) return;
-      node.setURL(saved);
+      node.setURL(savedUrl);
+      setLabel(node, savedText);
       caretAfter(node);
     });
   };
@@ -365,16 +397,30 @@ function InlineLinkEditorPlugin() {
     >
       <input
         ref={inputRef}
-        className="pb-inline-link-editor__input"
-        placeholder="https://…"
-        value={inputVal}
-        onChange={(e) => setInputVal(e.target.value)}
+        className="pb-inline-link-editor__input pb-inline-link-editor__input--text"
+        aria-label="Link text"
+        placeholder="Text"
+        title="Display text — defaults to the URL when left empty"
+        value={textVal}
+        onChange={(e) => setTextVal(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); applyUrl(inputVal); }
+          if (e.key === 'Enter') { e.preventDefault(); commit(textVal, urlVal); }
           if (e.key === 'Escape') { e.preventDefault(); closeWithoutSaving(); }
         }}
       />
-      <button type="button" className="pb-inline-link-editor__btn pb-inline-link-editor__btn--apply" aria-label="Apply URL" title="Apply (Enter)" onClick={() => applyUrl(inputVal)}>
+      <input
+        ref={urlInputRef}
+        className="pb-inline-link-editor__input pb-inline-link-editor__input--url"
+        aria-label="Link URL"
+        placeholder="https://…"
+        value={urlVal}
+        onChange={(e) => setUrlVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(textVal, urlVal); }
+          if (e.key === 'Escape') { e.preventDefault(); closeWithoutSaving(); }
+        }}
+      />
+      <button type="button" className="pb-inline-link-editor__btn pb-inline-link-editor__btn--apply" aria-label="Apply link" title="Apply (Enter)" onClick={() => commit(textVal, urlVal)}>
         ✓
       </button>
       <button type="button" className="pb-inline-link-editor__btn pb-inline-link-editor__btn--remove" aria-label="Remove link" onClick={removeLink}>
