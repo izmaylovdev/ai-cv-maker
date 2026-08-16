@@ -1,33 +1,36 @@
 # Claude Instructions — Applysy
 
-## Workflow: Spec First, Always
+## Workflow: Design First, Always
 
-For every functional change — new feature, modification, or refactor — use the `add-feature` skill. Do not write code first and spec later.
+For every functional change — new feature, modification, or refactor — use the `add-feature` skill. Do not write code first and describe it later.
 
 The order is:
-1. User story / goal
-2. Spec (what it does, edge cases, acceptance criteria)
+1. Change brief — the goal, plus acceptance criteria written as observable user outcomes
+2. Design note — behaviour, API, data model, edge cases
 3. Tests
 4. Implementation
 5. Verification — prove each acceptance criterion works in a real browser against the local stack (the skill's `browser-verifier` subagent does this)
-6. Documentation update
+6. Documentation update — rewrite the affected feature doc in `doc/<domain>/`
 7. Commit on the feature branch and open a PR automatically (merging stays with the user)
 
-Never skip the spec phase, even for small changes.
+Never skip the design phase, even for small changes.
+
+The brief and design note are working documents for one change: they live in the scratchpad and end up in the PR body, not in the repo. The repo's permanent record is the **feature doc**, which describes how the system behaves **today** — present tense, no US-IDs, no per-increment sections. When behaviour changes, rewrite the affected part of the doc; git history holds the previous version and the ADRs hold the reasoning.
 
 The skill does all work in a dedicated git worktree on a feature branch by default — `main` in the primary checkout stays clean until the branch is reviewed and merged.
 
-**Exception — infrastructure / security / cross-service work:** document the
-decision as an ADR in `doc/adr/` (template in `doc/adr/README.md`) instead of
-a detailed user story. Optionally pair it with an outcome-level user story for
-verification; acceptance criteria must stay observable-outcome level (no
-resource names, no tech choices — those belong in the ADR and spec).
+**Exception — infrastructure / security / cross-service work:** record the
+decision as an ADR in `doc/adr/` (template in `doc/adr/README.md`). Optionally
+pair it with outcome-level acceptance criteria for verification; those must stay
+at the observable-outcome level (no resource names, no tech choices — those
+belong in the ADR).
 
 ## Documentation Must Stay in Sync
 
 After every implementation, verify that relevant docs are updated:
 - `ARCHITECTURE.md` — if the system topology, data model, API routes, or service responsibilities changed
-- `doc/` — any feature-level or API docs in scope
+- `doc/<domain>/` — the feature doc(s) covering what changed; rewrite the affected sections rather than appending a new one
+- `doc/adr/` — a new ADR when the change rests on a decision worth recording
 - `README.md` — if setup, commands, or high-level description changed
 - In-code comments — only where the *why* is non-obvious
 

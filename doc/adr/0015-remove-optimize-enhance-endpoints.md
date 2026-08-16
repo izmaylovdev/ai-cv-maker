@@ -68,3 +68,8 @@ We will remove the entire vertical for both operations:
 - The AI-enhancement spec (`doc/web-client/specs/ai-enhancement.md`) and its
   user stories (US-AI-1/2/3/5) are retained as historical record with REMOVED
   status notes pointing here.
+
+> **Note (2026-08-15):** `doc/` was restructured into behaviour-oriented feature
+> docs; the spec and user-story files named above no longer exist. The removal is
+> recorded in [`doc/web-client/ai-usage.md`](../web-client/ai-usage.md); the
+> original files are in git history.

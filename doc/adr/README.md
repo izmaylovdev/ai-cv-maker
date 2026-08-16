@@ -13,9 +13,9 @@ Write an ADR for work that is **not user-visible behavior**:
 - Cross-cutting technology choices (frameworks, protocols, data stores)
 - Reversals of earlier decisions (supersede the old ADR, don't edit it)
 
-User-visible features keep the regular flow (`doc/<domain>/user-stories/` +
-`doc/<domain>/specs/`). The two can pair: an outcome-level user story may link
-to an ADR that records the decision behind it.
+User-visible behaviour is documented in the domain's feature docs
+(`doc/<domain>/*.md`). The two pair naturally: a feature doc describes what the
+system does and links to the ADR that records why.
 
 ## Rules
 
@@ -75,3 +75,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0018](0018-isolate-tempo-tracer-provider-from-langfuse.md) | Isolate the Tempo tracer provider from Langfuse | Accepted |
 | [0019](0019-anthropic-prompt-caching.md) | Anthropic prompt caching and cache-aware usage accounting | Proposed |
 | [0020](0020-cloudflare-worker-replaces-lb.md) | Replace the global HTTPS load balancer with a Cloudflare Worker proxy | Proposed |
+| [0021](0021-firestore-replaces-cloud-sql.md) | Move the main and admin databases to Firestore | Proposed |
