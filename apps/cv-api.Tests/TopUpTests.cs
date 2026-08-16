@@ -421,7 +421,8 @@ public class TopUpFakeModeOffTests(TopUpFakeModeOffApiFactory factory)
 
 public class TopUpApiFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbName = Guid.NewGuid().ToString();
+    /// <summary>Shared fake persistence for this factory (ADR-0021 seam).</summary>
+    public InMemoryStore Store { get; } = new();
 
     protected virtual bool UseFakeProviders => true;
 
@@ -477,7 +478,7 @@ public class TopUpApiFactory : WebApplicationFactory<Program>
                 .ToList())
                 services.Remove(d);
 
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+            services.UseInMemoryStore(Store);
 
             // Billing tests never talk to the LLM; replace the gRPC-backed service.
             foreach (var d in services.Where(d => d.ServiceType == typeof(ILlmService)).ToList())
@@ -489,7 +490,7 @@ public class TopUpApiFactory : WebApplicationFactory<Program>
     public async Task<Guid> SeedUserAsync()
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<InMemoryStore>();
 
         var user = new User { Email = $"{Guid.NewGuid():n}@example.com" };
         db.Users.Add(user);
@@ -500,7 +501,7 @@ public class TopUpApiFactory : WebApplicationFactory<Program>
     public async Task SeedBillingAccountAsync(Guid userId, decimal allowanceUsd)
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<InMemoryStore>();
 
         db.BillingAccounts.Add(new BillingAccount
         {

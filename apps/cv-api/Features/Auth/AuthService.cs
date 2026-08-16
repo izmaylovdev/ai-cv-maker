@@ -4,20 +4,22 @@ using System.Security.Cryptography;
 using System.Text;
 using CvApi.Domain.Entities;
 using CvApi.Features.Auth.Dtos;
-using CvApi.Infrastructure.Persistence;
+using CvApi.Domain.Repositories;
 using Google.Apis.Auth;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CvApi.Features.Auth;
 
-public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
+public class AuthService(
+    IUserRepository users,
+    IRefreshTokenRepository refreshTokens,
+    IConfiguration config) : IAuthService
 {
     private const int RefreshTokenExpiryDays = 30;
 
     public async Task<AuthResponse?> RegisterAsync(RegisterRequest request)
     {
-        if (await db.Users.AnyAsync(u => u.Email == request.Email))
+        if (await users.EmailExistsAsync(request.Email))
             return null;
 
         var user = new User
@@ -26,15 +28,14 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
         };
 
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        await users.AddAsync(user);
 
         return new AuthResponse(GenerateToken(user), user.Email);
     }
 
     public async Task<AuthResponse?> LoginAsync(LoginRequest request)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+        var user = await users.GetByEmailAsync(request.Email);
         if (user is null || user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return null;
 
@@ -169,20 +170,19 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
     /// </summary>
     private async Task<AuthResponse> LinkOrCreateGoogleUserAsync(string googleId, string email)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId)
-                ?? await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+        var user = await users.GetByGoogleIdAsync(googleId)
+                ?? await users.GetByEmailAsync(email);
 
         if (user is null)
         {
             user = new User { Email = email, GoogleId = googleId };
-            db.Users.Add(user);
+            await users.AddAsync(user);
         }
         else if (user.GoogleId is null)
         {
             user.GoogleId = googleId;
+            await users.UpdateAsync(user);
         }
-
-        await db.SaveChangesAsync();
         return new AuthResponse(GenerateToken(user), user.Email);
     }
 
@@ -192,35 +192,39 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
     public async Task<AuthResponse?> RefreshAsync(string refreshToken)
     {
         var tokenHash = HashToken(refreshToken);
-        var stored = await db.RefreshTokens
-            .Include(r => r.User)
-            .FirstOrDefaultAsync(r => r.Token == tokenHash);
+        var stored = await refreshTokens.GetByTokenAsync(tokenHash);
 
         if (stored is null || stored.IsRevoked || stored.ExpiresAt <= DateTime.UtcNow)
             return null;
 
+        // Firestore has no joins, so the owning user — previously an
+        // .Include() — is a second read. A token whose user has been deleted
+        // is treated as invalid rather than throwing.
+        var owner = await users.GetByIdAsync(stored.UserId);
+        if (owner is null)
+            return null;
+
         // Rotate: revoke old token, issue new one
         stored.IsRevoked = true;
-        await db.SaveChangesAsync();
+        await refreshTokens.UpdateAsync(stored);
 
-        return new AuthResponse(GenerateToken(stored.User), stored.User.Email);
+        return new AuthResponse(GenerateToken(owner), owner.Email);
     }
 
     public async Task<Guid?> GetUserIdByEmailAsync(string email)
     {
-        var user = await db.Users.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == email);
+        var user = await users.GetByEmailAsync(email);
         return user?.Id;
     }
 
     public async Task RevokeRefreshTokenAsync(string refreshToken)
     {
         var tokenHash = HashToken(refreshToken);
-        var stored = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == tokenHash);
+        var stored = await refreshTokens.GetByTokenAsync(tokenHash);
         if (stored is not null && !stored.IsRevoked)
         {
             stored.IsRevoked = true;
-            await db.SaveChangesAsync();
+            await refreshTokens.UpdateAsync(stored);
         }
     }
 
@@ -233,13 +237,12 @@ public class AuthService(AppDbContext db, IConfiguration config) : IAuthService
         var rawBytes = RandomNumberGenerator.GetBytes(64);
         var rawToken = Convert.ToBase64String(rawBytes);
 
-        db.RefreshTokens.Add(new RefreshToken
+        await refreshTokens.AddAsync(new RefreshToken
         {
             UserId = userId,
             Token = HashToken(rawToken),
             ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenExpiryDays),
         });
-        await db.SaveChangesAsync();
 
         return rawToken;
     }

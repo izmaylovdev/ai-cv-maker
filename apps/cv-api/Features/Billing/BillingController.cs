@@ -4,10 +4,9 @@ using System.Text.RegularExpressions;
 using CvApi.Domain.Entities;
 using CvApi.Features.Billing.Channels;
 using CvApi.Features.Usage;
-using CvApi.Infrastructure.Persistence;
+using CvApi.Domain.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Stripe;
 using Stripe.Checkout;
@@ -23,7 +22,8 @@ public partial class BillingController(
     PaymentConfirmationService confirmationService,
     MonobankSignatureVerifier monobankSignatureVerifier,
     IOptions<PaymentsOptions> paymentsOptions,
-    AppDbContext db) : ControllerBase
+    IUserRepository users,
+    ITopUpPaymentRepository payments) : ControllerBase
 {
     [GeneratedRegex("^[A-Z]{2}$")]
     private static partial Regex IsoAlpha2Regex();
@@ -45,12 +45,12 @@ public partial class BillingController(
         if (request.Country is null || !IsoAlpha2Regex().IsMatch(request.Country))
             return BadRequest(new { error = "Country must be a two-letter uppercase ISO 3166-1 alpha-2 code." });
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
+        var user = await users.GetByIdAsync(UserId);
         if (user is null)
             return NotFound();
 
         user.Country = request.Country;
-        await db.SaveChangesAsync();
+        await users.UpdateAsync(user);
         return NoContent();
     }
 
@@ -65,10 +65,7 @@ public partial class BillingController(
         if (!TopUpService.AllowedAmounts.Contains(request.AmountUsd))
             return BadRequest(new { error = "Amount must be one of $5, $10, $20." });
 
-        var country = await db.Users
-            .Where(u => u.Id == UserId)
-            .Select(u => u.Country)
-            .FirstOrDefaultAsync(ct);
+        var country = (await users.GetByIdAsync(UserId, ct))?.Country;
         if (country is null)
             return Conflict(new { error = "A payment country must be stored before topping up." });
 
@@ -172,9 +169,9 @@ public partial class BillingController(
     {
         TopUpPayment? payment = null;
         if (!string.IsNullOrEmpty(externalId))
-            payment = await db.TopUpPayments.FirstOrDefaultAsync(p => p.ExternalId == externalId, ct);
+            payment = await payments.GetByExternalIdAsync(externalId, ct);
         if (payment is null && Guid.TryParse(reference, out var paymentId))
-            payment = await db.TopUpPayments.FirstOrDefaultAsync(p => p.Id == paymentId, ct);
+            payment = await payments.GetByIdAsync(paymentId, ct);
         return payment;
     }
 

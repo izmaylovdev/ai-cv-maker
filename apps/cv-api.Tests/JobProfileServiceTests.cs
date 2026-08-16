@@ -13,21 +13,15 @@ namespace CvApi.Tests;
 // at the client in a format the editor cannot render (US-EDIT-19).
 public class JobProfileServiceTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
-    private static UsageService MakeUsageService(AppDbContext db)
-        => new(db,
+    private static UsageService MakeUsageService(InMemoryStore db)
+        => new(db, db, db, db,
             Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
             Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()),
             Microsoft.Extensions.Options.Options.Create(new CvApi.Features.Billing.BillingOptions()));
 
-    private static JobProfileService MakeService(AppDbContext db)
+    private static JobProfileService MakeService(InMemoryStore db)
         => new(db, new Mock<ILlmService>().Object, MakeUsageService(db));
 
     private static BlockNode Node(string type, Dictionary<string, string>? attrs = null, List<BlockNode>? children = null)
@@ -41,7 +35,7 @@ public class JobProfileServiceTests
     public async Task GetAsync_MigratesLegacySectionNodesToTitlePlusChildren()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         // Profile stored in ADR-0013 section format (before the US-EDIT-19 migration).
         var paragraph = Node("paragraph", children: [Node("text", attrs: new() { ["text"] = "Python expert." })]);
@@ -83,7 +77,7 @@ public class JobProfileServiceTests
     public async Task GetAsync_MigratesMultipleLegacySections()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         var chip = Node("chip", attrs: new() { ["text"] = "Go" });
         var legacyDoc = new ProfileDocument
@@ -134,7 +128,7 @@ public class JobProfileServiceTests
     public async Task GetAsync_LeavesAdt0014DocumentUnchanged()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         // Profile already in ADR-0014 format (title + flat content nodes).
         var doc = new ProfileDocument
@@ -173,13 +167,13 @@ public class JobProfileServiceTests
     public async Task CreateAsync_SeedsDefaultCvTemplate()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         var created = await MakeService(db).CreateAsync(userId, new("Backend Role"));
 
         // Read the stored document back and assert it is the default template,
         // not an empty body.
-        var stored = await db.Profiles.SingleAsync(p => p.Id == created.Id);
+        var stored = db.Profiles.Single(p => p.Id == created.Id);
         var titles = stored.Document.Body.Children
             .Where(n => n.Type == "title")
             .Select(n => n.Attrs.GetValueOrDefault("text"))
@@ -200,7 +194,7 @@ public class JobProfileServiceTests
     [Fact]
     public async Task GetAsync_ReturnsNullForUnknownProfile()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var result = await MakeService(db).GetAsync(Guid.NewGuid(), Guid.NewGuid());
         Assert.Null(result);
     }
@@ -210,7 +204,7 @@ public class JobProfileServiceTests
     {
         var ownerUserId = Guid.NewGuid();
         var otherUserId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         var profile = new Profile { Id = Guid.NewGuid(), UserId = ownerUserId, Name = "Owner", Document = ProfileDocument.Empty() };
         db.Profiles.Add(profile);

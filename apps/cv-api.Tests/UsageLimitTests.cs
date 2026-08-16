@@ -10,13 +10,7 @@ namespace CvApi.Tests;
 
 public class UsageLimitTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
     // Pricing: default model = $3 / 1M prompt, $15 / 1M completion.
     private static IOptions<LlmPricingOptions> Pricing()
@@ -31,8 +25,8 @@ public class UsageLimitTests
     private static IOptions<UsageLimitOptions> Limit(decimal max)
         => Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = max });
 
-    private static UsageService Service(AppDbContext db, decimal limit = 0.50m)
-        => new(db, Pricing(), Limit(limit), Options.Create(new BillingOptions()));
+    private static UsageService Service(InMemoryStore db, decimal limit = 0.50m)
+        => new(db, db, db, db, Pricing(), Limit(limit), Options.Create(new BillingOptions()));
 
     // 1M completion tokens at $15/1M = $15.00 of accrued cost.
     private static LlmUsage Usage(Guid userId, int completionTokens)
@@ -41,7 +35,7 @@ public class UsageLimitTests
     [Fact]
     public async Task EnsureWithinLimit_UnderLimit_DoesNotThrow()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 10_000 completion tokens => $0.15, under the $0.50 cap.
         db.LlmUsages.Add(Usage(userId, 10_000));
@@ -53,7 +47,7 @@ public class UsageLimitTests
     [Fact]
     public async Task EnsureWithinLimit_AtLimit_Throws()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 33_333 completion tokens => $0.499995; add prompt to push to exactly >= 0.50.
         // 34_000 completion tokens => $0.51, >= cap.
@@ -67,7 +61,7 @@ public class UsageLimitTests
     [Fact]
     public async Task EnsureWithinLimit_NullUser_IsExempt()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         // System call (no user) must never be blocked.
         await Service(db, 0.50m).EnsureWithinLimitAsync(null); // no throw
     }
@@ -75,7 +69,7 @@ public class UsageLimitTests
     [Fact]
     public async Task GetEffectiveLimit_FallsBackToOptions_WhenNoDbValue()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var limit = await Service(db, 0.50m).GetEffectiveLimitAsync();
         Assert.Equal(0.50m, limit);
     }
@@ -83,7 +77,7 @@ public class UsageLimitTests
     [Fact]
     public async Task SetLimit_ThenGetEffectiveLimit_ReturnsDbValue()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var svc = Service(db, 0.50m);
 
         await svc.SetLimitAsync(2.5m);
@@ -94,7 +88,7 @@ public class UsageLimitTests
     [Fact]
     public async Task DbLimitOverridesOptions_AndIsEnforced()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         db.LlmUsages.Add(Usage(userId, 34_000)); // $0.51 accrued
         await db.SaveChangesAsync();
@@ -108,7 +102,7 @@ public class UsageLimitTests
     [Fact]
     public async Task SetLimit_RejectsNonPositive()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var svc = Service(db, 0.50m);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => svc.SetLimitAsync(0m));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => svc.SetLimitAsync(-1m));

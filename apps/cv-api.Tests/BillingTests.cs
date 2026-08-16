@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace CvApi.Tests;
 
 // US-AI-14 — per-user billing balance and enforcement against each user's OWN allowance.
-// Service-level unit tests mirroring UsageLimitTests: in-memory AppDbContext, UsageService
+// Service-level unit tests mirroring UsageLimitTests: in-memory InMemoryStore, UsageService
 // constructed directly with IOptions. No WebApplicationFactory.
 //
 // NOTE FOR THE IMPLEMENTER: once BillingOptions exists, UsageService gains an
@@ -17,13 +17,7 @@ namespace CvApi.Tests;
 // arg added mechanically so it keeps compiling — do NOT weaken any of its assertions.
 public class BillingTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
     // Pricing: default model = $3 / 1M prompt, $15 / 1M completion.
     private static IOptions<LlmPricingOptions> Pricing()
@@ -43,8 +37,8 @@ public class BillingTests
 
     // UsageService now takes an IOptions<BillingOptions>. Default: no billing default
     // allowance (null) => allowance falls back to the §9 global limit.
-    private static UsageService Service(AppDbContext db, decimal limit = 0.50m, decimal? defaultAllowance = null)
-        => new(db, Pricing(), Limit(limit), Billing(defaultAllowance));
+    private static UsageService Service(InMemoryStore db, decimal limit = 0.50m, decimal? defaultAllowance = null)
+        => new(db, db, db, db, Pricing(), Limit(limit), Billing(defaultAllowance));
 
     private static LlmUsage Usage(Guid userId, int promptTokens, int completionTokens)
         => new() { UserId = userId, Operation = "Generate", PromptTokens = promptTokens, CompletionTokens = completionTokens, ModelName = "default" };
@@ -57,7 +51,7 @@ public class BillingTests
     [Fact]
     public async Task GetBillingSummary_ReturnsAllowanceSpentBalanceTokensAndCurrency()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 12_000 prompt @ $3/1M = $0.036 ; 3_000 completion @ $15/1M = $0.045 ; spent = $0.081.
         db.LlmUsages.Add(Usage(userId, 12_000, 3_000));
@@ -77,7 +71,7 @@ public class BillingTests
     [Fact]
     public async Task GetBillingSummary_BalanceIsFlooredAtZero_WhenSpentExceedsAllowance()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 100_000 completion @ $15/1M = $1.50 spent, well over a $0.50 allowance.
         db.LlmUsages.Add(Usage(userId, 0, 100_000));
@@ -95,7 +89,7 @@ public class BillingTests
     [Fact]
     public async Task GetBillingSummary_IsPerUser_OneUsersSpendDoesNotAffectAnother()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
         // A spends; B spends nothing. Both have their own allowance rows.
@@ -121,7 +115,7 @@ public class BillingTests
     [Fact]
     public async Task GetEffectiveAllowance_ReturnsBillingAccountValue_WhenRowPresent()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         db.BillingAccounts.Add(Account(userId, 3.25m));
         await db.SaveChangesAsync();
@@ -136,7 +130,7 @@ public class BillingTests
     [Fact]
     public async Task GetEffectiveAllowance_FallsBackToBillingDefault_WhenNoRowAndDefaultSet()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
 
         // No BillingAccount row; BillingOptions.DefaultAllowanceUsd non-null => use it,
@@ -150,7 +144,7 @@ public class BillingTests
     [Fact]
     public async Task GetEffectiveAllowance_FallsBackToGlobalLimit_WhenNoRowAndDefaultNull()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
 
         // No row, DefaultAllowanceUsd null => preserve §9 behavior via GetEffectiveLimitAsync().
@@ -165,7 +159,7 @@ public class BillingTests
     [Fact]
     public async Task EnsureWithinLimit_Throws_WhenAccruedReachesUsersOwnAllowance()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 34_000 completion @ $15/1M = $0.51 accrued, >= the user's own $0.50 allowance.
         db.LlmUsages.Add(Usage(userId, 0, 34_000));
@@ -179,7 +173,7 @@ public class BillingTests
     [Fact]
     public async Task EnsureWithinLimit_IsPerUser_HigherAllowanceUserIsNotBlockedBySamespend()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
         // Both accrue $0.51. A has a low $0.50 allowance (blocked); B has a $5.00 allowance (allowed).
@@ -200,7 +194,7 @@ public class BillingTests
     [Fact]
     public async Task EnsureWithinLimit_Allows_WhenStillAboveZero_EvenIfPendingCallWouldExceed()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // Accrued so far $0.45, still under the $0.50 allowance => allowed, regardless of
         // whether the next call would push spend past the allowance.
@@ -227,7 +221,7 @@ public class BillingTests
     [Fact]
     public async Task EnsureWithinLimit_NullUser_IsExempt()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         // System call (no user) must never be blocked.
         await Service(db, defaultAllowance: 0.50m).EnsureWithinLimitAsync(null); // no throw
     }

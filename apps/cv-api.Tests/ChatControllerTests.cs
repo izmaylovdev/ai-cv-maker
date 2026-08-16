@@ -38,13 +38,10 @@ public class ChatControllerTests
         public Task<LlmSelectBestProfileResponse> SelectBestProfileAsync(LlmSelectBestProfileRequest r) => throw new NotImplementedException();
     }
 
-    private static AppDbContext CreateDb() =>
-        new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options);
+    private static InMemoryStore CreateDb() => new();
 
-    private static UsageService Usage(AppDbContext db) =>
-        new(db,
+    private static UsageService Usage(InMemoryStore db) =>
+        new(db, db, db, db,
             Options.Create(new LlmPricingOptions
             {
                 Models = new() { ["default"] = new LlmPricingModel { PromptCostPer1M = 3m, CompletionCostPer1M = 15m } },
@@ -52,8 +49,8 @@ public class ChatControllerTests
             Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = 100m }),
             Options.Create(new BillingOptions()));
 
-    private static ChatController Controller(AppDbContext db, ILlmService llm, Guid userId) =>
-        new(db, llm, Usage(db))
+    private static ChatController Controller(InMemoryStore db, ILlmService llm, Guid userId) =>
+        new(db, db, llm, Usage(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -71,7 +68,7 @@ public class ChatControllerTests
     [Fact]
     public async Task EditMode_ExcludesTheOpenProfileFromCrossProfileReads()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         var open = Prof(userId, "Junior Machine Learning Developer");
         var other = Prof(userId, "Senior Software Engineer");
@@ -93,7 +90,7 @@ public class ChatControllerTests
     [Fact]
     public async Task EditMode_WithoutProfileId_PassesAllProfiles_BackwardCompat()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         db.Profiles.AddRange(Prof(userId, "A"), Prof(userId, "B"));
         await db.SaveChangesAsync();
@@ -111,7 +108,7 @@ public class ChatControllerTests
     [Fact]
     public async Task EditMode_DoesNotLeakAnotherUsersProfiles()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         var mine = Prof(userId, "Mine");
         var theirs = Prof(Guid.NewGuid(), "Someone else's");

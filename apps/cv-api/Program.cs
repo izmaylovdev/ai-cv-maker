@@ -149,6 +149,27 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
 builder.Services.AddHttpContextAccessor();
 
 // Services
+// ADR-0021 persistence seam. Currently backed by EF Core/Postgres; the
+// Firestore implementations swap in behind these same registrations.
+builder.Services.AddScoped<CvApi.Domain.Repositories.IUserRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfUserRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IProfileRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfProfileRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IGeneratedCvRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfGeneratedCvRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.ILlmUsageRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfLlmUsageRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IAppSettingRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfAppSettingRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IRefreshTokenRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfRefreshTokenRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IBillingAccountRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfBillingAccountRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.ITopUpPaymentRepository,
+    CvApi.Infrastructure.Persistence.Repositories.EfTopUpPaymentRepository>();
+builder.Services.AddScoped<CvApi.Domain.Repositories.IPaymentConfirmationStore,
+    CvApi.Infrastructure.Persistence.Repositories.EfPaymentConfirmationStore>();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 var llmGrpcUrl = builder.Configuration["LlmService:GrpcUrl"] ?? "http://localhost:50051";

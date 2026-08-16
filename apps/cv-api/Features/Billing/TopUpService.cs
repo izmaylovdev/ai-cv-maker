@@ -1,7 +1,6 @@
 using CvApi.Domain.Entities;
 using CvApi.Features.Billing.Channels;
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using CvApi.Domain.Repositories;
 
 namespace CvApi.Features.Billing;
 
@@ -10,7 +9,7 @@ namespace CvApi.Features.Billing;
 /// The payment channel is chosen from the user's stored country by
 /// <see cref="PaymentChannelResolver"/>.
 /// </summary>
-public class TopUpService(AppDbContext db, PaymentChannelResolver channelResolver)
+public class TopUpService(ITopUpPaymentRepository payments, PaymentChannelResolver channelResolver)
 {
     /// <summary>Fixed top-up amounts (F-BILL-1.1): $5, $10, $20.</summary>
     public static readonly decimal[] AllowedAmounts = [5m, 10m, 20m];
@@ -31,33 +30,31 @@ public class TopUpService(AppDbContext db, PaymentChannelResolver channelResolve
             AmountUsd = amountUsd,
             Channel = channel.Name,
         };
-        db.TopUpPayments.Add(payment);
-        await db.SaveChangesAsync(ct);
+        await payments.AddAsync(payment, ct);
 
         try
         {
             var redirect = await channel.CreatePaymentAsync(payment, ct);
             payment.ExternalId = redirect.ExternalId;
             payment.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
+            await payments.UpdateAsync(payment, ct);
             return new TopUpCreatedDto(payment.Id, channel.Name, redirect.RedirectUrl);
         }
         catch (PaymentProviderException)
         {
             payment.Status = TopUpStatus.Failed;
             payment.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
+            await payments.UpdateAsync(payment, ct);
             throw;
         }
     }
 
     /// <summary>Top-up history, newest first (F-BILL-1.7).</summary>
     public async Task<List<TopUpHistoryItemDto>> GetHistoryAsync(Guid userId)
-        => await db.TopUpPayments
-            .Where(p => p.UserId == userId)
+        => (await payments.ListByUserAsync(userId))
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new TopUpHistoryItemDto(p.Id, p.AmountUsd, p.Channel, p.Status, p.CreatedAt))
-            .ToListAsync();
+            .ToList();
 }
 
 public record TopUpRequest(decimal AmountUsd);

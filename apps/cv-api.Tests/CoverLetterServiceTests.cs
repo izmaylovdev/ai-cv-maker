@@ -10,16 +10,10 @@ namespace CvApi.Tests;
 
 public class CoverLetterServiceTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
-    private static UsageService MakeUsageService(AppDbContext db)
-        => new(db,
+    private static UsageService MakeUsageService(InMemoryStore db)
+        => new(db, db, db, db,
             Microsoft.Extensions.Options.Options.Create(new LlmPricingOptions()),
             Microsoft.Extensions.Options.Options.Create(new UsageLimitOptions()),
             Microsoft.Extensions.Options.Options.Create(new CvApi.Features.Billing.BillingOptions()));
@@ -75,7 +69,7 @@ public class CoverLetterServiceTests
     public async Task GenerateAsync_ReturnsCoverLetterText()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
         var profile = MakeProfile(userId, "Backend Engineer", "8 years backend.");
         db.Profiles.Add(profile);
         await db.SaveChangesAsync();
@@ -84,7 +78,7 @@ public class CoverLetterServiceTests
         llm.Setup(s => s.GenerateCoverLetterAsync(It.IsAny<LlmCoverLetterRequest>()))
            .ReturnsAsync(new LlmCoverLetterResponse("Dear Hiring Manager...", profile.Id));
 
-        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
+        var svc = new CoverLetterService(db, db, llm.Object, MakeUsageService(db));
         var result = await svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
             JobTitle: "Senior Python Engineer",
             JobDescription: "We need Python/Go expertise.",
@@ -104,10 +98,10 @@ public class CoverLetterServiceTests
     public async Task GenerateAsync_ThrowsWhenNoProfiles()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
 
         var llm = new Mock<ILlmService>();
-        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
+        var svc = new CoverLetterService(db, db, llm.Object, MakeUsageService(db));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
@@ -127,13 +121,13 @@ public class CoverLetterServiceTests
     {
         var userId = Guid.NewGuid();
         var otherUserId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
         var otherProfile = MakeProfile(otherUserId, "Frontend Dev", "React developer.");
         db.Profiles.Add(otherProfile);
         await db.SaveChangesAsync();
 
         var llm = new Mock<ILlmService>();
-        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
+        var svc = new CoverLetterService(db, db, llm.Object, MakeUsageService(db));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
@@ -152,7 +146,7 @@ public class CoverLetterServiceTests
     public async Task GenerateAsync_PassesAllProfilesToLlm()
     {
         var userId = Guid.NewGuid();
-        await using var db = CreateDb();
+        var db = CreateDb();
         var p1 = MakeProfile(userId, "Backend Engineer", "Python/Go expert.");
         var p2 = MakeProfile(userId, "Frontend Developer", "React specialist.");
         db.Profiles.AddRange(p1, p2);
@@ -164,7 +158,7 @@ public class CoverLetterServiceTests
            .Callback<LlmCoverLetterRequest>(r => captured = r)
            .ReturnsAsync(new LlmCoverLetterResponse("Cover letter text.", p1.Id));
 
-        var svc = new CoverLetterService(db, llm.Object, MakeUsageService(db));
+        var svc = new CoverLetterService(db, db, llm.Object, MakeUsageService(db));
         await svc.GenerateAsync(userId, new GenerateCoverLetterRequest(
             JobTitle: "Engineer",
             JobDescription: "Backend role.",

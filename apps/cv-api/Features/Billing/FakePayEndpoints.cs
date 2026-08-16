@@ -1,5 +1,4 @@
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using CvApi.Domain.Repositories;
 using Microsoft.Extensions.Options;
 
 namespace CvApi.Features.Billing;
@@ -18,11 +17,11 @@ public static class FakePayEndpoints
         // buttons that hit the complete endpoint and bounce back to the SPA.
         app.MapGet("/api/billing/fake-pay/{paymentId:guid}", async (
             Guid paymentId,
-            AppDbContext db,
+            ITopUpPaymentRepository payments,
             IOptions<PaymentsOptions> options,
             CancellationToken ct) =>
         {
-            var payment = await db.TopUpPayments.FirstOrDefaultAsync(p => p.Id == paymentId, ct);
+            var payment = await payments.GetByIdAsync(paymentId, ct);
             if (payment is null)
                 return Results.NotFound();
 
@@ -64,14 +63,14 @@ public static class FakePayEndpoints
         app.MapPost("/api/billing/fake-pay/{paymentId:guid}/complete", async (
             Guid paymentId,
             string outcome,
-            AppDbContext db,
+            ITopUpPaymentRepository payments,
             PaymentConfirmationService confirmationService,
             CancellationToken ct) =>
         {
             if (outcome is not ("success" or "failure"))
                 return Results.BadRequest(new { error = "outcome must be 'success' or 'failure'." });
 
-            var payment = await db.TopUpPayments.FirstOrDefaultAsync(p => p.Id == paymentId, ct);
+            var payment = await payments.GetByIdAsync(paymentId, ct);
             if (payment is null)
                 return Results.NotFound();
 

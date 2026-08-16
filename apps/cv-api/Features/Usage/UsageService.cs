@@ -1,8 +1,7 @@
 using CvApi.Domain.Entities;
+using CvApi.Domain.Repositories;
 using CvApi.Features.Billing;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace CvApi.Features.Usage;
@@ -50,7 +49,10 @@ public class UsageLimitExceededException(decimal limitUsd)
 }
 
 public class UsageService(
-    AppDbContext db,
+    ILlmUsageRepository usageRepo,
+    IAppSettingRepository settingRepo,
+    IBillingAccountRepository billingAccounts,
+    IUserRepository users,
     IOptions<LlmPricingOptions> pricing,
     IOptions<UsageLimitOptions> limitOptions,
     IOptions<BillingOptions> billingOptions)
@@ -64,7 +66,7 @@ public class UsageService(
             && usage.CacheReadTokens == 0 && usage.CacheWriteTokens == 0)
             return;
 
-        db.LlmUsages.Add(new LlmUsage
+        await usageRepo.AddAsync(new LlmUsage
         {
             UserId = userId,
             Operation = operation,
@@ -74,15 +76,11 @@ public class UsageService(
             CacheWriteTokens = usage.CacheWriteTokens,
             ModelName = usage.ModelName,
         });
-        await db.SaveChangesAsync();
     }
 
     public async Task<UserUsageSummaryDto> GetUserSummaryAsync(Guid userId)
     {
-        var rows = await db.LlmUsages
-            .Where(u => u.UserId == userId)
-            .ToListAsync();
-
+        var rows = await usageRepo.ListByUserAsync(userId);
         return Summarize(rows);
     }
 
@@ -92,7 +90,7 @@ public class UsageService(
     /// </summary>
     public async Task<decimal> GetEffectiveLimitAsync()
     {
-        var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == LimitSettingKey);
+        var setting = await settingRepo.GetAsync(LimitSettingKey);
         if (setting is not null
             && decimal.TryParse(setting.Value, System.Globalization.NumberStyles.Number,
                 System.Globalization.CultureInfo.InvariantCulture, out var stored))
@@ -108,18 +106,8 @@ public class UsageService(
         if (maxCostUsd <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxCostUsd), "Limit must be greater than zero.");
 
-        var setting = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == LimitSettingKey);
         var value = maxCostUsd.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        if (setting is null)
-        {
-            db.AppSettings.Add(new AppSetting { Key = LimitSettingKey, Value = value, UpdatedAt = DateTime.UtcNow });
-        }
-        else
-        {
-            setting.Value = value;
-            setting.UpdatedAt = DateTime.UtcNow;
-        }
-        await db.SaveChangesAsync();
+        await settingRepo.UpsertAsync(LimitSettingKey, value);
     }
 
     /// <summary>
@@ -130,7 +118,7 @@ public class UsageService(
     /// </summary>
     public async Task<decimal> GetEffectiveAllowanceAsync(Guid userId)
     {
-        var account = await db.BillingAccounts.FirstOrDefaultAsync(b => b.UserId == userId);
+        var account = await billingAccounts.GetByUserAsync(userId);
         if (account is not null)
             return account.AllowanceUsd;
 
@@ -166,10 +154,7 @@ public class UsageService(
         var summary = await GetUserSummaryAsync(userId);
         var allowance = await GetEffectiveAllowanceAsync(userId);
         var balance = Math.Max(0, allowance - summary.EstimatedCostUsd);
-        var country = await db.Users
-            .Where(u => u.Id == userId)
-            .Select(u => u.Country)
-            .FirstOrDefaultAsync();
+        var country = (await users.GetByIdAsync(userId))?.Country;
         return new BillingSummaryDto(
             allowance,
             summary.EstimatedCostUsd,
@@ -184,17 +169,19 @@ public class UsageService(
 
     public async Task<List<AdminUsageSummaryDto>> GetAllUserSummariesAsync()
     {
-        var rows = await db.LlmUsages
-            .Where(u => u.UserId != null)
-            .Join(db.Users, u => u.UserId, usr => usr.Id, (u, usr) => new { u, usr.Email })
-            .ToListAsync();
+        // Firestore has no joins, so the email lookup that used to be a SQL
+        // JOIN is now a second read plus an in-memory match. Usage rows whose
+        // user no longer exists are dropped, matching the inner join's behaviour.
+        var rows = await usageRepo.ListAllAttributedAsync();
+        var emailById = (await users.ListAllAsync()).ToDictionary(u => u.Id, u => u.Email);
 
         return rows
-            .GroupBy(r => new { r.u.UserId, r.Email })
+            .GroupBy(r => r.UserId!.Value)
+            .Where(g => emailById.ContainsKey(g.Key))
             .Select(g =>
             {
-                var summary = Summarize(g.Select(r => r.u).ToList());
-                return new AdminUsageSummaryDto(g.Key.UserId!.Value, g.Key.Email, summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, summary.CacheReadTokens, summary.CacheWriteTokens);
+                var summary = Summarize(g.ToList());
+                return new AdminUsageSummaryDto(g.Key, emailById[g.Key], summary.PromptTokens, summary.CompletionTokens, summary.EstimatedCostUsd, summary.CacheReadTokens, summary.CacheWriteTokens);
             })
             .OrderByDescending(s => s.EstimatedCostUsd)
             .ToList();

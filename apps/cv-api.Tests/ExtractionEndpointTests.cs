@@ -291,7 +291,8 @@ public class ExtractionEndpointTests(ExtractionApiFactory factory) : IClassFixtu
 
 public class ExtractionApiFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbName = Guid.NewGuid().ToString();
+    /// <summary>Shared fake persistence for this factory (ADR-0021 seam).</summary>
+    public InMemoryStore Store { get; } = new();
 
     public Mock<ILlmService> LlmMock { get; } = new(MockBehavior.Strict);
 
@@ -341,7 +342,7 @@ public class ExtractionApiFactory : WebApplicationFactory<Program>
                 .ToList())
                 services.Remove(d);
 
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+            services.UseInMemoryStore(Store);
 
             // Replace the real LlmService with mock (remove all descriptors to
             // avoid ambiguity from gRPC client registration).
@@ -355,7 +356,7 @@ public class ExtractionApiFactory : WebApplicationFactory<Program>
     public async Task<(Guid UserId, Guid ProfileId)> SeedProfileAsync()
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<InMemoryStore>();
 
         var userId = Guid.NewGuid();
         var profile = new Profile

@@ -20,16 +20,10 @@ namespace CvApi.Tests;
 //               allowance checks keep using EstimatedCostUsd, which now reflects
 //               the discounted cache pricing.
 // Service-level tests mirroring UsageLimitTests / BillingTests: in-memory
-// AppDbContext, UsageService constructed directly with IOptions.
+// InMemoryStore, UsageService constructed directly with IOptions.
 public class UsageCacheTokensTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
     // Pricing:
     //   "default" — $3 / 1M prompt, $15 / 1M completion, NO explicit cache rates
@@ -51,8 +45,8 @@ public class UsageCacheTokensTests
             },
         });
 
-    private static UsageService Service(AppDbContext db)
-        => new(db, Pricing(),
+    private static UsageService Service(InMemoryStore db)
+        => new(db, db, db, db, Pricing(),
             Options.Create(new UsageLimitOptions { MaxCostUsdPerUser = 100m }),
             Options.Create(new BillingOptions()));
 
@@ -79,7 +73,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task RecordAsync_PersistsCacheTokenCounts()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
 
         await Service(db).RecordAsync(userId, "Chat",
@@ -95,7 +89,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task RecordAsync_CacheOnlyUsage_IsStillRecorded()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
 
         // prompt = 0, completion = 0, but cache reads > 0 — a follow-up turn served
@@ -110,7 +104,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task RecordAsync_AllFourTokenCountsZero_IsSkipped()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
 
         await Service(db).RecordAsync(userId, "Chat", new LlmTokenUsage(0, 0, "default"));
@@ -123,7 +117,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task Summary_PricesCacheTokens_WithFallbackMultipliers_WhenNotConfigured()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // "default" has no explicit cache rates:
         //   1M prompt x $3 + 1M cache-read x (0.1 x $3) + 1M cache-write x (1.25 x $3)
@@ -139,7 +133,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task Summary_PricesCacheTokens_WithExplicitRates_WhenConfigured()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // "cached" has explicit rates: 1M reads x $0.50 + 1M writes x $4 = 4.50
         db.LlmUsages.Add(Row(userId, 0, 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000, modelName: "cached"));
@@ -153,7 +147,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task Summary_ZeroCacheCounts_PricesExactlyAsToday()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         // 1M prompt x $3 + 1M completion x $15 = 18.00 — unchanged by US-AI-17.
         db.LlmUsages.Add(Row(userId, 1_000_000, 1_000_000));
@@ -169,7 +163,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task UserSummary_ExposesCacheTokenTotals()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         db.LlmUsages.Add(Row(userId, 100, 20, cacheReadTokens: 300, cacheWriteTokens: 50));
         db.LlmUsages.Add(Row(userId, 40, 5, cacheReadTokens: 200, cacheWriteTokens: 25));
@@ -186,7 +180,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task BillingSummary_ExposesCacheTokenTotals()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var userId = Guid.NewGuid();
         db.LlmUsages.Add(Row(userId, 100, 20, cacheReadTokens: 300, cacheWriteTokens: 50));
         await db.SaveChangesAsync();
@@ -200,7 +194,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task AdminSummaries_ExposeCacheTokenTotals()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var user = new User { Email = "cache@example.com" };
         db.Users.Add(user);
         db.LlmUsages.Add(Row(user.Id, 100, 20, cacheReadTokens: 300, cacheWriteTokens: 50));
@@ -223,7 +217,7 @@ public class UsageCacheTokensTests
     [Fact]
     public async Task CachedFollowUpTurn_CostsMeasurablyLessThanFirstTurnEquivalent()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var firstTurnUser = Guid.NewGuid();
         var followUpUser = Guid.NewGuid();
 

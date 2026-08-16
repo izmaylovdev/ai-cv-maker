@@ -1,7 +1,6 @@
 using CvApi.Domain.Entities;
+using CvApi.Domain.Repositories;
 using CvApi.Features.Usage;
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.Billing;
 
@@ -11,44 +10,37 @@ namespace CvApi.Features.Billing;
 /// dev fake-pay complete endpoint. Credits only on the Pending → Paid
 /// transition; confirmations for already-terminal payments are ignored, so
 /// provider retries can never double-credit and terminal statuses never regress.
+///
+/// The check-and-transition itself lives behind <see cref="IPaymentConfirmationStore"/>
+/// so it can be made atomic (ADR-0021 decision #4). This service's job is to
+/// resolve the seed allowance — which needs app settings and billing options —
+/// and hand the atomic part to the store.
 /// </summary>
-public class PaymentConfirmationService(AppDbContext db, UsageService usageService)
+public class PaymentConfirmationService(
+    IPaymentConfirmationStore store,
+    UsageService usageService)
 {
     public async Task ConfirmAsync(TopUpPayment payment, bool success, CancellationToken ct = default)
     {
         if (payment.Status != TopUpStatus.Pending)
-            return; // terminal — acknowledge without changing anything
+            return; // cheap pre-check; the store re-checks atomically
 
-        if (success)
-        {
-            var account = await db.BillingAccounts
-                .FirstOrDefaultAsync(b => b.UserId == payment.UserId, ct);
-            if (account is not null)
-            {
-                account.AllowanceUsd += payment.AmountUsd;
-                account.UpdatedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                // No BillingAccount row yet: seed it from the current effective
-                // allowance. A zero-based row would silently erase the user's
-                // default allowance (see spec §1, crediting rule).
-                var effectiveAllowance = await usageService.GetEffectiveAllowanceAsync(payment.UserId);
-                db.BillingAccounts.Add(new BillingAccount
-                {
-                    UserId = payment.UserId,
-                    AllowanceUsd = effectiveAllowance + payment.AmountUsd,
-                    UpdatedAt = DateTime.UtcNow,
-                });
-            }
-            payment.Status = TopUpStatus.Paid;
-        }
-        else
-        {
-            payment.Status = TopUpStatus.Failed;
-        }
+        // Resolved outside the transaction: it reads AppSettings and billing
+        // options that are not part of the payment/account aggregate. Only
+        // consulted when the user has no BillingAccount row yet — seeding from
+        // zero would silently erase their default allowance (spec §1).
+        var seedAllowance = success
+            ? await usageService.GetEffectiveAllowanceAsync(payment.UserId)
+            : 0m;
 
-        payment.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        var outcome = await store.TryConfirmAsync(payment.Id, success, seedAllowance, ct);
+
+        // Keep the caller's in-memory copy consistent with what was committed,
+        // so callers that render the payment afterwards don't show a stale status.
+        if (outcome == PaymentConfirmationOutcome.Transitioned)
+        {
+            payment.Status = success ? TopUpStatus.Paid : TopUpStatus.Failed;
+            payment.UpdatedAt = DateTime.UtcNow;
+        }
     }
 }

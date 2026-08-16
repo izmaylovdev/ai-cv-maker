@@ -1,12 +1,16 @@
 using CvApi.Domain.Entities;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
+using CvApi.Domain.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.CoverLetter;
 
-public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageService usageService)
+public class CoverLetterService(
+    IUserRepository users,
+    IProfileRepository profileRepo,
+    ILlmService llmService,
+    UsageService usageService)
 {
     public async Task<GenerateCoverLetterResponse> GenerateAsync(Guid userId, GenerateCoverLetterRequest request)
     {
@@ -14,8 +18,7 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
 
         if (request.ProfileIdOverride.HasValue)
         {
-            var profile = await db.Profiles
-                .FirstOrDefaultAsync(p => p.Id == request.ProfileIdOverride.Value && p.UserId == userId);
+            var profile = await profileRepo.GetForUserAsync(request.ProfileIdOverride.Value, userId);
 
             if (profile is null)
                 throw new KeyNotFoundException($"Profile {request.ProfileIdOverride} not found.");
@@ -24,15 +27,13 @@ public class CoverLetterService(AppDbContext db, ILlmService llmService, UsageSe
         }
         else
         {
-            profiles = await db.Profiles
-                .Where(p => p.UserId == userId)
-                .ToListAsync();
+            profiles = [.. await profileRepo.ListByUserAsync(userId)];
 
             if (profiles.Count == 0)
                 throw new InvalidOperationException("No profiles found. Create a profile before generating a cover letter.");
         }
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        var user = await users.GetByIdAsync(userId);
 
         var llmRequest = new LlmCoverLetterRequest(
             Profiles: profiles.Select(p => new LlmProfileWithId(p.Id.ToString(), p.Document)).ToList(),

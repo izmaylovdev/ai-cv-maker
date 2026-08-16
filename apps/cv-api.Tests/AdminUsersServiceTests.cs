@@ -7,26 +7,20 @@ namespace CvApi.Tests;
 
 public class AdminUsersServiceTests
 {
-    private static AppDbContext CreateDb()
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(opts);
-    }
+    private static InMemoryStore CreateDb() => new();
 
     [Fact]
     public async Task GetUsersAsync_ProjectsFieldsAndProfileCount()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         var user = new User { Email = "jane@example.com", GoogleId = "g-1" };
-        user.Profiles.Add(new Profile { UserId = user.Id, Name = "A" });
-        user.Profiles.Add(new Profile { UserId = user.Id, Name = "B" });
+        db.Profiles.Add(new Profile { UserId = user.Id, Name = "A" });
+        db.Profiles.Add(new Profile { UserId = user.Id, Name = "B" });
         db.Users.Add(user);
         db.Users.Add(new User { Email = "noprofiles@example.com" });
         await db.SaveChangesAsync();
 
-        var rows = await new AdminUsersService(db).GetUsersAsync();
+        var rows = await new AdminUsersService(db, db).GetUsersAsync();
 
         var jane = rows.Single(r => r.Email == "jane@example.com");
         Assert.Equal(user.Id, jane.Id);
@@ -41,12 +35,12 @@ public class AdminUsersServiceTests
     [Fact]
     public async Task GetUsersAsync_OrdersByCreatedAtDescending()
     {
-        await using var db = CreateDb();
+        var db = CreateDb();
         db.Users.Add(new User { Email = "old@example.com", CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) });
         db.Users.Add(new User { Email = "new@example.com", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) });
         await db.SaveChangesAsync();
 
-        var rows = await new AdminUsersService(db).GetUsersAsync();
+        var rows = await new AdminUsersService(db, db).GetUsersAsync();
 
         Assert.Equal("new@example.com", rows[0].Email);
         Assert.Equal("old@example.com", rows[1].Email);

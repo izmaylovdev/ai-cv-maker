@@ -3,7 +3,7 @@ using CvApi.Domain.Entities;
 using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
+using CvApi.Domain.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +13,11 @@ namespace CvApi.Features.Chat;
 [ApiController]
 [Route("api/chat")]
 [Authorize]
-public class ChatController(AppDbContext db, ILlmService llmService, UsageService usageService) : ControllerBase
+public class ChatController(
+    IUserRepository users,
+    IProfileRepository profileRepo,
+    ILlmService llmService,
+    UsageService usageService) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
@@ -39,12 +43,11 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
         if (request.JobContext is not null)
             return await JobChatAsync(request);
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == UserId);
+        var user = await users.GetByIdAsync(UserId);
 
-        var profiles = await db.Profiles
-            .Where(p => p.UserId == UserId)
+        var profiles = (await profileRepo.ListByUserAsync(UserId))
             .OrderBy(p => p.Name)
-            .ToListAsync();
+            .ToList();
 
         // Summarise each document (ADR-0013) into the lightweight chat-agent shape.
         var summaries = profiles
@@ -74,7 +77,7 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
         if (!string.IsNullOrWhiteSpace(result.PreferencesUpdate) && user is not null)
         {
             user.GlobalPreferences = result.PreferencesUpdate;
-            await db.SaveChangesAsync();
+            await users.UpdateAsync(user);
         }
 
         return Ok(new UserChatResponse(result.Reply));
@@ -82,10 +85,9 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
 
     private async Task<ActionResult<UserChatResponse>> JobChatAsync(UserChatRequest request)
     {
-        var profiles = await db.Profiles
-            .Where(p => p.UserId == UserId)
+        var profiles = (await profileRepo.ListByUserAsync(UserId))
             .OrderBy(p => p.Name)
-            .ToListAsync();
+            .ToList();
 
         var summaries = profiles
             .Select(p => DocumentSummary.Summarise(p.Name, p.Document))
@@ -133,11 +135,11 @@ public class ChatController(AppDbContext db, ILlmService llmService, UsageServic
         // sends its ProfileId so we can filter it out; when it's absent (older
         // clients / an unsaved doc) we fall back to the full set.
         var openId = Guid.TryParse(request.ProfileId, out var pid) ? pid : (Guid?)null;
-        var otherProfiles = await db.Profiles
-            .Where(p => p.UserId == UserId && (openId == null || p.Id != openId))
+        var otherProfiles = (await profileRepo.ListByUserAsync(UserId))
+            .Where(p => openId == null || p.Id != openId)
             .OrderBy(p => p.Name)
             .Select(p => new LlmOtherProfile(p.Id.ToString(), p.Name, p.Document))
-            .ToListAsync();
+            .ToList();
 
         // See Chat(): LLM failures propagate as typed exceptions and are mapped to
         // specific { code, message } responses by the IExceptionHandlers (US-AI-11).

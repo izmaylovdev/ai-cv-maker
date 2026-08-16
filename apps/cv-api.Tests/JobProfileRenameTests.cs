@@ -183,7 +183,7 @@ public class JobProfileRenameTests(ExtractionApiFactory factory) : IClassFixture
     private async Task<(Guid UserId, Guid ProfileId)> SeedProfileWithDocumentAsync()
     {
         using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<InMemoryStore>();
 
         var userId = Guid.NewGuid();
         var profile = new Profile

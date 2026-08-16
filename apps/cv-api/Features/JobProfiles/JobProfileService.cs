@@ -3,25 +3,23 @@ using CvApi.Domain.Entities;
 using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
+using CvApi.Domain.Repositories;
 using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using UglyToad.PdfPig;
 
 namespace CvApi.Features.JobProfiles;
 
-public class JobProfileService(AppDbContext db, ILlmService llmService, UsageService usageService) : IJobProfileService
+public class JobProfileService(IProfileRepository profiles, ILlmService llmService, UsageService usageService) : IJobProfileService
 {
     public async Task<List<JobProfileListItemDto>> ListAsync(Guid userId)
     {
         // Document lives in a value-converted jsonb column, so its fields can't be
         // projected in SQL — load the (few) profiles and read the header in memory.
-        var profiles = await db.Profiles
-            .Where(p => p.UserId == userId)
+        var profileList = (await profiles.ListByUserAsync(userId))
             .OrderBy(p => p.Name)
-            .ToListAsync();
+            .ToList();
 
-        return profiles
+        return profileList
             .Select(p => new JobProfileListItemDto(p.Id, p.Name, p.Document.Header.FullName, p.Document.Header.Title))
             .ToList();
     }
@@ -36,14 +34,13 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
             // scaffolding) rather than a blank body, so users start with structure.
             Document = ProfileDocument.DefaultTemplate(),
         };
-        db.Profiles.Add(profile);
-        await db.SaveChangesAsync();
+        await profiles.AddAsync(profile);
         return new JobProfileListItemDto(profile.Id, profile.Name, profile.Document.Header.FullName, profile.Document.Header.Title);
     }
 
     public async Task<ProfileDto?> GetAsync(Guid id, Guid userId)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
         var document = ProfileDocumentSchema.MigrateLegacySections(profile.Document);
         return new ProfileDto(profile.Id, profile.Name, document);
@@ -51,7 +48,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
 
     public async Task<ProfileDto?> UpdateAsync(Guid id, Guid userId, UpdateProfileRequest request)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
 
         var document = ProfileDocumentSchema.MigrateLegacySections(
@@ -63,33 +60,32 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
         if (!string.IsNullOrWhiteSpace(request.Name)) profile.Name = request.Name.Trim();
         profile.Document = document;
 
-        await db.SaveChangesAsync();
+        await profiles.UpdateAsync(profile);
         return new ProfileDto(profile.Id, profile.Name, profile.Document);
     }
 
     // US-PROF-7: name-only rename — the document is never read or written here.
     public async Task<JobProfileListItemDto?> RenameAsync(Guid id, Guid userId, string name)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
 
         profile.Name = name.Trim();
-        await db.SaveChangesAsync();
+        await profiles.UpdateAsync(profile);
         return new JobProfileListItemDto(profile.Id, profile.Name, profile.Document.Header.FullName, profile.Document.Header.Title);
     }
 
     public async Task<bool> DeleteAsync(Guid id, Guid userId)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return false;
-        db.Profiles.Remove(profile);
-        await db.SaveChangesAsync();
+        await profiles.DeleteAsync(profile);
         return true;
     }
 
     public async Task<UpdateProfileRequest?> ExtractAsync(Guid id, Guid userId, IFormFile file)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
 
         string cvText;
@@ -133,7 +129,7 @@ public class JobProfileService(AppDbContext db, ILlmService llmService, UsageSer
 
     public async Task<ChatResponse?> ChatAsync(Guid id, Guid userId, ChatRequest request)
     {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
 
         var llmRequest = new LlmChatRequest(
