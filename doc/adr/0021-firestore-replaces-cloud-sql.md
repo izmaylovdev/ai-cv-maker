@@ -77,10 +77,24 @@ mode** and delete the Cloud SQL instance.
    separated by top-level collection rather than by database, since the free
    tier covers only one.
 2. **cv-api's persistence layer is rewritten** behind a repository seam. The 8
-   entities become collections; `Profile`, `GeneratedCv`, `LlmUsage`,
-   `RefreshToken`, `BillingAccount` and `TopUpPayment` hang off `users/{id}` as
-   subcollections; `AppSetting` is a small top-level collection. `AppDbContext`,
-   EF Core and the 20 migrations are removed.
+   entities become collections; `Profile`, `GeneratedCv`, `LlmUsage` and
+   `BillingAccount` hang off `users/{id}` as subcollections; `AppSetting` is a
+   small top-level collection. `AppDbContext`, EF Core and the 20 migrations
+   are removed.
+
+   **Amended 2026-08-16, during implementation.** `RefreshToken` and
+   `TopUpPayment` are **top-level collections, not subcollections of the user.**
+   Building the seam made the reason concrete: the application looks these two
+   up by a key that does not include the user. Refresh tokens are fetched by
+   token hash (`GetByTokenAsync`) during sign-in refresh, and payments are
+   fetched by payment id or provider external id (`GetByIdAsync`,
+   `GetByExternalIdAsync`) from webhooks that carry no user identity at all.
+   Under `users/{id}/…` each of those becomes a **collection-group query**
+   needing its own index, where a top-level collection makes them a direct
+   document read. Refresh tokens go further and use the token hash itself as
+   the document id, turning the hottest auth lookup into a single keyed get
+   with no query and no index. This is the ADR's own "query patterns must be
+   designed, not inherited" consequence arriving in practice.
 3. **A repository interface is introduced deliberately, not incidentally**, so
    the 10 test files currently binding EF's `UseInMemoryDatabase` fake the seam
    instead of a database. This is the main defence against regressions in the
