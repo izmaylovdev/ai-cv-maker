@@ -241,6 +241,27 @@ python migrate.py --allow-multi-day    # resumes from the checkpoint
 when the total fits: it keeps the burst well clear of Firestore's per-second
 limits and leaves headroom for the live service.
 
+## The checkpoint survives a change of target — clear it between runs
+
+**Hit for real during the production cutover on 2026-08-17.** The checkpoint
+file records progress per collection but records *nothing about which Firestore
+it was written to*. The runbook above tells you to rehearse against the emulator
+first, so by the time you reach the real run the checkpoint says every
+collection is finished — and the real run reports `Done: 0 of 109 documents
+written` and exits successfully, having written nothing at all.
+
+Always pass `--restart` on the first real run, or delete
+`.migrate-checkpoint.json` after the rehearsal:
+
+```sh
+python migrate.py --restart          # discards the rehearsal's checkpoint
+```
+
+`--verify` is what catches this — it compares against the target you are
+actually pointed at, so it reported every collection as MISMATCH while the
+import claimed success. Run it after every import, and do not read a `Done:`
+line as proof that anything was written.
+
 ## How re-running stays safe
 
 Two mechanisms, and they are independent:

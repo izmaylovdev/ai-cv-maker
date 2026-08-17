@@ -246,13 +246,42 @@ mode** and delete the Cloud SQL instance.
 
 ## Pre-flight checks before implementing
 
-1. ~~Measure real size against the storage ceiling.~~ Done: 83 MB in Postgres —
-   but re-measure after import, since Firestore adds per-field and index overhead.
+1. ~~Measure real size against the storage ceiling.~~ Done, and **re-measured
+   after import on 2026-08-17**: the entire production dataset is **109 rows**
+   (4 users, 4 profiles, 48 usage rows, 46 refresh tokens, 7 payments; zero
+   billing accounts, generated CVs or app settings). Projected stored size is
+   **~0.29 MB including index entries — 0.0% of the 1 GiB ceiling**. The 83 MB
+   of Cloud SQL disk was almost entirely empty-cluster floor (system catalogs
+   and WAL), not application data, exactly as the migration tool's README
+   predicted. The storage ceiling is a non-issue; the daily *rate* quota was
+   never approached either, at 109 writes against 20,000/day.
 2. ~~Resolve the ADR-0009 discrepancy.~~ Done 2026-08-16: instance is
    `RUNNABLE` / `activationPolicy: ALWAYS`, billing continuously. The saving is
    real and the rewrite is justified on those grounds.
 3. ~~Decide Langfuse's future before deleting Cloud SQL.~~ Done 2026-08-16:
    the production Langfuse Postgres path is dropped (see consequences).
-4. Enable the Firestore API on `applysy-498807` — confirmed **not enabled** as
-   of 2026-08-16 — and confirm the chosen location's availability and
-   free-tier eligibility. Outstanding; this is the first implementation step.
+4. ~~Enable the Firestore API on `applysy-498807`.~~ Done 2026-08-17. The
+   `(default)` database exists in `europe-central2`, Native mode, and no legacy
+   Datastore-mode database was in the way.
+
+## Outcome
+
+Executed 2026-08-17. Cloud SQL is **STOPPED** (`activation_policy = NEVER`,
+both deletion guards on) with its data and backups retained for the rollback
+window; cv-api and admin-api serve production from Firestore. Verified in
+production: cv-api reads a migrated user and rejects a duplicate registration,
+and neither service has logged an error since cutover.
+
+Two things the implementation proved that this ADR had wrong, both recorded
+above in place: the refresh-token document id (real production hashes do
+contain `/` and `+`, so the literal `refreshTokens/{tokenHash}` would have
+orphaned about half of all live sessions) and the `AggregateField.Sum`
+argument for the usage limit.
+
+**Pre-existing condition found during cutover, not caused by it:** the `admin`
+database contained **no tables at all**. admin-api's Docker image runs
+`node main.js`, never `migrate.js`, so `admin_users` was never created in
+production and no admin account has ever existed there. The migration copied
+zero rows because there were zero to copy. Admin sign-in is no more broken than
+it was, but it has never worked, and seeding an admin is now a Firestore write
+rather than a Postgres one.
