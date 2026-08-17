@@ -7,6 +7,7 @@ using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
 using CvApi.Infrastructure.Json;
 using CvApi.Infrastructure.Persistence;
+using CvApi.Infrastructure.Persistence.Firestore;
 using Grpc.Core;
 // Disambiguate from OpenTelemetry.Trace.StatusCode pulled in by the tracing setup.
 using StatusCode = Grpc.Core.StatusCode;
@@ -88,9 +89,14 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Database
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Database. AppDbContext is registered only for the Postgres provider; under
+// Firestore there is no relational database to point it at (ADR-0021).
+var useFirestore = PersistenceProviders.UseFirestore(builder.Configuration);
+if (!useFirestore)
+{
+    builder.Services.AddDbContext<AppDbContext>(opt =>
+        opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+}
 
 // JWT Auth
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]
@@ -149,26 +155,35 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
 builder.Services.AddHttpContextAccessor();
 
 // Services
-// ADR-0021 persistence seam. Currently backed by EF Core/Postgres; the
-// Firestore implementations swap in behind these same registrations.
-builder.Services.AddScoped<CvApi.Domain.Repositories.IUserRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfUserRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IProfileRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfProfileRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IGeneratedCvRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfGeneratedCvRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.ILlmUsageRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfLlmUsageRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IAppSettingRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfAppSettingRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IRefreshTokenRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfRefreshTokenRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IBillingAccountRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfBillingAccountRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.ITopUpPaymentRepository,
-    CvApi.Infrastructure.Persistence.Repositories.EfTopUpPaymentRepository>();
-builder.Services.AddScoped<CvApi.Domain.Repositories.IPaymentConfirmationStore,
-    CvApi.Infrastructure.Persistence.Repositories.EfPaymentConfirmationStore>();
+// ADR-0021 persistence seam. Both implementations exist; which one backs the
+// seam is decided once here, by Persistence:Provider. Postgres is the default,
+// so an unconfigured deployment behaves exactly as it did before Firestore
+// arrived.
+if (useFirestore)
+{
+    builder.Services.AddFirestorePersistence(builder.Configuration);
+}
+else
+{
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IUserRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfUserRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IProfileRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfProfileRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IGeneratedCvRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfGeneratedCvRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.ILlmUsageRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfLlmUsageRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IAppSettingRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfAppSettingRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IRefreshTokenRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfRefreshTokenRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IBillingAccountRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfBillingAccountRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.ITopUpPaymentRepository,
+        CvApi.Infrastructure.Persistence.Repositories.EfTopUpPaymentRepository>();
+    builder.Services.AddScoped<CvApi.Domain.Repositories.IPaymentConfirmationStore,
+        CvApi.Infrastructure.Persistence.Repositories.EfPaymentConfirmationStore>();
+}
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
@@ -281,7 +296,8 @@ var app = builder.Build();
 // Local-dev convenience only (docker-compose sets RunMigrationsOnStartup=true).
 // Production applies migrations through the `migrate` CLI mode, executed as the
 // cv-api-migrate Cloud Run job before the service rolls out (ADR-0003).
-if (builder.Configuration.GetValue<bool>("RunMigrationsOnStartup"))
+// Firestore is schemaless, so there is nothing to migrate under that provider.
+if (!useFirestore && builder.Configuration.GetValue<bool>("RunMigrationsOnStartup"))
 {
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();

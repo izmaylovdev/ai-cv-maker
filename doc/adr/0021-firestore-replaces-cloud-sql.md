@@ -112,6 +112,19 @@ mode** and delete the Cloud SQL instance.
      where a top-level collection makes it a direct document read. Refresh
      tokens go further and use the token hash itself as the document id, so the
      hottest auth lookup is a single keyed get with no query and no index at all.
+
+     **Amended 2026-08-17, during implementation.** "The document id is the
+     token hash" needed one adjustment: `AuthService.HashToken` base64-encodes
+     the SHA-256, and base64's alphabet contains `/`, which Firestore forbids in
+     a document id (it is the path separator) — so roughly half of all hashes
+     could not be used verbatim. The document id is therefore the **base64url**
+     form of the same hash (`+`→`-`, `/`→`_`), a one-to-one character
+     substitution that keeps it collision-free and keeps the lookup a keyed
+     read with no index. The unmodified hash is also stored in a `token` field.
+     **The import must apply the same substitution when deriving document ids
+     from the exported `Token` column**, or no existing refresh token will
+     resolve after the cutover. Changing `HashToken` to emit base64url directly
+     was rejected: it would invalidate every refresh token in flight.
    - `LlmUsage.UserId` is **nullable** — unattributed usage rows exist and must
      still be recorded. A subcollection of `users/{id}` has nowhere to put them
      short of a second parallel collection, so usage stays top-level with a
@@ -203,6 +216,23 @@ mode** and delete the Cloud SQL instance.
   document read — so `.Include()`-style graph loading becomes several reads.
   Index entries also mean the 83 MB of Postgres data will not map 1:1 onto the
   1 GiB Firestore ceiling; actual stored size must be re-measured after import.
+- **Correction, 2026-08-17: the aggregation-query argument does not apply to
+  the usage limit.** The "Firestore capability checks" note above claims
+  `UsageService.EnsureWithinLimitAsync` can sum `LlmUsage` cost with
+  `AggregateField.Sum` and so needs no maintained counters. That is wrong, and
+  it is recorded here rather than quietly dropped. Cost is not a stored column:
+  `LlmUsage` holds only token counts and a model name, and `Summarize()`
+  computes cost in application code from per-model pricing in configuration,
+  including fallback multipliers for cache tokens. There is nothing for `Sum` to
+  aggregate. The check therefore reads **every** usage row for the user on
+  **every** LLM call, and that read count grows without bound as a user
+  accumulates history — one heavy user eventually costs more reads per call than
+  the whole rest of the system. It is implemented faithfully as-is, because
+  changing it is a behaviour change and not part of the migration, but it is the
+  migration's main per-read cost risk and the first thing to fix if the 50k/day
+  read quota starts to bite. The fixes available are a maintained per-user
+  counter, a stored cost field written at record time (which would make `Sum`
+  genuinely usable), or a rollup document.
 - **Daily quota rather than a monthly bill.** 50k reads / 20k writes per day is
   generous at current traffic but is a *rate* limit; a runaway loop or a
   backfill script can exhaust a day's quota in minutes.
