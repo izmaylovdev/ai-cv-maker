@@ -82,19 +82,51 @@ mode** and delete the Cloud SQL instance.
    small top-level collection. `AppDbContext`, EF Core and the 20 migrations
    are removed.
 
-   **Amended 2026-08-16, during implementation.** `RefreshToken` and
-   `TopUpPayment` are **top-level collections, not subcollections of the user.**
-   Building the seam made the reason concrete: the application looks these two
-   up by a key that does not include the user. Refresh tokens are fetched by
-   token hash (`GetByTokenAsync`) during sign-in refresh, and payments are
-   fetched by payment id or provider external id (`GetByIdAsync`,
-   `GetByExternalIdAsync`) from webhooks that carry no user identity at all.
-   Under `users/{id}/…` each of those becomes a **collection-group query**
-   needing its own index, where a top-level collection makes them a direct
-   document read. Refresh tokens go further and use the token hash itself as
-   the document id, turning the hottest auth lookup into a single keyed get
-   with no query and no index. This is the ADR's own "query patterns must be
-   designed, not inherited" consequence arriving in practice.
+   **Amended 2026-08-16 / 2026-08-17, during implementation.** The layout
+   above was written from the relational schema — from where a foreign key
+   points. Building the seam showed that the thing which actually decides
+   nesting in Firestore is **the key the application looks a document up by**,
+   and for four of these entities that key does not contain the user. The
+   settled layout is:
+
+   ```
+   users/{userId}                          User
+   users/{userId}/profiles/{profileId}     Profile (Document as a JSON string field)
+   users/{userId}/billing/account          BillingAccount (fixed document id)
+   generatedCvs/{cvId}                     field: profileId
+   llmUsage/{id}                           field: userId (nullable)
+   refreshTokens/{tokenHash}               document id IS the token hash
+   topUpPayments/{paymentId}               field: externalId
+   appSettings/{key}                       document id IS the setting key
+   admin_users/{id}                        admin-api
+   ```
+
+   The reasoning, entity by entity:
+
+   - `RefreshToken` is fetched by token hash during sign-in refresh and
+     `TopUpPayment` by payment id or provider external id from webhooks that
+     carry no user identity at all. `GeneratedCv` is reached only ever by
+     `(cvId, profileId)` — `CvService` never has the owning user in scope at
+     those call sites. Nesting any of the three under `users/{id}` would turn
+     its hottest lookup into a **collection-group query needing its own index**,
+     where a top-level collection makes it a direct document read. Refresh
+     tokens go further and use the token hash itself as the document id, so the
+     hottest auth lookup is a single keyed get with no query and no index at all.
+   - `LlmUsage.UserId` is **nullable** — unattributed usage rows exist and must
+     still be recorded. A subcollection of `users/{id}` has nowhere to put them
+     short of a second parallel collection, so usage stays top-level with a
+     nullable `userId` field.
+   - `Profile` and `BillingAccount` do stay under the user, because every access
+     path to them already carries the user id. `BillingAccount` is one document
+     per user, so it takes a **fixed document id** (`account`) rather than a
+     generated one — that makes "does this user have a billing account?" a keyed
+     read instead of a query, which is exactly what the confirmation transaction
+     needs.
+
+   This is the ADR's own "query patterns must be designed, not inherited"
+   consequence arriving in practice: the relational shape was a poor guide, and
+   ownership in the domain turned out not to imply nesting in the store.
+
 3. **A repository interface is introduced deliberately, not incidentally**, so
    the 10 test files currently binding EF's `UseInMemoryDatabase` fake the seam
    instead of a database. This is the main defence against regressions in the
