@@ -2,8 +2,8 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up
 #
-# Brings up a self-hosted Langfuse (web + worker + ClickHouse + Redis + MinIO),
-# reusing the main `postgres` service for Langfuse's metadata DB. The overlay also
+# Brings up a self-hosted Langfuse (web + worker + ClickHouse + Redis + MinIO)
+# plus its own Postgres for the metadata DB. The overlay also
 # injects LANGFUSE_* into `llm-service` so traces flow automatically; without this
 # overlay llm-service runs with tracing disabled (no-op). Langfuse UI: http://localhost:3030
 # (host 3000 is taken by Grafana). Default login: admin@example.com / changeme-langfuse.
@@ -11,10 +11,40 @@
 # The dev API keys below are auto-provisioned via LANGFUSE_INIT_* and match the
 # keys handed to llm-service. They are local-only; production uses Secret Manager.
 
+# Langfuse hard-requires Postgres and cannot run on Firestore, so this overlay
+# owns the only Postgres left in the repo. ADR-0021 removed Cloud SQL and the
+# base stack's `postgres` / `admin-db` containers along with the *production*
+# Langfuse path; local evals (`npm run evals`) are explicitly unaffected and
+# keep working through this container.
+#
+# One-time note: this Postgres has its own volume (langfuse_postgres_data)
+# rather than the base stack's old shared `postgres_data`. Existing local
+# Langfuse traces and datasets do not carry over — the overlay re-provisions the
+# org, project and dev API keys from LANGFUSE_INIT_* on first boot, so evals work
+# immediately, but past local runs are gone. `docker volume rm
+# ai-cv-maker_postgres_data ai-cv-maker_admin_db_data` reclaims the old ones.
 services:
   postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-langfuse}
+      # Created directly by the entrypoint now that this cluster exists solely
+      # for Langfuse; init-langfuse-db.sql stays mounted as a no-op safety net
+      # for anyone who overrides POSTGRES_DB.
+      POSTGRES_DB: langfuse
+    ports:
+      # 5433 as before, so an existing local psql/DBeaver connection still works.
+      - "5433:5432"
     volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
       - ./monitoring/langfuse/init-langfuse-db.sql:/docker-entrypoint-initdb.d/10-langfuse.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-langfuse} -d langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   llm-service:
     environment:
@@ -40,7 +70,7 @@ services:
     ports:
       - "3030:3000"
     environment: &langfuse-env
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      DATABASE_URL: postgresql://${POSTGRES_USER:-langfuse}:${POSTGRES_PASSWORD:-langfuse}@postgres:5432/langfuse
       SALT: local-langfuse-salt
       # Quoted: unquoted all-digit YAML scalars are parsed as the integer 0,
       # which Langfuse rejects ("must be 64 hex chars"). Local-only dummy key.
@@ -146,5 +176,6 @@ services:
       retries: 10
 
 volumes:
+  langfuse_postgres_data:
   langfuse_clickhouse_data:
   langfuse_minio_data:

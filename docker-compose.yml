@@ -1,21 +1,44 @@
 services:
-  postgres:
-    image: postgres:16
+  # Local Firestore, replacing the `postgres` and `admin-db` containers
+  # (ADR-0021 decision #8). ONE emulator instance serves both cv-api and
+  # admin-api, sharing a single database separated by top-level collection —
+  # mirroring production, where the Firestore free tier covers exactly one
+  # database per project.
+  #
+  # Contract (both the .NET and Node Firestore SDKs read these):
+  #   FIRESTORE_EMULATOR_HOST  host:port of the emulator
+  #   GOOGLE_CLOUD_PROJECT     project id namespacing the database
+  #
+  # The emulator is in-memory; scripts/firestore-emulator.sh adds the
+  # export-on-shutdown / import-on-start round trip that makes firestore_data a
+  # real replacement for the postgres volumes. See that script for why it is
+  # needed rather than a plain `command:`.
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:580.0.0-emulators
     restart: unless-stopped
-    env_file: .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5433:5432"
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-applysy-local}
+      FIRESTORE_EMULATOR_BIND: 0.0.0.0:8085
+      FIRESTORE_EMULATOR_DATA_DIR: /data/firestore-export
+    entrypoint: ["bash", "/opt/firestore-emulator.sh"]
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/firestore-emulator.sh:/opt/firestore-emulator.sh:ro
+      - firestore_data:/data
+    ports:
+      # Same port inside and out, so FIRESTORE_EMULATOR_HOST is firestore:8085
+      # in-network and localhost:8085 for host-run dev servers (scripts/dev.sh).
+      - "8085:8085"
+    # The emulator serves plain HTTP 200 "Ok" on / once it is accepting traffic.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/ >/dev/null || exit 1"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 30s
+    # Compose's 10s default can cut the shutdown export short on a large local
+    # dataset; the export is the only thing standing between a restart and an
+    # empty database.
+    stop_grace_period: 60s
 
   cv-api:
     build:
@@ -24,10 +47,11 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      # Local convenience only — production runs migrations via the
-      # cv-api-migrate Cloud Run job before deploying (ADR-0003).
-      RunMigrationsOnStartup: "true"
+      # Firestore replaces Cloud SQL (ADR-0021). Schemaless, so there is no
+      # migration step here any more — ADR-0003's migrate-then-deploy job no
+      # longer applies to cv-api.
+      FIRESTORE_EMULATOR_HOST: firestore:8085
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-applysy-local}
       JwtSettings__Secret: ${JWT_SECRET}
       LlmService__GrpcUrl: http://llm-service:50051
       Google__WebClientId: ${GOOGLE_WEB_CLIENT_ID}
@@ -42,7 +66,7 @@ services:
     ports:
       - "5050:8080"
     depends_on:
-      postgres:
+      firestore:
         condition: service_healthy
       llm-service:
         condition: service_started
@@ -113,24 +137,6 @@ services:
       - "8080:8000"
       - "50051:50051"
 
-  admin-db:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${ADMIN_DB_USER:-admin}
-      POSTGRES_PASSWORD: ${ADMIN_DB_PASSWORD:-changeme}
-      POSTGRES_DB: ${ADMIN_DB_NAME:-admin}
-    ports:
-      - "5434:5432"
-    volumes:
-      - admin_db_data:/var/lib/postgresql/data
-      - ./apps/admin-api/migrations/init-admin-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_DB_USER:-admin} -d ${ADMIN_DB_NAME:-admin}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   admin-api:
     build:
       context: .
@@ -140,11 +146,10 @@ services:
       # admin-api reads user data from cv-api, not the main DB (ADR-0005).
       CV_API_URL: http://cv-api:8080
       CV_API_ADMIN_KEY: ${CV_API_ADMIN_KEY:-localdevkey}
-      ADMIN_DB_HOST: admin-db
-      ADMIN_DB_PORT: "5432"
-      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-admin}
-      ADMIN_DB_USER: ${ADMIN_DB_USER:-admin}
-      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:-changeme}
+      # admin_users moved off its own Postgres onto the shared Firestore
+      # database as a top-level `admin_users` collection (ADR-0021 decision #5).
+      FIRESTORE_EMULATOR_HOST: firestore:8085
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-applysy-local}
       JWT_SECRET: ${ADMIN_JWT_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID}
       ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:-}
@@ -153,7 +158,7 @@ services:
     depends_on:
       cv-api:
         condition: service_started
-      admin-db:
+      firestore:
         condition: service_healthy
 
   admin-ui:
@@ -213,13 +218,17 @@ services:
       # Explore (where trace-drilldown links open) requires Editor by default;
       # let the anonymous Viewer reach it so trace links don't bounce to login.
       GF_USERS_VIEWERS_CAN_EDIT: "true"
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      # Datasource provisioning reads these; Grafana itself can't supply defaults
-      # (no ${VAR:-default} support), so do it here — Compose interpolation does.
-      # In-network compose service names work for the base stack and obs-dev overlay.
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      # The provisioned `pg-cv-maker` Postgres datasource is vestigial — no
+      # dashboard panel references it (verified in ADR-0021) — and there is no
+      # Postgres left in the base stack for it to reach. These placeholders only
+      # keep provisioning substitution happy; Grafana provisioning has no
+      # ${VAR:-default} support, so the defaults must come from Compose.
+      # The datasource itself should be deleted from
+      # monitoring/grafana/provisioning/datasources/datasources.yml.
+      POSTGRES_USER: ${POSTGRES_USER:-unused}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unused}
+      POSTGRES_DB: ${POSTGRES_DB:-unused}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-removed.invalid}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
       PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
@@ -235,12 +244,9 @@ services:
         condition: service_started
       tempo:
         condition: service_started
-      postgres:
-        condition: service_healthy
 
 volumes:
-  postgres_data:
-  admin_db_data:
+  firestore_data:
   prometheus_data:
   grafana_data:
   tempo_data:

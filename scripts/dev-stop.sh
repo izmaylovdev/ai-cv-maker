@@ -10,6 +10,12 @@
 # (npm run serve:*), orphans can keep squatting on the dev ports. This kills
 # them all. It does NOT touch the Docker dependencies — stop those with
 # `docker compose down` if you want the containers gone too.
+#
+# Note on the Firestore emulator (ADR-0021): it holds the database in memory and
+# dumps it to the firestore_data volume when it receives SIGTERM. `docker compose
+# stop` and `docker compose down` both send that signal, so local data survives.
+# `docker compose kill`, `docker rm -f` and `docker compose down -v` do not —
+# use those only when you actually want to start from an empty database.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."

@@ -2,8 +2,8 @@
 #
 # One-line local dev environment.
 #
-#   npm run dev                    # postgres + cv-api + llm-service + ui-angular + chat-ui + profile-builder-ui
-#   npm run dev -- --with-admin    # also start admin-db + admin-api + admin-ui
+#   npm run dev                    # firestore emulator + cv-api + llm-service + ui-angular + chat-ui + profile-builder-ui
+#   npm run dev -- --with-admin    # also start admin-api + admin-ui
 #   npm run dev -- --with-obs      # also start the Langfuse LLM-tracing stack and
 #                                  #   point the host llm-service at it
 #
@@ -28,6 +28,15 @@ LANGFUSE_HOST_LOCAL=http://localhost:3030
 # publishes 4317, so host-run cv-api/llm-service export to localhost.
 OTEL_ENDPOINT_LOCAL=http://localhost:4317
 
+# Firestore emulator (ADR-0021), replacing Postgres. Both the .NET and Node
+# Firestore SDKs route to the emulator purely on FIRESTORE_EMULATOR_HOST, so
+# exporting these two is all a host-run cv-api / admin-api needs — no
+# credentials, no connection string. The container publishes 8085 on the same
+# port it listens on, so in-network (firestore:8085) and host (localhost:8085)
+# differ only in hostname.
+export FIRESTORE_EMULATOR_HOST="${FIRESTORE_EMULATOR_HOST:-localhost:8085}"
+export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-applysy-local}"
+
 WITH_ADMIN=0
 WITH_OBS=0
 for arg in "$@"; do
@@ -48,10 +57,11 @@ servers=(
 )
 # Compose files and Docker dependencies the dev servers need.
 compose_files=(-f docker-compose.yml)
-deps=(postgres)
+deps=(firestore)
 
 if [[ "$WITH_ADMIN" == "1" ]]; then
-  deps+=(admin-db)
+  # No extra dependency: admin-api shares the one Firestore emulator with
+  # cv-api, separated by top-level collection (ADR-0021 decision #1/#5).
   servers+=(
     "admin-api=admin-api:serve"
     "admin-ui=admin-ui:dev"
@@ -60,8 +70,10 @@ fi
 
 if [[ "$WITH_OBS" == "1" ]]; then
   compose_files+=(-f docker-compose.langfuse.yml -f docker-compose.obs-dev.yml)
-  # langfuse depends_on pulls in clickhouse, redis, minio (and the langfuse
-  # postgres DB). prometheus + grafana come from the obs-dev overlay, scraping
+  # langfuse depends_on pulls in clickhouse, redis, minio and the Postgres that
+  # the langfuse overlay now owns outright — Langfuse cannot run on Firestore,
+  # so `npm run evals` keeps its Postgres (ADR-0021 consequences).
+  # prometheus + grafana come from the obs-dev overlay, scraping
   # the host-run cv-api/llm-service (their depends_on is cleared there). tempo
   # receives OTLP traces (ADR-0016) from the same host servers on localhost:4317.
   deps+=(langfuse-web langfuse-worker prometheus grafana tempo)
@@ -143,11 +155,14 @@ npx nx daemon --stop >/dev/null 2>&1 || true
 echo "[dev] starting docker dependencies: ${deps[*]}"
 docker compose "${compose_files[@]}" up -d "${deps[@]}"
 
-# Host-run cv-api (dotnet watch) doesn't set RunMigrationsOnStartup — only the
-# containerized cv-api does — so pending EF migrations must be applied here or
-# the first request that touches a new column fails at runtime.
-echo "[dev] applying pending cv-api migrations"
-npx nx run cv-api:db-migrate 2>&1 | sed 's/^/[migrate] /'
+# No migration step: Firestore is schemaless (ADR-0021), so the EF `db-migrate`
+# that used to run here is gone along with AppDbContext. What replaces it is a
+# health gate: the emulator takes ~15-25s to accept traffic, and a host-run
+# cv-api that starts first fails its first read. --wait blocks on the
+# healthcheck. Scoped to `firestore` so the opt-in obs stack keeps its old
+# fire-and-forget start.
+echo "[dev] waiting for the Firestore emulator to accept connections"
+docker compose "${compose_files[@]}" up -d --wait firestore
 
 for entry in "${servers[@]}"; do
   label="${entry%%=*}"
@@ -166,6 +181,7 @@ echo "[dev] │ chat-ui widget          http://localhost:4202"
 echo "[dev] │ profile-builder widget  http://localhost:4203"
 echo "[dev] │ cv-api (REST)           http://localhost:5050"
 echo "[dev] │ llm-service             gRPC localhost:8080 · metrics http://localhost:9090/metrics"
+echo "[dev] │ Firestore emulator      ${FIRESTORE_EMULATOR_HOST} (project ${GOOGLE_CLOUD_PROJECT})"
 if [[ "$WITH_ADMIN" == "1" ]]; then
   echo "[dev] │ admin-ui                http://localhost:3002"
   echo "[dev] │ admin-api (REST)        http://localhost:3001/api"

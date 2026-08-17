@@ -20,5 +20,5 @@ services:
       - "host.docker.internal:host-gateway"
     # Don't drag the llm-service container back up — we're serving it on the host.
     depends_on:
-      postgres:
+      firestore:
         condition: service_healthy
