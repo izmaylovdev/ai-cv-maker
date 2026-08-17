@@ -13,15 +13,12 @@
 # Defaults to the repo-root .env. Re-running is safe — it overwrites.
 #
 # Env overrides for the local DB endpoint (host-side, outside docker):
-#   DB_HOST (default localhost)   DB_PORT (default 5433, the compose mapping)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${1:-$REPO_ROOT/.env}"
 PROJECT="$REPO_ROOT/apps/cv-api"
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5433}"
 
 # Direct ".env key -> .NET config key" pairs (cv-api secrets only).
 # Kept as a plain list so the stock macOS bash 3.2 works (no assoc arrays).
@@ -64,16 +61,6 @@ while IFS='=' read -r env_key secret_key; do
     echo "  skip $secret_key ($env_key not in .env)" >&2; missing=$((missing+1))
   fi
 done <<< "$DIRECT_MAP"
-
-# Compose the local DefaultConnection from the POSTGRES_* parts. The docker
-# postgres is published on $DB_HOST:$DB_PORT, so a host-side `dotnet run`
-# connects there (compose injects its own connection string in-container).
-if db="$(read_env POSTGRES_DB)" && user="$(read_env POSTGRES_USER)" && pass="$(read_env POSTGRES_PASSWORD)"; then
-  conn="Host=${DB_HOST};Port=${DB_PORT};Database=${db};Username=${user};Password=${pass}"
-  set_secret "ConnectionStrings:DefaultConnection" "$conn"; loaded=$((loaded+1))
-else
-  echo "  skip ConnectionStrings:DefaultConnection (POSTGRES_* incomplete in .env)" >&2; missing=$((missing+1))
-fi
 
 echo "Done: $loaded set, $missing missing."
 echo "Verify with: dotnet user-secrets list --project apps/cv-api"
