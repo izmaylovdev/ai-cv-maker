@@ -5,10 +5,14 @@
 # the secret versions, and Cloud Run reads them via value_source/secret_key_ref
 # so they never appear as plaintext env vars in the service spec.
 #
-# Access is least-privilege per secret: cv-api and llm-service use their
-# dedicated SAs (network.tf); grafana and admin-api still run as the default
-# compute SA, so their secrets are bound to that SA (follow-up in ADR-0002:
-# give them dedicated SAs too).
+# Access is least-privilege per secret: cv-api, llm-service and admin-api use
+# their dedicated SAs (network.tf); grafana still runs as the default compute
+# SA, so its secret is bound to that SA (remaining follow-up from ADR-0002).
+#
+# No database credential lives here any more. Firestore is authorised by
+# service-account IAM (infra/firestore.tf), so the cv-api-db-connection and
+# postgres-admin-password secrets were deleted with the Cloud SQL estate
+# (ADR-0021 §6).
 
 resource "google_project_service" "secretmanager" {
   service            = "secretmanager.googleapis.com"
@@ -23,30 +27,6 @@ locals {
 }
 
 # ── cv-api secrets ─────────────────────────────────────────────────────────────
-
-# Full Npgsql connection string (embeds the DB password). One secret instead of
-# a separate password env var because ASP.NET Core consumes the connection
-# string as a single value — no app changes needed (ADR-0002).
-resource "google_secret_manager_secret" "cv_api_db_connection" {
-  secret_id = "cv-api-db-connection"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.secretmanager]
-}
-
-resource "google_secret_manager_secret_version" "cv_api_db_connection" {
-  secret      = google_secret_manager_secret.cv_api_db_connection.id
-  secret_data = local.db_connection_string
-}
-
-resource "google_secret_manager_secret_iam_member" "cv_api_db_connection" {
-  secret_id = google_secret_manager_secret.cv_api_db_connection.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.cv_api.email}"
-}
 
 resource "google_secret_manager_secret" "jwt_secret" {
   secret_id = "jwt-secret"
@@ -178,28 +158,7 @@ resource "google_secret_manager_secret_iam_member" "anthropic_api_key" {
   member    = "serviceAccount:${google_service_account.llm_service.email}"
 }
 
-# ── shared / default-compute-SA secrets (grafana, admin-api) ───────────────────
-
-resource "google_secret_manager_secret" "postgres_admin_password" {
-  secret_id = "postgres-admin-password"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.secretmanager]
-}
-
-resource "google_secret_manager_secret_version" "postgres_admin_password" {
-  secret      = google_secret_manager_secret.postgres_admin_password.id
-  secret_data = var.postgres_admin_password
-}
-
-resource "google_secret_manager_secret_iam_member" "postgres_admin_password" {
-  secret_id = google_secret_manager_secret.postgres_admin_password.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = local.default_compute_sa
-}
+# ── grafana / admin-api secrets ────────────────────────────────────────────────
 
 resource "google_secret_manager_secret" "admin_jwt_secret" {
   secret_id = "admin-jwt-secret"
@@ -219,7 +178,7 @@ resource "google_secret_manager_secret_version" "admin_jwt_secret" {
 resource "google_secret_manager_secret_iam_member" "admin_jwt_secret" {
   secret_id = google_secret_manager_secret.admin_jwt_secret.id
   role      = "roles/secretmanager.secretAccessor"
-  member    = local.default_compute_sa
+  member    = "serviceAccount:${google_service_account.admin_api.email}"
 }
 
 # Shared API key for admin-api → cv-api service-to-service calls (ADR-0005).
@@ -250,7 +209,7 @@ resource "google_secret_manager_secret_iam_member" "cv_api_admin_key_cv_api" {
 resource "google_secret_manager_secret_iam_member" "cv_api_admin_key_admin_api" {
   secret_id = google_secret_manager_secret.cv_api_admin_key.id
   role      = "roles/secretmanager.secretAccessor"
-  member    = local.default_compute_sa
+  member    = "serviceAccount:${google_service_account.admin_api.email}"
 }
 
 resource "google_secret_manager_secret" "grafana_admin_password" {

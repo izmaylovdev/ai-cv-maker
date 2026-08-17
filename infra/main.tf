@@ -8,6 +8,8 @@ resource "google_project_service" "run" {
   disable_on_destroy = false
 }
 
+# Needed only by the decommissioned Cloud SQL instance retained for the rollback
+# window (database.tf). TODO(ADR-0021, follow-up commit): remove with database.tf.
 resource "google_project_service" "sqladmin" {
   service            = "sqladmin.googleapis.com"
   disable_on_destroy = false

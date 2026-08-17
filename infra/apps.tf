@@ -1,11 +1,3 @@
-locals {
-  # Private IP — DB clients (cv-api, grafana, admin-api) reach it via Direct VPC egress.
-  db_host = google_sql_database_instance.db.private_ip_address
-  # Consumed only by the cv-api-db-connection secret version (secrets.tf);
-  # cv-api reads it via secret_key_ref, never as a plaintext env var (ADR-0002).
-  db_connection_string = "Host=${local.db_host};Port=5432;Database=cvmaker;Username=${var.postgres_admin_login};Password=${var.postgres_admin_password};SslMode=Require"
-}
-
 # ── llm-service ────────────────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "llm_service" {
@@ -251,14 +243,12 @@ resource "google_cloud_run_v2_service" "cv_api" {
         container_port = 8080
       }
 
+      # Firestore replaces the connection string entirely (ADR-0021): the client
+      # library picks up this project id and authenticates as the service
+      # account above via ADC, so there is no credential to inject.
       env {
-        name = "ConnectionStrings__DefaultConnection"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.cv_api_db_connection.secret_id
-            version = "latest"
-          }
-        }
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.gcp_project_id
       }
       env {
         name = "JwtSettings__Secret"
@@ -332,13 +322,12 @@ resource "google_cloud_run_v2_service" "cv_api" {
 
   depends_on = [
     google_cloud_run_v2_service.llm_service,
-    google_sql_database_instance.db,
+    google_firestore_database.main,
+    google_project_iam_member.cv_api_datastore_user,
     # Cloud Run validates secret access when the revision is created.
-    google_secret_manager_secret_version.cv_api_db_connection,
     google_secret_manager_secret_version.jwt_secret,
     google_secret_manager_secret_version.google_client_secret,
     google_secret_manager_secret_version.cv_api_admin_key,
-    google_secret_manager_secret_iam_member.cv_api_db_connection,
     google_secret_manager_secret_iam_member.jwt_secret,
     google_secret_manager_secret_iam_member.google_client_secret,
     google_secret_manager_secret_iam_member.cv_api_admin_key_cv_api,
@@ -359,59 +348,19 @@ resource "google_cloud_run_v2_service_iam_member" "cv_api_invoker" {
   member   = "allUsers"
 }
 
-# ── cv-api-migrate (EF Core migrations as a deploy step) ────────────────────────
+# ── cv-api-migrate — REMOVED (ADR-0021) ────────────────────────────────────────
 #
-# Runs `cv-api migrate` exactly once per deploy instead of letting every service
-# instance race db.Database.Migrate() at startup (ADR-0003). CI executes this job
-# with --wait after pushing the image and before rolling out the cv-api service.
-resource "google_cloud_run_v2_job" "cv_api_migrate" {
-  name                = "cv-api-migrate"
-  location            = var.region
-  deletion_protection = false
-
-  template {
-    template {
-      service_account = google_service_account.cv_api.email
-
-      # The DB is private-IP; reach it through the same VPC egress as cv-api.
-      vpc_access {
-        network_interfaces {
-          network    = local.vpc_egress_network
-          subnetwork = local.vpc_egress_subnetwork
-        }
-        egress = "ALL_TRAFFIC"
-      }
-
-      max_retries = 1
-
-      containers {
-        image = "${local.ar_repository}/cv-api:latest"
-        args  = ["migrate"]
-
-        env {
-          name = "ConnectionStrings__DefaultConnection"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.cv_api_db_connection.secret_id
-              version = "latest"
-            }
-          }
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    # CI deploys the job by SHA tag; :latest here is bootstrap-only (ADR-0003).
-    ignore_changes = [template[0].template[0].containers[0].image]
-  }
-
-  depends_on = [
-    google_sql_database_instance.db,
-    google_secret_manager_secret_version.cv_api_db_connection,
-    google_secret_manager_secret_iam_member.cv_api_db_connection,
-  ]
-}
+# The `cv-api-migrate` Cloud Run job ran `cv-api migrate` once per deploy so
+# service instances never raced db.Database.Migrate() at startup (ADR-0003).
+# Firestore is schemaless: EF Core and its 20 migrations are gone, so the job
+# has nothing to run. ADR-0003's image-pinning half still applies to every
+# service below; only its migration-as-a-deploy-step half lapses here.
+#
+# NOTE: the deploy path outside infra/ still invokes this job by name —
+# `.github/workflows/deploy.yml`, `.claude/skills/deploy/SKILL.md` and DEPLOY.md
+# all call `gcloud run jobs update/execute cv-api-migrate`. Those steps must be
+# dropped in the same change, or the next deploy fails against a job that no
+# longer exists.
 
 # ── chat-ui ────────────────────────────────────────────────────────────────────
 
@@ -798,35 +747,10 @@ resource "google_cloud_run_v2_service" "grafana" {
         name  = "PROMETHEUS_URL"
         value = google_cloud_run_v2_service.prometheus.uri
       }
-      env {
-        name  = "POSTGRES_HOST"
-        value = local.db_host
-      }
-      env {
-        name  = "POSTGRES_PORT"
-        value = "5432"
-      }
-      env {
-        name  = "POSTGRES_DB"
-        value = "cvmaker"
-      }
-      env {
-        name  = "POSTGRES_USER"
-        value = var.postgres_admin_login
-      }
-      env {
-        name = "POSTGRES_PASSWORD"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name  = "POSTGRES_SSL_MODE"
-        value = "require"
-      }
+      # The POSTGRES_* variables that fed Grafana's `pg-cv-maker` datasource are
+      # gone with Cloud SQL (ADR-0021). That datasource was provisioned but
+      # referenced by no dashboard panel, so no panel loses data. Grafana's
+      # dashboards read Prometheus above, which is unaffected.
 
       liveness_probe {
         http_get {
@@ -853,9 +777,7 @@ resource "google_cloud_run_v2_service" "grafana" {
     google_cloud_run_v2_service.prometheus,
     # Cloud Run validates secret access when the revision is created.
     google_secret_manager_secret_version.grafana_admin_password,
-    google_secret_manager_secret_version.postgres_admin_password,
     google_secret_manager_secret_iam_member.grafana_admin_password,
-    google_secret_manager_secret_iam_member.postgres_admin_password,
   ]
 
   lifecycle {
@@ -882,9 +804,14 @@ resource "google_cloud_run_v2_service" "admin_api" {
   ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
+    # Dedicated identity (network.tf) — this is what roles/datastore.user is
+    # granted to, so admin-api's Firestore access is not shared with every
+    # other service on the default compute SA (ADR-0021 §6, ADR-0001).
+    service_account = google_service_account.admin_api.email
 
-    # Direct VPC egress: reach the private-IP database and/or INTERNAL_ONLY
-    # Cloud Run upstreams. Google-fronted endpoints are covered by PGA (ADR-0001).
+    # Direct VPC egress: reach INTERNAL_ONLY Cloud Run upstreams (cv-api).
+    # Google-fronted endpoints, Firestore included, are covered by PGA and need
+    # no Cloud NAT (ADR-0001).
     vpc_access {
       network_interfaces {
         network    = local.vpc_egress_network
@@ -928,30 +855,13 @@ resource "google_cloud_run_v2_service" "admin_api" {
           }
         }
       }
+      # The ADMIN_DB_* pg connection is replaced by the shared Firestore
+      # database, where admin-api owns the admin_users collection (ADR-0021 §5).
+      # The client library reads this project id and authenticates via ADC as
+      # the service account above.
       env {
-        name  = "ADMIN_DB_HOST"
-        value = local.db_host
-      }
-      env {
-        name  = "ADMIN_DB_PORT"
-        value = "5432"
-      }
-      env {
-        name  = "ADMIN_DB_NAME"
-        value = "admin"
-      }
-      env {
-        name  = "ADMIN_DB_USER"
-        value = var.postgres_admin_login
-      }
-      env {
-        name = "ADMIN_DB_PASSWORD"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.postgres_admin_password.secret_id
-            version = "latest"
-          }
-        }
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.gcp_project_id
       }
       env {
         name = "JWT_SECRET"
@@ -993,15 +903,13 @@ resource "google_cloud_run_v2_service" "admin_api" {
   }
 
   depends_on = [
-    google_sql_database_instance.db,
+    google_firestore_database.main,
+    google_project_iam_member.admin_api_datastore_user,
     google_cloud_run_v2_service.cv_api,
     # Cloud Run validates secret access when the revision is created.
-    # cv_api_admin_key → cv-api calls; postgres_admin_password → ADMIN_DB.
     google_secret_manager_secret_version.cv_api_admin_key,
-    google_secret_manager_secret_version.postgres_admin_password,
     google_secret_manager_secret_version.admin_jwt_secret,
     google_secret_manager_secret_iam_member.cv_api_admin_key_admin_api,
-    google_secret_manager_secret_iam_member.postgres_admin_password,
     google_secret_manager_secret_iam_member.admin_jwt_secret,
   ]
 

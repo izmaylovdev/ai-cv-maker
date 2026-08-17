@@ -15,6 +15,20 @@ variable "region" {
   default     = "us-central1"
 }
 
+# Firestore database location (ADR-0021). Defaults to the app region; Warsaw is
+# a supported Firestore regional location and the no-cost tier is not tied to
+# any particular one. Changing this after creation forces a new database, which
+# the delete protection in firestore.tf will (deliberately) refuse.
+variable "firestore_location" {
+  type    = string
+  default = "europe-central2"
+}
+
+# --- Cloud SQL, decommissioned (ADR-0021) ---
+# Both variables exist only to keep google_sql_user.cvmaker in database.tf, on
+# the stopped instance retained for the rollback window. No running service
+# reads either one. Delete them with database.tf in the follow-up commit, and
+# drop postgres_admin_password from terraform.tfvars at the same time.
 variable "postgres_admin_login" {
   type    = string
   default = "cvmaker"
@@ -166,4 +180,31 @@ variable "langfuse_vm_machine_type" {
 variable "langfuse_admin_email" {
   type    = string
   default = "admin@applysy.works"
+}
+
+# Langfuse metadata Postgres — externally provisioned (ADR-0021).
+#
+# Langfuse hard-requires Postgres and cannot run on Firestore. Its metadata DB
+# used to be a database on the shared Cloud SQL instance; that instance is being
+# deleted, so re-enabling Langfuse in production now means provisioning a
+# Postgres for it first (a Neon free project serves this well) and supplying it
+# here. The empty defaults are safe because langfuse_enabled is false; the
+# precondition in langfuse.tf fails the plan if it is turned on without these.
+#
+# Unrelated to local evals: `npm run evals` uses the docker-compose Langfuse
+# overlay and its own containerised Postgres.
+variable "langfuse_postgres_host" {
+  type    = string
+  default = ""
+}
+
+variable "langfuse_postgres_user" {
+  type    = string
+  default = ""
+}
+
+variable "langfuse_postgres_password" {
+  type      = string
+  sensitive = true
+  default   = ""
 }

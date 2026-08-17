@@ -30,6 +30,15 @@ resource "google_compute_subnetwork" "cloudrun_egress" {
 }
 
 # Reserved range + peering so Cloud SQL can get a private IP in this VPC.
+#
+# Dead weight since ADR-0021: Firestore is reached over Private Google Access
+# from the subnet above, not over VPC peering, and no other resource uses this
+# range. It cannot be removed yet — the decommissioned Cloud SQL instance
+# (database.tf) still holds a private IP from it for the rollback window, and
+# the peering cannot be torn down while that IP is allocated.
+#
+# TODO(ADR-0021, follow-up commit): delete both resources below together with
+# database.tf, in that order (instance first, then peering, then the range).
 resource "google_compute_global_address" "private_services" {
   name          = "${var.project_name}-private-services"
   purpose       = "VPC_PEERING"
@@ -57,6 +66,17 @@ resource "google_service_account" "cv_api" {
 resource "google_service_account" "llm_service" {
   account_id   = "llm-service"
   display_name = "llm-service Cloud Run service"
+}
+
+# admin-api ran as the default compute SA until ADR-0021. Firestore access is
+# granted by IAM role rather than by a password, so leaving admin-api on the
+# shared identity would have given roles/datastore.user to every service that
+# still uses it — grafana, prometheus and all four UI services. A dedicated SA
+# keeps the grant to the one service that needs it, and completes ADR-0002's
+# own follow-up for admin-api. grafana is the last holdout.
+resource "google_service_account" "admin_api" {
+  account_id   = "admin-api"
+  display_name = "admin-api Cloud Run service"
 }
 
 # Shared egress block values (Direct VPC egress, no serverless connector).

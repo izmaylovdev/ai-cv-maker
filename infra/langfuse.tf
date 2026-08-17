@@ -63,12 +63,14 @@ resource "google_compute_firewall" "langfuse_iap_ssh" {
   target_tags   = ["langfuse"]
 }
 
-# ── Metadata DB: a database on the existing Cloud SQL instance (ADR-0009) ─────
-resource "google_sql_database" "langfuse" {
-  count    = local.langfuse_count
-  name     = "langfuse"
-  instance = google_sql_database_instance.db.name
-}
+# ── Metadata DB: externally provisioned (ADR-0021) ────────────────────────────
+#
+# This used to be `google_sql_database.langfuse`, a database on the shared Cloud
+# SQL instance (ADR-0009). Cloud SQL is being deleted and Langfuse cannot run on
+# Firestore, so the Postgres now has to come from somewhere else and is supplied
+# through var.langfuse_postgres_* instead of being provisioned here. Nothing was
+# lost in the process: langfuse_enabled has always been false, so this database
+# was never actually created. This amends ADR-0010/0011/0012 to that extent.
 
 # ── Generated credentials ────────────────────────────────────────────────────
 # Langfuse API keys (shared with llm-service); the rest are VM-internal.
@@ -232,9 +234,9 @@ resource "google_compute_instance" "langfuse" {
   metadata_startup_script = templatefile("${path.module}/langfuse-startup.sh.tftpl", {
     compose_yaml            = file("${path.module}/../monitoring/langfuse/docker-compose.prod.yml")
     data_dir                = "/opt/langfuse/data"
-    postgres_host           = google_sql_database_instance.db.private_ip_address
-    postgres_user           = var.postgres_admin_login
-    postgres_password       = var.postgres_admin_password
+    postgres_host           = var.langfuse_postgres_host
+    postgres_user           = var.langfuse_postgres_user
+    postgres_password       = var.langfuse_postgres_password
     langfuse_public_key     = local.langfuse_public_key
     langfuse_secret_key     = local.langfuse_secret_key
     langfuse_salt           = random_password.langfuse_salt[0].result
@@ -249,11 +251,18 @@ resource "google_compute_instance" "langfuse" {
     init_user_password  = random_password.langfuse_admin[0].result
   })
 
-  # Cloud SQL must have a private IP before the VM can be told to connect to it.
-  depends_on = [google_service_networking_connection.private_services]
-
   lifecycle {
     # The startup script re-converges on boot; image patching is manual.
     ignore_changes = [boot_disk[0].initialize_params[0].image]
+
+    # Fail the plan, not the boot. Without a Postgres the VM would come up, run
+    # docker compose and leave Langfuse crash-looping on an unreachable DB —
+    # the exact silent breakage ADR-0021 warns about when it drops the Cloud SQL
+    # path. If the external Postgres is not on a private range reachable from
+    # this subnet, the VM also needs egress to it.
+    precondition {
+      condition     = var.langfuse_postgres_host != "" && var.langfuse_postgres_user != "" && var.langfuse_postgres_password != ""
+      error_message = "langfuse_enabled = true requires langfuse_postgres_host/user/password: Langfuse needs its own Postgres now that Cloud SQL is gone (ADR-0021)."
+    }
   }
 }

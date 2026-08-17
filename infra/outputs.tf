@@ -13,9 +13,14 @@ output "ar_repository" {
   value       = local.ar_repository
 }
 
-output "postgres_host" {
-  description = "Cloud SQL public IP address."
-  value       = google_sql_database_instance.db.public_ip_address
+output "firestore_database" {
+  description = "Firestore database resource name (Native mode, free-tier default)."
+  value       = google_firestore_database.main.name
+}
+
+output "firestore_location" {
+  description = "Firestore database location."
+  value       = google_firestore_database.main.location_id
 }
 
 output "grafana_url" {
