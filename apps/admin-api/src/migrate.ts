@@ -1,40 +1,43 @@
-import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { Timestamp } from '@google-cloud/firestore';
+import {
+  AdminUserDocument,
+  ADMIN_USERS_COLLECTION,
+  createFirestore,
+} from './app/database/firestore';
 
+/**
+ * Firestore is schemaless, so there is no schema to create any more (ADR-0021).
+ * What remains is the bootstrap seed: ADMIN_SEED_EMAIL is how the first
+ * operator gets an account, and dropping it would lock everyone out of a fresh
+ * deployment.
+ */
 async function migrate() {
-  const pool = new Pool({
-    host: process.env.ADMIN_DB_HOST ?? 'localhost',
-    port: parseInt(process.env.ADMIN_DB_PORT ?? '5434'),
-    database: process.env.ADMIN_DB_NAME ?? 'admin',
-    user: process.env.ADMIN_DB_USER ?? 'admin',
-    password: process.env.ADMIN_DB_PASSWORD ?? 'changeme',
-    ssl: process.env.ADMIN_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  });
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS admin_users (
-      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email         TEXT NOT NULL UNIQUE,
-      password_hash TEXT,
-      google_id     TEXT,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-  console.log('[migrate] Schema up to date');
-
   const seedEmail = process.env.ADMIN_SEED_EMAIL;
-  if (seedEmail) {
-    const res = await pool.query(
-      `INSERT INTO admin_users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING`,
-      [seedEmail],
-    );
-    if (res.rowCount) {
-      console.log(`[migrate] Seeded admin: ${seedEmail}`);
-    } else {
-      console.log(`[migrate] Admin already exists: ${seedEmail}`);
-    }
+  if (!seedEmail) {
+    console.log('[migrate] No ADMIN_SEED_EMAIL set, nothing to seed');
+    return;
   }
 
-  await pool.end();
+  const firestore = createFirestore();
+  const collection = firestore.collection(ADMIN_USERS_COLLECTION);
+
+  const existing = await collection.where('email', '==', seedEmail).limit(1).get();
+  if (existing.empty) {
+    // The document id is the admin's id, a UUID as the Postgres primary key was.
+    const document: AdminUserDocument = {
+      email: seedEmail,
+      password_hash: null,
+      google_id: null,
+      created_at: Timestamp.now(),
+    };
+    await collection.doc(randomUUID()).set(document);
+    console.log(`[migrate] Seeded admin: ${seedEmail}`);
+  } else {
+    console.log(`[migrate] Admin already exists: ${seedEmail}`);
+  }
+
+  await firestore.terminate();
   console.log('[migrate] Done');
 }
 

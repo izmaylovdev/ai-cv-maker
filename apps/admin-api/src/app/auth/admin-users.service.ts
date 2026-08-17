@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Pool } from 'pg';
-import { ADMIN_PG_POOL } from '../database/admin-database.module';
+import { Firestore } from '@google-cloud/firestore';
+import { AdminUserDocument, ADMIN_USERS_COLLECTION } from '../database/firestore';
+import { FIRESTORE } from '../database/firestore.module';
 
 export interface AdminUser {
   id: string;
@@ -11,25 +12,26 @@ export interface AdminUser {
 
 @Injectable()
 export class AdminUsersService {
-  constructor(@Inject(ADMIN_PG_POOL) private readonly pool: Pool) {}
+  constructor(@Inject(FIRESTORE) private readonly firestore: Firestore) {}
 
   async findByEmail(email: string): Promise<AdminUser | null> {
-    const result = await this.pool.query<{
-      id: string;
-      email: string;
-      password_hash: string | null;
-      google_id: string | null;
-    }>(
-      `SELECT id, email, password_hash, google_id FROM admin_users WHERE email = $1`,
-      [email]
-    );
-    if (result.rows.length === 0) return null;
-    const row = result.rows[0];
+    // `email` was a UNIQUE column in Postgres; Firestore has no unique
+    // constraint, so uniqueness is now a writer-side invariant (migrate.ts
+    // checks before seeding) and the read takes the first match.
+    const snapshot = await this.firestore
+      .collection(ADMIN_USERS_COLLECTION)
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) return null;
+    const doc = snapshot.docs[0];
+    const data = doc.data() as AdminUserDocument;
     return {
-      id: row.id,
-      email: row.email,
-      passwordHash: row.password_hash,
-      googleId: row.google_id,
+      id: doc.id,
+      email: data.email,
+      passwordHash: data.password_hash ?? null,
+      googleId: data.google_id ?? null,
     };
   }
 }

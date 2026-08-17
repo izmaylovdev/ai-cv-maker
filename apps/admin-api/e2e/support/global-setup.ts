@@ -1,6 +1,12 @@
 import { waitForPortOpen } from '@nx/node/utils';
-import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { Timestamp } from '@google-cloud/firestore';
 import * as bcrypt from 'bcrypt';
+import {
+  AdminUserDocument,
+  ADMIN_USERS_COLLECTION,
+  createFirestore,
+} from '../../src/app/database/firestore';
 import { TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD, TEST_USER_EMAIL } from './test-constants';
 
 /* eslint-disable */
@@ -13,43 +19,41 @@ module.exports = async function () {
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await waitForPortOpen(port, { host });
 
-  // Seed test data
-  const adminPool = new Pool({
-    host: process.env.ADMIN_DB_HOST ?? 'localhost',
-    port: parseInt(process.env.ADMIN_DB_PORT ?? '5434'),
-    database: process.env.ADMIN_DB_NAME ?? 'admin',
-    user: process.env.ADMIN_DB_USER ?? 'admin',
-    password: process.env.ADMIN_DB_PASSWORD ?? 'changeme',
-    ssl: process.env.ADMIN_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  });
-
-  const appPool = new Pool({
-    host: process.env.DB_HOST ?? 'localhost',
-    port: parseInt(process.env.DB_PORT ?? '5433'),
-    database: process.env.DB_NAME ?? 'cvmaker',
-    user: process.env.DB_USER ?? 'cvmaker',
-    password: process.env.DB_PASSWORD ?? 'changeme',
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  });
+  // Seed test data. admin-api and cv-api share one Firestore database and are
+  // separated by collection (ADR-0021).
+  const firestore = createFirestore();
+  const adminUsers = firestore.collection(ADMIN_USERS_COLLECTION);
+  const appUsers = firestore.collection('users');
 
   const passwordHash = await bcrypt.hash(TEST_ADMIN_PASSWORD, 10);
 
-  await adminPool.query(
-    `INSERT INTO admin_users (id, email, password_hash, google_id)
-     VALUES (gen_random_uuid(), $1, $2, NULL)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
-    [TEST_ADMIN_EMAIL, passwordHash]
-  );
+  const existingAdmin = await adminUsers.where('email', '==', TEST_ADMIN_EMAIL).limit(1).get();
+  if (existingAdmin.empty) {
+    const document: AdminUserDocument = {
+      email: TEST_ADMIN_EMAIL,
+      password_hash: passwordHash,
+      google_id: null,
+      created_at: Timestamp.now(),
+    };
+    await adminUsers.doc(randomUUID()).set(document);
+  } else {
+    await existingAdmin.docs[0].ref.update({ password_hash: passwordHash });
+  }
 
-  await appPool.query(
-    `INSERT INTO "Users" ("Id", "Email", "GoogleId", "CreatedAt")
-     VALUES (gen_random_uuid(), $1, NULL, NOW())
-     ON CONFLICT ("Email") DO NOTHING`,
-    [TEST_USER_EMAIL]
-  );
+  // The `users` collection belongs to cv-api, which owns its document shape;
+  // this seed only has to be readable by cv-api's GET /api/admin/users, which
+  // admin-api proxies (ADR-0005).
+  const existingUser = await appUsers.where('email', '==', TEST_USER_EMAIL).limit(1).get();
+  if (existingUser.empty) {
+    await appUsers.doc(randomUUID()).set({
+      email: TEST_USER_EMAIL,
+      passwordHash: null,
+      googleId: null,
+      createdAt: Timestamp.now(),
+    });
+  }
 
-  await adminPool.end();
-  await appPool.end();
+  await firestore.terminate();
 
   globalThis.__TEARDOWN_MESSAGE__ = '\nTearing down...\n';
 };
