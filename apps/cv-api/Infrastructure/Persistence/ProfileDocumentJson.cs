@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace CvApi.Infrastructure.Persistence;
 
-// Serialization settings for the Profile.Document jsonb column (ADR-0013).
+// Serialization settings for the stored Profile.Document JSON (ADR-0013).
 // camelCase + omit-nulls so the stored JSON matches the builder's wire payload
 // (apps/profile-builder-ui ProfileDocument).
 public static class ProfileDocumentJson

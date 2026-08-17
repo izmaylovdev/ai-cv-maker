@@ -6,11 +6,9 @@ using System.Text;
 using System.Text.Json;
 using CvApi.Domain.Entities;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
@@ -323,25 +321,9 @@ public class ExtractionApiFactory : WebApplicationFactory<Program>
                 };
             });
 
-            // EF Core 9 registers both a built DbContextOptions<T> descriptor AND one
-            // IDbContextOptionsConfiguration<T> descriptor per AddDbContext call (the
-            // latter is used to lazily build the options). Remove both so that the
-            // Npgsql provider doesn't linger alongside InMemory.
-            var efConfigType = services
-                .Select(d => d.ServiceType)
-                .FirstOrDefault(t => t.IsGenericType
-                    && t.Name.StartsWith("IDbContextOptionsConfiguration")
-                    && t.GenericTypeArguments.FirstOrDefault() == typeof(AppDbContext));
-
-            if (efConfigType is not null)
-                foreach (var d in services.Where(d => d.ServiceType == efConfigType).ToList())
-                    services.Remove(d);
-
-            foreach (var d in services
-                .Where(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>))
-                .ToList())
-                services.Remove(d);
-
+            // Fake the ADR-0021 seam. Program.cs registers the Firestore
+            // repositories; these later registrations win, so no test ever
+            // resolves FirestoreDb and none of them touch a real database.
             services.UseInMemoryStore(Store);
 
             // Replace the real LlmService with mock (remove all descriptors to

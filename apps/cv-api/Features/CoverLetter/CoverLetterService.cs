@@ -2,7 +2,6 @@ using CvApi.Domain.Entities;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Domain.Repositories;
-using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.CoverLetter;
 

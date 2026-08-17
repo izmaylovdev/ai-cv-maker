@@ -1,7 +1,5 @@
 using CvApi.Domain.Entities;
 using CvApi.Features.Admin;
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Tests;
 

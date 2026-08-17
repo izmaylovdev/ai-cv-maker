@@ -2,7 +2,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using CvApi.Domain.Entities;
-using CvApi.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CvApi.Tests;

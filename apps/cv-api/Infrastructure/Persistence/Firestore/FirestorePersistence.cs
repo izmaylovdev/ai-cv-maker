@@ -4,21 +4,6 @@ using Google.Cloud.Firestore;
 
 namespace CvApi.Infrastructure.Persistence.Firestore;
 
-/// <summary>
-/// Which implementation of the ADR-0021 seam the process runs on. Postgres is
-/// the default so that adding the Firestore implementations changes nothing
-/// until the provider is switched deliberately.
-/// </summary>
-public static class PersistenceProviders
-{
-    public const string SectionKey = "Persistence:Provider";
-    public const string Postgres = "Postgres";
-    public const string Firestore = "Firestore";
-
-    public static bool UseFirestore(IConfiguration configuration) =>
-        string.Equals(configuration[SectionKey], Firestore, StringComparison.OrdinalIgnoreCase);
-}
-
 public class FirestoreOptions
 {
     public const string SectionName = "Firestore";
@@ -60,8 +45,8 @@ public static class FirestorePersistenceServiceCollectionExtensions
             var projectId = options.ProjectId
                 ?? Environment.GetEnvironmentVariable("GOOGLE_CLOUD_PROJECT")
                 ?? throw new InvalidOperationException(
-                    "Firestore:ProjectId (or GOOGLE_CLOUD_PROJECT) must be set when "
-                    + $"{PersistenceProviders.SectionKey} is {PersistenceProviders.Firestore}.");
+                    "Firestore:ProjectId (or GOOGLE_CLOUD_PROJECT) must be set — "
+                    + "Firestore is the only persistence provider (ADR-0021).");
 
             var dbBuilder = new FirestoreDbBuilder
             {

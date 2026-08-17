@@ -6,13 +6,11 @@ using CvApi.Features.JobProfiles;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Infrastructure.ExternalServices.Pdf;
 using CvApi.Infrastructure.Json;
-using CvApi.Infrastructure.Persistence;
 using CvApi.Infrastructure.Persistence.Firestore;
 using Grpc.Core;
 // Disambiguate from OpenTelemetry.Trace.StatusCode pulled in by the tracing setup.
 using StatusCode = Grpc.Core.StatusCode;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OpenTelemetry;
@@ -25,32 +23,9 @@ using QuestPDF.Infrastructure;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
-// CLI mode: `dotnet cv-api.dll migrate` applies EF Core migrations and exits
-// (0 on success, non-zero on failure) without starting the web host. Used by
-// the cv-api-migrate Cloud Run job so schema changes run exactly once per
-// deploy instead of racing across service instances (ADR-0003).
-if (args.FirstOrDefault() == "migrate")
-{
-    var migrateBuilder = Host.CreateApplicationBuilder();
-    // Local secrets come from .NET User Secrets (auto-loaded in Development);
-    // in deployed environments env vars / Secret Manager supply them.
-    migrateBuilder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseNpgsql(migrateBuilder.Configuration.GetConnectionString("DefaultConnection")));
-
-    using var migrateHost = migrateBuilder.Build();
-    using var migrateScope = migrateHost.Services.CreateScope();
-    try
-    {
-        migrateScope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
-        Console.WriteLine("Database migrations applied successfully.");
-        return;
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"Database migration failed: {ex}");
-        Environment.Exit(1);
-    }
-}
+// There is no `migrate` CLI mode and no startup migration: Firestore is
+// schemaless, so ADR-0003's migration-as-a-deploy-step no longer applies to
+// cv-api and the cv-api-migrate Cloud Run job is gone (ADR-0021).
 
 var builder = WebApplication.CreateBuilder(args);
 // Local-dev secrets come from .NET User Secrets, which WebApplication.CreateBuilder
@@ -88,15 +63,6 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
-
-// Database. AppDbContext is registered only for the Postgres provider; under
-// Firestore there is no relational database to point it at (ADR-0021).
-var useFirestore = PersistenceProviders.UseFirestore(builder.Configuration);
-if (!useFirestore)
-{
-    builder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-}
 
 // JWT Auth
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]
@@ -155,35 +121,8 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
 builder.Services.AddHttpContextAccessor();
 
 // Services
-// ADR-0021 persistence seam. Both implementations exist; which one backs the
-// seam is decided once here, by Persistence:Provider. Postgres is the default,
-// so an unconfigured deployment behaves exactly as it did before Firestore
-// arrived.
-if (useFirestore)
-{
-    builder.Services.AddFirestorePersistence(builder.Configuration);
-}
-else
-{
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IUserRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfUserRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IProfileRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfProfileRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IGeneratedCvRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfGeneratedCvRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.ILlmUsageRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfLlmUsageRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IAppSettingRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfAppSettingRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IRefreshTokenRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfRefreshTokenRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IBillingAccountRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfBillingAccountRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.ITopUpPaymentRepository,
-        CvApi.Infrastructure.Persistence.Repositories.EfTopUpPaymentRepository>();
-    builder.Services.AddScoped<CvApi.Domain.Repositories.IPaymentConfirmationStore,
-        CvApi.Infrastructure.Persistence.Repositories.EfPaymentConfirmationStore>();
-}
+// ADR-0021 persistence seam, backed by Firestore — the only implementation.
+builder.Services.AddFirestorePersistence(builder.Configuration);
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
@@ -292,16 +231,6 @@ builder.Services.AddScoped<CvApi.Features.Admin.AdminUsersService>();
 builder.Services.AddScoped<CvApi.Features.Admin.AdminApiKeyFilter>();
 
 var app = builder.Build();
-
-// Local-dev convenience only (docker-compose sets RunMigrationsOnStartup=true).
-// Production applies migrations through the `migrate` CLI mode, executed as the
-// cv-api-migrate Cloud Run job before the service rolls out (ADR-0003).
-// Firestore is schemaless, so there is nothing to migrate under that provider.
-if (!useFirestore && builder.Configuration.GetValue<bool>("RunMigrationsOnStartup"))
-{
-    using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
-}
 
 app.UseSwagger();
 app.UseSwaggerUI();

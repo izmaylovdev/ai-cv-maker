@@ -16,16 +16,11 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
     <PackageReference Include="Google.Apis.Auth" Version="1.73.0" />
-    <!-- Firestore persistence provider (ADR-0021). Registered alongside EF Core;
-         selected at startup by Persistence:Provider. -->
+    <!-- The persistence provider (ADR-0021). Firestore is the only one; EF Core,
+         Npgsql and the 20 migrations were removed with the Postgres path. -->
     <PackageReference Include="Google.Cloud.Firestore" Version="4.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.6" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="QuestPDF" Version="2025.4.0" />
     <PackageReference Include="Stripe.net" Version="52.1.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />

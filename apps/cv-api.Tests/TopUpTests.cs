@@ -7,11 +7,9 @@ using System.Text;
 using System.Text.Json;
 using CvApi.Domain.Entities;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
@@ -461,23 +459,7 @@ public class TopUpApiFactory : WebApplicationFactory<Program>
                 };
             });
 
-            // Swap Npgsql for InMemory (see ExtractionApiFactory for why both the
-            // options descriptor and the IDbContextOptionsConfiguration go).
-            var efConfigType = services
-                .Select(d => d.ServiceType)
-                .FirstOrDefault(t => t.IsGenericType
-                    && t.Name.StartsWith("IDbContextOptionsConfiguration")
-                    && t.GenericTypeArguments.FirstOrDefault() == typeof(AppDbContext));
-
-            if (efConfigType is not null)
-                foreach (var d in services.Where(d => d.ServiceType == efConfigType).ToList())
-                    services.Remove(d);
-
-            foreach (var d in services
-                .Where(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>))
-                .ToList())
-                services.Remove(d);
-
+            // Fake the ADR-0021 seam (see ExtractionApiFactory).
             services.UseInMemoryStore(Store);
 
             // Billing tests never talk to the LLM; replace the gRPC-backed service.

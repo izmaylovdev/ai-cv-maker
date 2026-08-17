@@ -6,7 +6,6 @@ using CvApi.Infrastructure.ExternalServices.Llm;
 using CvApi.Domain.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace CvApi.Features.Chat;
 

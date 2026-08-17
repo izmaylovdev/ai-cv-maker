@@ -4,11 +4,9 @@ using Google.Cloud.Firestore;
 
 namespace CvApi.Infrastructure.Persistence.Firestore;
 
-// Firestore implementations of the ADR-0021 persistence seam. They sit
-// alongside the EF Core ones until decision #2's removal of AppDbContext
-// (a separate change), so "did the refactor alter behaviour?" and "did
-// Firestore alter behaviour?" stay separately answerable. Which set is
-// registered is decided once at startup by Persistence:Provider.
+// Firestore implementations of the ADR-0021 persistence seam, and the only
+// ones — the EF Core implementations and AppDbContext were removed with the
+// Postgres path.
 //
 // Every method here is one of the queries the application actually issues.
 // There is no generic query surface on purpose: Firestore has no joins and

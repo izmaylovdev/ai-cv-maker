@@ -2,8 +2,6 @@ using CvApi.Domain.Entities;
 using CvApi.Features.Billing;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
-using CvApi.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace CvApi.Tests;
