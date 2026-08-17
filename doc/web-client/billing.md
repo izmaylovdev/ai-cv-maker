@@ -62,11 +62,14 @@ redirect URL. The chosen channel is recorded on the payment and shown in history
 A payment is credited **only** on a `Pending → Paid` transition. A webhook for a
 payment already `Paid` or `Failed` is acknowledged with `200` and ignored, so
 provider retries and out-of-order deliveries never double-credit and terminal
-statuses never regress.
+statuses never regress. The status flip and the credit commit together inside a
+single Firestore transaction, so a retry that races the first delivery cannot
+apply the credit twice.
 
-On success: if the user already has a `BillingAccount`, add `AmountUsd` to it. If
-not, create one with `AllowanceUsd = current effective allowance + AmountUsd` —
-creating a zero-based row would silently erase the user's default allowance.
+On success: if the user already has a billing account, add `amountUsd` to it. If
+not, create one with `allowanceUsd = current effective allowance + amountUsd` —
+creating a zero-based account would silently erase the user's default
+allowance.
 
 A cancelled, failed, or expired payment leaves allowance, spend, and balance
 untouched. Blocked AI actions start working again as soon as the new allowance
@@ -92,13 +95,22 @@ anonymous but signature-verified.
 
 ## Data
 
-`Users.Country` — nullable `varchar(2)`, ISO 3166-1 alpha-2 uppercase; `null`
-means never asked.
+`country` on the user's Firestore document — nullable ISO 3166-1 alpha-2
+uppercase; `null` means never asked.
 
-`TopUpPayments` — `Id`, `UserId` (indexed FK), `AmountUsd`, `Channel`
-(`stripe` | `monobank` | `fake-stripe` | `fake-monobank`), `Status`
-(`Pending` | `Paid` | `Failed`), `ExternalId` (nullable, unique), `CreatedAt`,
-`UpdatedAt`.
+The billing account is a single document at `users/{userId}/billing/account` —
+a fixed document id, so "does this user have an account?" is a keyed read rather
+than a query, which is what the confirmation transaction needs. Fields:
+`allowanceUsd`, `currency`, `updatedAt`.
+
+`topUpPayments/{paymentId}` is **top-level**, not nested under the user, because
+provider webhooks carry no user identity — only the payment id or the provider's
+own id. Fields: `userId`, `amountUsd`, `channel`
+(`stripe` | `monobank` | `fake-stripe` | `fake-monobank`), `status`
+(`Pending` | `Paid` | `Failed`), `externalId` (nullable), `createdAt`,
+`updatedAt`. Firestore has no unique constraint, so `externalId` uniqueness is a
+writer-side invariant rather than an enforced one
+([ADR-0021](../adr/0021-firestore-replaces-cloud-sql.md)).
 
 ---
 

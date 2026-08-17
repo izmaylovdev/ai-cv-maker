@@ -5,8 +5,9 @@ by a dedicated NestJS backend (`admin-api`) behind a Next.js frontend
 (`admin-ui`).
 
 **Code:** `apps/admin-api/`, `apps/admin-ui/`, `apps/cv-api/Features/Admin/`
-**See also:** [ADR-0005](../adr/0005-admin-api-via-cv-api.md) (admin-api reads via cv-api, not the main DB) ·
+**See also:** [ADR-0005](../adr/0005-admin-api-via-cv-api.md) (admin-api reads via cv-api, not the main data) ·
 [ADR-0004](../adr/0004-admin-api-main-db-access.md) ·
+[ADR-0021](../adr/0021-firestore-replaces-cloud-sql.md) (admin accounts live in Firestore) ·
 [web-client/ai-usage.md](../web-client/ai-usage.md) (what the limit does)
 
 ---
@@ -22,16 +23,18 @@ admin-api (NestJS)
   ├─ POST /auth/google, POST /auth/login
   ├─ GET  /users            — JwtAuthGuard
   ├─ GET/PUT /usage-limit   — JwtAuthGuard
-  ├─ admin PostgreSQL       — separate instance; table admin_users
+  ├─ Firestore              — collection admin_users
   └─ cv-api  GET /api/admin/users, GET/PUT /api/admin/usage-limit
                             — X-Admin-Api-Key
 ```
 
-**admin-api never touches the main database.** cv-api owns the `Users` and
-`Profiles` schema and exposes a service-to-service surface guarded by
-`AdminApiKeyFilter` (a shared API key, not the user JWT scheme). The admin
-database holds only admin accounts. See
-[ADR-0005](../adr/0005-admin-api-via-cv-api.md).
+**admin-api never touches the application's data.** cv-api owns the user and
+profile collections and exposes a service-to-service surface guarded by
+`AdminApiKeyFilter` (a shared API key, not the user JWT scheme). admin-api
+shares the same Firestore database — the free tier covers exactly one per
+project — but owns only `admin_users`. See
+[ADR-0005](../adr/0005-admin-api-via-cv-api.md) and
+[ADR-0021](../adr/0021-firestore-replaces-cloud-sql.md).
 
 ---
 
@@ -48,8 +51,8 @@ profiles; users with none show `0`.
 
 `GET /api/admin/users` (cv-api) returns
 `{ id, email, googleId, createdAt, profileCount }` per user. The projection lives
-in `AdminUsersService` and is owned by cv-api — a change to the `Users` or
-`Profiles` entities updates that query in the same change.
+in `AdminUsersService` and is owned by cv-api — a change to the user or profile
+entities updates that query in the same change.
 
 ---
 
@@ -66,11 +69,12 @@ for how it interacts with per-user billing allowances.
 ## Admin authentication
 
 The login page offers **Sign in with Google** and an email/password form. Both
-return the same JWT shape and both check membership in the `admin_users` table:
+return the same JWT shape and both check membership in the `admin_users`
+collection:
 
 - **Google:** admin-api verifies the ID token (`google-auth-library`), then looks
   up the caller's email.
-- **Email/password:** admin-api verifies the bcrypt hash stored on the row.
+- **Email/password:** admin-api verifies the bcrypt hash stored on the document.
 
 An account that is not in `admin_users` gets `403` and admin-ui shows "Access
 denied". Bad credentials or an invalid token get `401`.
@@ -86,20 +90,25 @@ All other admin-api routes require a valid JWT and return `401` without one.
 admin-ui redirects unauthenticated users to `/login`, and any `401` from the API
 triggers the same redirect. Sign out discards the token and returns to `/login`.
 
-**Admin database schema** — a dedicated PostgreSQL instance, one table:
+**Admin accounts** — one Firestore collection, `admin_users`, on the database
+shared with cv-api. The document id is the admin's UUID; the fields keep their
+former Postgres column names:
 
-```sql
-CREATE TABLE admin_users (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT,           -- nullable; bcrypt, for email/password login
-  google_id     TEXT,           -- nullable; Google sub, for OAuth login
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+```
+admin_users/{id}
+ ├── email          — string
+ ├── password_hash  — string | null; bcrypt, for email/password login
+ ├── google_id      — string | null; Google sub, for OAuth login
+ └── created_at     — timestamp
 ```
 
-An admin may have either or both methods set. Allowed admins are seeded by
-migration.
+An admin may have either or both methods set. Firestore has no unique
+constraint, so email uniqueness is a writer-side invariant — the seeder checks
+before inserting and the lookup takes the first match. There is no schema to
+create: `apps/admin-api/src/migrate.ts` only seeds the first operator from
+`ADMIN_SEED_EMAIL`, which is how anyone gets into a fresh deployment. It is a
+one-off — the container's entrypoint is `main.js`, so the seeder is run
+deliberately (`node migrate.js`), not on every boot.
 
 ---
 
@@ -112,7 +121,9 @@ migration.
 | `ADMIN_API_URL` | admin-ui | admin-api base URL (default `http://localhost:3000`) |
 | `GOOGLE_CLIENT_ID` | admin-api, admin-ui | Google OAuth client id |
 | `JWT_SECRET` | admin-api | HS256 signing secret (≥ 32 chars) |
-| `ADMIN_DB_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` | admin-api | Admin PostgreSQL connection (port defaults to `5434`, name to `admin`) |
+| `GOOGLE_CLOUD_PROJECT` | admin-api | GCP project holding the Firestore database. No credential is configured — in GCP the client authenticates as the service account (`roles/datastore.user`) |
+| `FIRESTORE_EMULATOR_HOST` | admin-api | Local only: redirects the Firestore SDK to the emulator (`firestore:8085` in compose, `localhost:8085` on the host). Unset in GCP |
+| `ADMIN_SEED_EMAIL` | admin-api | Optional: email the one-off seeder writes into `admin_users` so the first operator can sign in |
 
 ---
 

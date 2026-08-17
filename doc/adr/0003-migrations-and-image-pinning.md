@@ -1,6 +1,6 @@
 # ADR-0003: Migrations as a deploy step; SHA-pinned image deploys
 
-- **Status:** Accepted
+- **Status:** Accepted (migration-as-a-deploy-step amended by [ADR-0021](0021-firestore-replaces-cloud-sql.md) to that extent: cv-api is on schemaless Firestore, so the `cv-api-migrate` job is removed; the SHA-pinned image deploys stand unchanged)
 - **Date:** 2026-06-13
 
 ## Context

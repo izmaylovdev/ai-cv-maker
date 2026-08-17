@@ -10,23 +10,26 @@ Browser ────────────────────────
        └─ <ai-chat-widget>  ← chat-ui │                                │
             │                         ▼                                ▼
             └─ REST/HTTP ──→ cv-api (ASP.NET Core 9) ◄─────────────────┘
-                                 ├─ PostgreSQL (EF Core, main DB)
+                                 ├─ Cloud Firestore (Native mode, app collections)
                                  └─ gRPC ──→ llm-service (Python, grpc.aio)
                                                   └─ LLM provider (Google, OpenAI-compat, Azure AI Foundry)
 
 Admin browser
   └─ admin-ui (Next.js) ──→ admin-api (NestJS)
-                               ├─ admin DB (PostgreSQL — admin users/sessions)
+                               ├─ Cloud Firestore (same database, admin_users collection)
                                └─ REST/HTTP ──→ cv-api  (user list via /api/admin/users; API key)
 
 Monitoring
-  prometheus ── scrapes /metrics on cv-api + llm-service ──→ grafana (dashboards; also queries main DB)
+  prometheus ── scrapes /metrics on cv-api + llm-service ──→ grafana (dashboards)
 
 Nginx (ui-angular container)
   ├─ /api/*          → cv-api
   └─ /chat-widget/*  → chat-ui (Nginx serving chat-widget.js IIFE)
 ```
 
+Both services share **one** Firestore database, separated by top-level collection
+rather than by database, because the Firestore free tier covers exactly one
+database per project ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)).
 Networking topology and service isolation decisions are recorded in [ADR-0001](doc/adr/0001-llm-service-network-privacy.md).
 
 ---
@@ -62,7 +65,7 @@ User submits credentials
         │  POST /api/auth/{login|register|google}
         ▼
     cv-api validates → issues HS256 JWT (1-hour expiry)
-                     → sets HttpOnly refresh token cookie (30-day, SHA-256 hashed in DB)
+                     → sets HttpOnly refresh token cookie (30-day, SHA-256 hashed at rest)
         │
         ▼
   saveSession(token, email)   ← @applysy/auth
@@ -78,13 +81,13 @@ On 401 (access token expired):
                  → if refresh fails → forceLogout()
 
 On logout:
-  POST /api/auth/logout → cv-api revokes refresh token in DB
+  POST /api/auth/logout → cv-api revokes the stored refresh token
   clearSession() → broadcast.notifyLogout() → all same-origin tabs dispatch logout
 ```
 
 **Token storage:** Access token in localStorage; refresh token in HttpOnly cookie (set by `cv-api`).  
 **Transport:** `Authorization: Bearer <token>` header on every API request. Refresh uses the cookie automatically (credentials: include).  
-**Expiry:** 1-hour JWT access token + 30-day rotating HttpOnly refresh token. Refresh tokens are stored hashed (SHA-256) in the `RefreshTokens` table and rotated on every use.  
+**Expiry:** 1-hour JWT access token + 30-day rotating HttpOnly refresh token. Refresh tokens are stored hashed (SHA-256) in the `refreshTokens` collection — the base64url form of the hash *is* the document id, so the refresh lookup is a single keyed read — and rotated on every use.  
 **CORS:** Locked to specific front-end origins with `AllowCredentials` to support the HttpOnly cookie flow.
 
 ---
@@ -207,7 +210,7 @@ The **document-style profile editor** packaged — like `chat-ui` — as a self-
 
 Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one rich-text document** in a single Lexical editor built from a **closed set of predefined widgets** (ADR-0014, §13 / US-EDIT-19): **title** (a section heading that anchors a group), **text** (paragraph), **chips** (tag cloud), **list** (bullets), **link** (a standalone hyperlink line — spec §10), and **timeline** (dated entries — work experience, education, projects — each with Title / Dates / Description). Widgets are inserted from a fixed **controls side rail** beside the document. A **title** node anchors a *group*: dragging its handle moves the title plus all non-title blocks that follow it (until the next title or the end of the document) as a single unit, with a live drag preview and drop indicator.
 
-**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a **flat `BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/**title**/paragraph/text/**inlineLink**/link/list/listItem/chips/chip/timeline/entry — `section` retired in US-EDIT-19; `inlineLink` is an inline hyperlink run inside paragraph text, added in US-EDIT-21, distinct from the standalone block `link` line). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree, and migrates any legacy `section` nodes to `title + flat children` on load. The cv-api stores `{ header, body }` as a JSON column and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
+**Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a **flat `BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/**title**/paragraph/text/**inlineLink**/link/list/listItem/chips/chip/timeline/entry — `section` retired in US-EDIT-19; `inlineLink` is an inline hyperlink run inside paragraph text, added in US-EDIT-21, distinct from the standalone block `link` line). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree, and migrates any legacy `section` nodes to `title + flat children` on load. The cv-api stores `{ header, body }` as a single JSON string field on the profile document and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 
 **Host-agnostic I/O** — no `fetch`, auth, or routing inside the widget:
 
@@ -349,7 +352,7 @@ A separate admin panel for operating the product, isolated from the user-facing 
 | `admin-api` | NestJS (global prefix `/api`, port 3000) | Admin backend: admin login (`POST /api/auth/google`, `POST /api/auth/login`), registered-users list (`GET /api/users`) |
 | `admin-ui` | Next.js | Admin frontend; calls `admin-api` (`ADMIN_API_URL`) and embeds Grafana dashboards (`GRAFANA_URL`) |
 
-`admin-api` owns **one** database — its own admin PostgreSQL database for admin users/sessions (initialized by `apps/admin-api/migrations/init-admin-db.sql`). It does **not** touch the main application database. For user data it calls cv-api's `GET /api/admin/users` over HTTP (`CV_API_URL`), authenticated with a shared API key (`CV_API_ADMIN_KEY`) that cv-api validates against `AdminApi:ApiKey` — cv-api is the sole owner of the `Users`/`Profiles` schema ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md), superseding [ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). The same pattern carries the per-user spending limit: admin-ui → admin-api `GET/PUT /api/usage-limit` → cv-api `GET/PUT /api/admin/usage-limit`, exposed in admin-ui at `/settings` (US-AI-7). Domain docs: [`doc/admin/`](doc/admin/).
+`admin-api` owns **one** collection — `admin_users`, holding admin accounts, on the same Firestore database cv-api uses (ADR-0021). It does **not** read or write any of cv-api's collections; the separation is by collection name and by convention, since Firestore IAM has no collection-level granularity. Documents keep the old Postgres column names verbatim (`email`, `password_hash`, `google_id`, `created_at`) and the document id is the admin's UUID. There is no schema to create: `apps/admin-api/src/migrate.ts` now only seeds the first operator from `ADMIN_SEED_EMAIL`, and it is run deliberately rather than at boot. For user data it calls cv-api's `GET /api/admin/users` over HTTP (`CV_API_URL`), authenticated with a shared API key (`CV_API_ADMIN_KEY`) that cv-api validates against `AdminApi:ApiKey` — cv-api is the sole owner of the `Users`/`Profiles` schema ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md), superseding [ADR-0004](doc/adr/0004-admin-api-main-db-access.md)). The same pattern carries the per-user spending limit: admin-ui → admin-api `GET/PUT /api/usage-limit` → cv-api `GET/PUT /api/admin/usage-limit`, exposed in admin-ui at `/settings` (US-AI-7). Domain docs: [`doc/admin/`](doc/admin/).
 
 ---
 
@@ -368,83 +371,103 @@ Domain docs: [`doc/chrome-extension/`](doc/chrome-extension/).
 
 ## Data Model
 
+Firestore (Native mode), one database shared by cv-api and admin-api
+([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)). Nesting follows **the
+key a document is looked up by**, not the old relational foreign key: only
+`Profile` and `BillingAccount` are ever reached with the user id already in hand,
+so only those are subcollections. The rest stay top-level, where their hottest
+lookup is a keyed read rather than a collection-group query needing its own index.
+
 ```
-User
- ├── id (UUID PK)
- ├── email (unique)
+users/{userId}                        — cv-api
+ ├── email (unique by convention — Firestore has no unique constraint)
  ├── passwordHash (nullable)
- ├── googleId (nullable, unique)
+ ├── googleId (nullable)
  ├── createdAt
  ├── globalPreferences  — nullable free-text AI preferences (edited on /settings or by the UserChat agent)
- └── country  — nullable ISO 3166-1 alpha-2 (uppercase), asked at first top-up; selects the payment channel (US-BILL-1)
+ └── country  — nullable ISO 3166-1 alpha-2 (uppercase), asked at first top-up; selects the payment channel
 
-Profile  (FK → User, cascade delete)
- ├── id, userId
- ├── name          — internal label (e.g. "Senior Dev Profile")
- ├── document      — JSON column: the canonical ProfileDocument { header, body } (ADR-0013, body amended by ADR-0014 to a flat BlockNode tree).
- │                   Replaces the former fullName/title/overview/location/contactEmail/contactPhone/
- │                   sectionOrder columns and the WorkExperiences/Educations/Skills child tables,
- │                   which were backfilled into the document and dropped.
- │                   Blank-created profiles seed ProfileDocument.DefaultTemplate() (US-PROF-6): an empty
- │                   header + four titled sections (Professional Summary / Work Experience / Education /
- │                   Skills) with empty scaffolding — structure only, no data. Bootstrap-from-CV seeds
- │                   from extracted data instead.
- └── GeneratedCvs[]     (cascade delete)
+users/{userId}/profiles/{profileId}
+ ├── name      — internal label (e.g. "Senior Dev Profile")
+ └── document  — the canonical ProfileDocument { header, body } (ADR-0013, body a flat
+                 BlockNode tree per ADR-0014), stored as a JSON string field.
+                 Blank-created profiles seed ProfileDocument.DefaultTemplate(): an empty
+                 header + four titled sections (Professional Summary / Work Experience /
+                 Education / Skills) with empty scaffolding — structure only, no data.
+                 Bootstrap-from-CV seeds from extracted data instead.
 
-GeneratedCv  (FK → Profile, cascade delete)
- ├── id, profileId
+users/{userId}/billing/account        — exactly one document per user, fixed id "account",
+ ├── allowanceUsd    so "does this user have a billing account?" is a keyed read, which is
+ ├── currency        what the payment-confirmation transaction needs.
+ └── updatedAt
+       Absence of the document ⇒ fall back to Billing:DefaultAllowanceUsd, else the
+       global limit. Balance is derived (allowance − accrued cost), never stored.
+
+generatedCvs/{cvId}                   — top-level: CvService reaches a CV by (cvId, profileId)
+ ├── profileId                          and never has the owning user in scope there
  ├── createdAt
  ├── fullName, title, location, contactEmail, contactPhone  — snapshot at generation time
  ├── optimizationNotes  — free-text hint passed to LLM
  └── cvDataJson  — serialized LlmGenerateResponse (summary, work, education, skills, highlights)
 
-LlmUsage  (no FK constraint; UserId nullable for system calls)
- ├── id (UUID PK)
- ├── userId (Guid, nullable, indexed)
+llmUsage/{id}                         — top-level: userId is nullable (system calls), and a
+ ├── userId (nullable)                  subcollection has nowhere to put unattributed rows
  ├── operation  — "Generate" | "Extract" | "Chat" | "UserChat" | "JobChat" | "CoverLetter" | "GenerateAuto"
- ├── promptTokens, completionTokens (int)
- ├── cacheReadTokens, cacheWriteTokens (int, default 0)  — Anthropic prompt-cache counts (US-AI-17, ADR-0019); priced at discounted rates in UsageService
+ ├── promptTokens, completionTokens
+ ├── cacheReadTokens, cacheWriteTokens  — Anthropic prompt-cache counts (US-AI-17, ADR-0019)
  ├── modelName  — e.g. "claude-sonnet-4-6"
- └── createdAt (UTC, indexed)
+ └── createdAt (UTC)
 
-RefreshToken  (FK → User, cascade delete)
- ├── id (UUID PK)
- ├── userId
- ├── token  — SHA-256 hash of the cookie value (unique, max 128 chars)
- ├── expiresAt, createdAt
+refreshTokens/{base64urlTokenHash}    — the document id IS the SHA-256 hash of the cookie
+ ├── userId                             value in base64url form (base64's "/" is illegal in a
+ ├── token       — the unmodified base64 hash  Firestore id), making the hottest auth lookup a
+ ├── expiresAt, createdAt               single keyed get with no query and no index
  └── isRevoked
 
-AppSetting  (generic runtime key-value config, no FK)
- ├── key (string PK, max 100)  — e.g. "LlmUsageLimitUsd" (per-user spending cap, US-AI-7)
- ├── value (string, max 512)
- └── updatedAt (UTC)
-
-BillingAccount  (one row per user, unique UserId; created on demand, US-AI-14)
- ├── id (UUID PK)
- ├── userId (Guid, unique)  — the owning user
- ├── allowanceUsd (decimal(18,6))  — the user's monetary AI spend allowance
- ├── currency (string)  — "USD" (fixed for MVP)
- └── updatedAt (UTC)
-       Absence of a row ⇒ fall back to Billing:DefaultAllowanceUsd, else the §9 global
-       limit. Balance is derived (allowance − accrued cost), never stored.
-
-TopUpPayment  (FK → User, cascade delete; one row per top-up attempt, US-BILL-1)
- ├── id (UUID PK)
- ├── userId (indexed)
- ├── amountUsd (decimal(18,6))  — one of the fixed amounts (5 / 10 / 20)
- ├── channel (string)  — "stripe" | "monobank" (dev fake mode: "fake-stripe" | "fake-monobank")
- ├── status (string)  — Pending → Paid | Failed (terminal statuses never regress)
- ├── externalId (nullable, unique)  — Stripe Checkout session id / Monobank invoiceId
+topUpPayments/{paymentId}             — top-level: provider webhooks carry no user identity,
+ ├── userId                             only the payment id or externalId
+ ├── amountUsd  — one of the fixed amounts (5 / 10 / 20)
+ ├── channel    — "stripe" | "monobank" (dev fake mode: "fake-stripe" | "fake-monobank")
+ ├── status     — Pending → Paid | Failed (terminal statuses never regress)
+ ├── externalId (nullable)  — Stripe Checkout session id / Monobank invoiceId
  └── createdAt, updatedAt (UTC)
-       A Pending → Paid transition credits BillingAccount.AllowanceUsd by amountUsd exactly
-       once (webhook retries are acknowledged and ignored). First-ever credit seeds the
-       BillingAccount row from the user's current effective allowance + amount.
+       A Pending → Paid transition credits billing/account.allowanceUsd by amountUsd exactly
+       once, inside a Firestore transaction, so provider retries cannot double-credit. First-ever
+       credit seeds the billing account from the user's current effective allowance + amount.
 
-(Request tracing is no longer in the database — spans go to Grafana Tempo via
- OpenTelemetry; see ADR-0016.)
+appSettings/{key}                     — the document id IS the setting key, e.g.
+ ├── value                              "LlmUsageLimitUsd" (per-user spending cap, US-AI-7)
+ └── updatedAt (UTC)
+
+admin_users/{id}                      — admin-api (see the admin plane section above)
+ ├── email, password_hash (nullable), google_id (nullable)
+ └── created_at
 ```
 
-Migrations are EF Core code-first, stored in `apps/cv-api/Infrastructure/Persistence/Migrations/`. Only cv-api reads or writes this schema; admin-api reaches `Users`/`Profiles` through cv-api's `GET /api/admin/users` ([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md)). The admin plane's own database is separate and schema-managed by `apps/admin-api/migrations/init-admin-db.sql` (see the admin section above).
+**What Firestore does not do for us.** There are no foreign keys, so cascade
+deletes (profiles and top-up payments when a user goes, generated CVs when a
+profile goes) are explicit recursive deletes in application code, and
+referential integrity is a code invariant rather than a schema one. There are no
+unique constraints, so uniqueness (user email, admin email, payment
+`externalId`) is a writer-side invariant. Multi-field queries need composite
+indexes, there are no joins, and reads are billed per document. Transactions are
+capped at 500 writes.
+
+Access is by service-account IAM (`roles/datastore.user`, granted per service in
+`infra/firestore.tf`) — there is no database password anywhere. cv-api's
+repositories live behind a persistence seam (`apps/cv-api/Domain/Repositories/`
+interfaces, `apps/cv-api/Infrastructure/Persistence/Firestore/`
+implementations), which is what lets the tests fake the store instead of a
+database. There are no schema migrations: Firestore is schemaless, so schema
+evolution is a code-level concern with no enforcement point. The one-off
+Postgres→Firestore data move lives in `scripts/migrate-to-firestore/`.
+
+Only cv-api reads or writes the application collections; admin-api reaches user
+data through cv-api's `GET /api/admin/users`
+([ADR-0005](doc/adr/0005-admin-api-via-cv-api.md)).
+
+(Request tracing is not in the database — spans go to Grafana Tempo via
+OpenTelemetry; see [ADR-0016](doc/adr/0016-distributed-tracing-tempo-otel.md).)
 
 ---
 
@@ -460,7 +483,7 @@ The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto hea
 
 ## Infrastructure (GCP)
 
-Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud SQL for PostgreSQL 16**. Public hostnames are served through **Cloudflare** (free plan, not in Terraform): Cloudflare terminates TLS and a Worker (`infra/cloudflare/`) does host-based routing to the `run.app` origins — `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0020](doc/adr/0020-cloudflare-worker-replaces-lb.md); it replaced the global HTTPS load balancer of [ADR-0007](doc/adr/0007-landing-page-deployment.md)).
+Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud Firestore in Native mode** — the project's `(default)` database, the only free-tier-eligible one, defined in `infra/firestore.tf` ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)). The Cloud SQL Postgres instance it replaced is **stopped and retained** as a rollback target for one window (`infra/database.tf`, `activation_policy = "NEVER"`, both deletion guards on); nothing reads it. Public hostnames are served through **Cloudflare** (free plan, not in Terraform): Cloudflare terminates TLS and a Worker (`infra/cloudflare/`) does host-based routing to the `run.app` origins — `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0020](doc/adr/0020-cloudflare-worker-replaces-lb.md); it replaced the global HTTPS load balancer of [ADR-0007](doc/adr/0007-landing-page-deployment.md)).
 
 | Cloud Run service | Instances | Ingress | Invoker | VPC egress |
 |---|---|---|---|---|
@@ -474,11 +497,11 @@ Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live 
 | `admin-api` | 0–2 | Internal only | — | ALL_TRAFFIC |
 | `admin-ui` | 0–2 | All | `allUsers` | ALL_TRAFFIC |
 
-**LLM observability — Langfuse VM ([ADR-0011](doc/adr/0011-langfuse-prod-single-vm.md)):** the self-hosted Langfuse stack (web + worker + ClickHouse + Redis + MinIO) is defined to run as a docker-compose deployment on a **single `e2-small` GCE VM** (`infra/langfuse.tf`), the cheapest hosting option. The whole stack is **gated behind `var.langfuse_enabled` (default `false`)** — committed and validated but not yet deployed; flip the flag to provision it. Its metadata DB reuses the Cloud SQL instance (a `langfuse` database); ClickHouse/MinIO state lives on a separate persistent disk that survives VM re-creation. The VM has **no inbound internet access** (firewall allows the Langfuse port only from the Cloud Run egress subnet, plus IAP for SSH); its ephemeral external IP is outbound-only, for image pulls. `llm-service` reaches it at a static internal IP via Direct VPC egress (`PRIVATE_RANGES_ONLY`, which keeps its direct path to external LLM providers). The UI is reached by an IAP SSH tunnel (`terraform output langfuse_ssh`).
+**LLM observability — Langfuse VM ([ADR-0011](doc/adr/0011-langfuse-prod-single-vm.md)):** the self-hosted Langfuse stack (web + worker + ClickHouse + Redis + MinIO) is defined to run as a docker-compose deployment on a **single `e2-small` GCE VM** (`infra/langfuse.tf`), the cheapest hosting option. The whole stack is **gated behind `var.langfuse_enabled` (default `false`)** — committed and validated but not yet deployed; flip the flag to provision it. Langfuse hard-requires Postgres and cannot run on Firestore, so since ADR-0021 its metadata DB is **not** provisioned by us: enabling Langfuse in production now means supplying an external Postgres via `langfuse_postgres_host` / `_user` / `_password` (a Neon free project would serve). ClickHouse/MinIO state lives on a separate persistent disk that survives VM re-creation. The VM has **no inbound internet access** (firewall allows the Langfuse port only from the Cloud Run egress subnet, plus IAP for SSH); its ephemeral external IP is outbound-only, for image pulls. `llm-service` reaches it at a static internal IP via Direct VPC egress (`PRIVATE_RANGES_ONLY`, which keeps its direct path to external LLM providers). The UI is reached by an IAP SSH tunnel (`terraform output langfuse_ssh`).
 
-**Network privacy ([ADR-0001](doc/adr/0001-llm-service-network-privacy.md)):** llm-service and Cloud SQL are not reachable from the public internet. Cloud Run v2 treats CR-to-CR `.run.app` calls as external, so callers of internal-only services route egress through the project VPC (Direct VPC egress + Private Google Access). cv-api authenticates to llm-service with a Google-signed ID token (`LlmService__AuthMode=google`); IAM (`run.invoker`) enforces it at the edge. Cloud SQL has a private IP in the VPC; its public IP has no authorized networks and serves only Cloud SQL Auth Proxy admin access.
+**Network privacy ([ADR-0001](doc/adr/0001-llm-service-network-privacy.md)):** llm-service is not reachable from the public internet. Cloud Run v2 treats CR-to-CR `.run.app` calls as external, so callers of internal-only services route egress through the project VPC (Direct VPC egress + Private Google Access). cv-api authenticates to llm-service with a Google-signed ID token (`LlmService__AuthMode=google`); IAM (`run.invoker`) enforces it at the edge. Firestore has **no public database surface at all** — it is a Google API reached over Private Google Access and authorised by IAM, so it needs no VPC path, no Cloud NAT and no authorized-networks list.
 
-**Secret management ([ADR-0002](doc/adr/0002-secret-management.md)):** sensitive runtime values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) live in **Secret Manager** (`infra/secrets.tf`) and reach Cloud Run via `secret_key_ref` env references — never plaintext env vars. Each secret grants `secretAccessor` only to the consuming service's runtime SA. Terraform state is remote in a versioned GCS bucket (`applysy-tf-state`).
+**Secret management ([ADR-0002](doc/adr/0002-secret-management.md)):** sensitive runtime values (JWT secrets, OAuth client secret, LLM API keys, Grafana password — no database credential remains, since Firestore is authorised by service-account IAM) live in **Secret Manager** (`infra/secrets.tf`) and reach Cloud Run via `secret_key_ref` env references — never plaintext env vars. Each secret grants `secretAccessor` only to the consuming service's runtime SA. Terraform state is remote in a versioned GCS bucket (`applysy-tf-state`).
 
 ---
 
@@ -488,21 +511,24 @@ Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live 
 
 | Service | Host port | Notes |
 |---|---|---|
-| `postgres` | 5433 | Main DB (container 5432); cv-api and grafana connect to it (admin-api does **not** — it calls cv-api) |
+| `firestore` | 8085 | Firestore emulator (same port in and out). One instance serves cv-api **and** admin-api, mirroring production's single shared database. Wrapped by `scripts/firestore-emulator.sh` for the export-on-shutdown / import-on-start round trip that makes the `firestore_data` volume persistent |
 | `cv-api` | 5050 | REST API (container 8080) |
 | `ui-angular` | 4200 | Browser entry point; Nginx proxies `/api/*` → cv-api and `/chat-widget/*` → chat-ui |
 | `chat-ui` | 4202 | Nginx serving the chat-widget bundle |
 | `llm-service` | 50051 (gRPC), 8080 (metrics) | gRPC server + Prometheus metrics HTTP endpoint |
-| `admin-db` | 5434 | Admin PostgreSQL (container 5432), seeded by `init-admin-db.sql` |
-| `admin-api` | 3001 | NestJS admin backend (container 3000); connects to its own admin DB and calls cv-api for user data |
+| `admin-api` | 3001 | NestJS admin backend (container 3000); uses the `admin_users` collection on the shared emulator and calls cv-api for user data |
 | `admin-ui` | 3002 | Next.js admin frontend (container 3000) |
 | `prometheus` | 9090 | Scrapes `/metrics` on cv-api and llm-service |
 | `grafana` | 3000 | Dashboards provisioned from `monitoring/grafana/provisioning/` |
 
+Both the .NET and Node Firestore SDKs route to the emulator purely on `FIRESTORE_EMULATOR_HOST` (`firestore:8085` in-network, `localhost:8085` for host-run dev servers) with `GOOGLE_CLOUD_PROJECT` namespacing the data — no credentials and no connection string are involved locally.
+
 Set `LLM_PROVIDER=openai` and `OPENAI_BASE_URL=http://host.docker.internal:1234/v1` to target a local LM Studio instance instead of a cloud API.
+
+The Langfuse overlay (`docker-compose.langfuse.yml`) carries **its own** Postgres — the only Postgres left in the repo — because Langfuse cannot run on Firestore.
 
 ---
 
 ## CI/CD
 
-`.github/workflows/deploy.yml` builds and pushes images to Artifact Registry (auth via Workload Identity Federation) and deploys to Cloud Run on push to `main`. Images are deployed by **immutable git-SHA tag**, not `:latest` — every Cloud Run service carries `lifecycle { ignore_changes = [image] }` so Terraform owns config while CI owns the running image ([ADR-0003](doc/adr/0003-migrations-and-image-pinning.md)). EF Core migrations run as the `cv-api-migrate` Cloud Run job (`cv-api migrate` CLI mode) **before** the cv-api service rolls out, not on app startup. See `DEPLOY.md` for the full from-scratch deployment guide.
+`.github/workflows/deploy.yml` builds and pushes images to Artifact Registry (auth via Workload Identity Federation) and deploys to Cloud Run on push to `main`. Images are deployed by **immutable git-SHA tag**, not `:latest` — every Cloud Run service carries `lifecycle { ignore_changes = [image] }` so Terraform owns config while CI owns the running image ([ADR-0003](doc/adr/0003-migrations-and-image-pinning.md)). There is **no migration step**: Firestore is schemaless, so the `cv-api-migrate` Cloud Run job is gone and ADR-0003's migration-as-a-deploy-step half no longer applies to cv-api (ADR-0021). See `DEPLOY.md` for the full from-scratch deployment guide.

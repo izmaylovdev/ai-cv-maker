@@ -33,8 +33,9 @@ lands on `/job-profiles`.
 **Tokens.** cv-api issues an HS256 JWT access token valid for **1 hour**, plus a
 refresh token delivered as an `HttpOnly; Secure; SameSite=Strict` cookie named
 `refresh_token`, scoped to `Path=/api/auth` and valid for **30 days**. Refresh
-tokens are stored SHA-256-hashed in the `RefreshTokens` table and **rotated on
-every use** — each refresh issues a new one and the old value stops working.
+tokens are stored SHA-256-hashed in the `refreshTokens` collection — the
+base64url form of the hash is the document id, making the refresh lookup a
+single keyed read — and **rotated on every use** — each refresh issues a new one and the old value stops working.
 
 **Client storage.** The access token and the user's email live in `localStorage`
 under the keys exported by `@applysy/auth` (`TOKEN_KEY` / `EMAIL_KEY` — never

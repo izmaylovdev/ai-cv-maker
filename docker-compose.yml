@@ -218,19 +218,6 @@ services:
       # Explore (where trace-drilldown links open) requires Editor by default;
       # let the anonymous Viewer reach it so trace links don't bounce to login.
       GF_USERS_VIEWERS_CAN_EDIT: "true"
-      # The provisioned `pg-cv-maker` Postgres datasource is vestigial — no
-      # dashboard panel references it (verified in ADR-0021) — and there is no
-      # Postgres left in the base stack for it to reach. These placeholders only
-      # keep provisioning substitution happy; Grafana provisioning has no
-      # ${VAR:-default} support, so the defaults must come from Compose.
-      # The datasource itself should be deleted from
-      # monitoring/grafana/provisioning/datasources/datasources.yml.
-      POSTGRES_USER: ${POSTGRES_USER:-unused}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unused}
-      POSTGRES_DB: ${POSTGRES_DB:-unused}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-removed.invalid}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
       PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
       TEMPO_URL: ${TEMPO_URL:-http://tempo:3200}
     volumes:

@@ -1,6 +1,6 @@
 # ADR-0010: Langfuse for LLM observability
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR-0021](0021-firestore-replaces-cloud-sql.md) to that extent: Langfuse cannot run on Firestore, so enabling it in production now requires provisioning a Postgres for it first)
 - **Date:** 2026-06-16
 
 ## Context

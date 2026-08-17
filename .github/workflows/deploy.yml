@@ -119,17 +119,9 @@ jobs:
             --region $GCP_REGION \
             --image $AR_REGISTRY/llm-service:${{ github.sha }}
 
-      # Apply EF Core migrations as a one-shot job before rolling out the new
-      # cv-api revision, so schema changes run exactly once (ADR-0003).
-      - name: Run database migrations
-        run: |
-          gcloud run jobs update cv-api-migrate \
-            --region $GCP_REGION \
-            --image $AR_REGISTRY/cv-api:${{ github.sha }}
-          gcloud run jobs execute cv-api-migrate \
-            --region $GCP_REGION \
-            --wait
-
+      # No migration step: cv-api persists to Firestore, which is schemaless
+      # (ADR-0021). The `cv-api-migrate` job that used to run here is gone from
+      # infra/apps.tf; ADR-0003's SHA-pinned image deploys below still apply.
       - name: Deploy cv-api
         run: |
           gcloud run services update cv-api \

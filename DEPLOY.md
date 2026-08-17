@@ -40,6 +40,9 @@ Edit `infra/terraform.tfvars` and fill in all required values:
 gcp_project_id = "applysy-498807"
 region         = "europe-central2"
 
+# Cloud SQL credentials for the stopped-but-retained Postgres instance only
+# (ADR-0021 §7). No running service reads them; they disappear with the
+# instance once the rollback window closes.
 postgres_admin_login    = "cvmaker"
 postgres_admin_password = "<strong-password>"
 
@@ -110,11 +113,13 @@ terraform apply
 cd ..
 ```
 
-This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), and Secret Manager secrets. Public hostnames (TLS + host routing) are served by Cloudflare, configured outside Terraform — see `infra/cloudflare/README.md` (ADR-0020).
+This provisions Cloud Run services, Artifact Registry, the **Firestore** database, and Secret Manager secrets. Public hostnames (TLS + host routing) are served by Cloudflare, configured outside Terraform — see `infra/cloudflare/README.md` (ADR-0020).
 
-**Secrets:** sensitive values (DB connection string, JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
+**Database — Firestore ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)):** `infra/firestore.tf` enables `firestore.googleapis.com` and creates the project's `(default)` Native-mode database — the only free-tier-eligible one, shared by cv-api and admin-api and separated by top-level collection. Access is service-account IAM (`roles/datastore.user` per service), so **no database password exists** and no connection string is injected; the client libraries authenticate via ADC and find the database from `GOOGLE_CLOUD_PROJECT`. The old Cloud SQL instance is still in `infra/database.tf`, **stopped** (`activation_policy = "NEVER"`) and retained as the rollback target for one window; it is not deleted and nothing reads it.
 
-**Database migrations** are *not* run by the cv-api service at startup (ADR-0003); they run as the `cv-api-migrate` Cloud Run job. CI executes it automatically before each cv-api rollout. For a manual deploy, see the `deploy` skill or Step 6.
+**Secrets:** sensitive values (JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
+
+**No database migrations.** Firestore is schemaless, so the `cv-api-migrate` Cloud Run job and the migrate-then-deploy step are gone — ADR-0003's migration half no longer applies to cv-api (its SHA-pinned image deploys still do). Moving existing Postgres data into Firestore is a separate one-off: see `scripts/migrate-to-firestore/README.md`.
 
 ### Step 4a — admin-api → cv-api API key (no manual DB step)
 
@@ -123,24 +128,14 @@ This provisions Cloud Run services, Artifact Registry, Cloud SQL (PostgreSQL), a
 Set `cv_api_admin_key` in `terraform.tfvars` (e.g. `openssl rand -base64 32`);
 `terraform apply` puts it in the `cv-api-admin-key` Secret Manager secret and wires
 it to both services (`AdminApi__ApiKey` on cv-api, `CV_API_ADMIN_KEY` on admin-api).
-**No `psql` / Cloud SQL Auth Proxy step is needed.**
 
-**Decommissioning the old read-only role (one-time, upgrading from ADR-0004):** once
-the new cv-api and admin-api revisions are live, drop the now-unused `admin_readonly`
-role so the stale credential and grant are gone:
+admin-api's own store is the `admin_users` collection on the shared Firestore
+database (ADR-0021 §5) — there is no admin Postgres and no `init-admin-db.sql`.
+Seed the first operator with `admin_seed_email` in `terraform.tfvars`.
 
-```bash
-# Cloud SQL has no public authorized networks — connect through the proxy.
-cloud-sql-proxy applysy-498807:europe-central2:ai-cv-maker-postgres &
-
-psql "host=127.0.0.1 dbname=cvmaker user=<postgres_admin_login>" -c \
-  "REASSIGN OWNED BY admin_readonly TO <postgres_admin_login>;
-   DROP OWNED BY admin_readonly;
-   DROP ROLE IF EXISTS admin_readonly;"
-```
-
-The `admin-readonly-db-password` secret is removed by `terraform apply` (the variable
-no longer exists). On a fresh environment there is no role to drop — skip this block.
+There is no `psql` / Cloud SQL Auth Proxy step anywhere in provisioning: the old
+`admin_readonly` role and its secret went with the databases that ADR-0021
+retired, and the retained instance is stopped.
 
 ---
 
@@ -241,9 +236,10 @@ gh secret set GCP_REGION                    --body "europe-central2"
 gh secret set AR_REGISTRY                   --body "europe-central2-docker.pkg.dev/applysy-498807/aicvmaker"
 ```
 
-CI deploys by git-SHA tag and runs the `cv-api-migrate` job before rolling
-cv-api (ADR-0003). It does **not** run `terraform apply` — infra changes remain
-a manual step, so apply infra before pushing code that depends on it.
+CI deploys by git-SHA tag (ADR-0003). There is no migration step — Firestore is
+schemaless and the `cv-api-migrate` job no longer exists (ADR-0021). CI does
+**not** run `terraform apply` — infra changes remain a manual step, so apply
+infra before pushing code that depends on it.
 
 ## Redeploying after code changes (manual)
 

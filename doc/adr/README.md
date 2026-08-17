@@ -57,16 +57,16 @@ What becomes easier, what becomes harder, what new obligations exist
 |---|---|---|
 | [0001](0001-llm-service-network-privacy.md) | llm-service network privacy on Cloud Run | Accepted |
 | [0002](0002-secret-management.md) | Secret management for GCP infrastructure | Accepted |
-| [0003](0003-migrations-and-image-pinning.md) | Migrations as a deploy step; SHA-pinned image deploys | Accepted |
+| [0003](0003-migrations-and-image-pinning.md) | Migrations as a deploy step; SHA-pinned image deploys | Accepted (migration step amended by 0021) |
 | [0004](0004-admin-api-main-db-access.md) | admin-api read-only access to the main database | Superseded by 0005 |
 | [0005](0005-admin-api-via-cv-api.md) | admin-api reads user data via a cv-api endpoint | Accepted |
 | [0006](0006-cicd-workload-identity.md) | CI/CD deploys via Workload Identity Federation | Accepted |
 | [0007](0007-landing-page-deployment.md) | Landing page on Cloud Run behind the shared LB | Accepted (LB routing superseded by 0020) |
 | [0008](0008-cloud-run-scale-to-zero.md) | Scale-to-zero and request-based billing for idle Cloud Run services | Accepted |
-| [0009](0009-smallest-db-tier.md) | Smallest Cloud SQL tier (db-f1-micro) for the idle platform | Accepted |
-| [0010](0010-langfuse-llm-observability.md) | Langfuse for LLM observability (self-hosted, opt-in) | Accepted |
-| [0011](0011-langfuse-prod-single-vm.md) | Langfuse production hosting on a single GCE VM | Accepted |
-| [0012](0012-langfuse-evals.md) | Run LLM evals through Langfuse datasets and experiments | Accepted |
+| [0009](0009-smallest-db-tier.md) | Smallest Cloud SQL tier (db-f1-micro) for the idle platform | Superseded by 0021 |
+| [0010](0010-langfuse-llm-observability.md) | Langfuse for LLM observability (self-hosted, opt-in) | Accepted (amended by 0021) |
+| [0011](0011-langfuse-prod-single-vm.md) | Langfuse production hosting on a single GCE VM | Accepted (amended by 0021) |
+| [0012](0012-langfuse-evals.md) | Run LLM evals through Langfuse datasets and experiments | Accepted (amended by 0021) |
 | [0013](0013-canonical-profile-document-model.md) | Section-based ProfileDocument as the canonical profile model | Accepted (body amended by 0014) |
 | [0014](0014-lexical-block-tree-profile-model.md) | Lexical rich-text block tree as the canonical profile body | Accepted |
 | [0015](0015-remove-optimize-enhance-endpoints.md) | Remove the unused Optimize and EnhanceField AI endpoints | Accepted |
@@ -75,4 +75,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0018](0018-isolate-tempo-tracer-provider-from-langfuse.md) | Isolate the Tempo tracer provider from Langfuse | Accepted |
 | [0019](0019-anthropic-prompt-caching.md) | Anthropic prompt caching and cache-aware usage accounting | Proposed |
 | [0020](0020-cloudflare-worker-replaces-lb.md) | Replace the global HTTPS load balancer with a Cloudflare Worker proxy | Proposed |
-| [0021](0021-firestore-replaces-cloud-sql.md) | Move the main and admin databases to Firestore | Proposed |
+| [0021](0021-firestore-replaces-cloud-sql.md) | Move the main and admin databases to Firestore | Accepted |

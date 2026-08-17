@@ -73,6 +73,13 @@ docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-49
 docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:latest
 ```
 
+**profile-builder-ui** (React web component + nginx — its own Cloud Run service, `infra/apps.tf`):
+```bash
+docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/profile-builder-ui:latest \
+  -f apps/profile-builder-ui/Dockerfile .
+docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/profile-builder-ui:latest
+```
+
 **llm-service** (Python/gRPC — build context must be repo root, not service dir, because it copies `proto/llm_service.proto`):
 ```bash
 docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:latest \
@@ -94,16 +101,14 @@ docker build --platform linux/amd64 -t europe-central2-docker.pkg.dev/applysy-49
 docker push europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:latest
 ```
 
-## Run migrations (only when cv-api schema changed)
+## No migration step
 
-If the deploy includes EF Core migrations, apply them via the migrate job
-**before** updating the cv-api service (ADR-0003) — never let the service
-migrate on startup in production:
-
-```bash
-gcloud run jobs update cv-api-migrate --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG
-gcloud run jobs execute cv-api-migrate --region europe-central2 --wait
-```
+cv-api persists to Firestore, which is schemaless (ADR-0021), so there is
+nothing to migrate before a rollout. The `cv-api-migrate` Cloud Run job no
+longer exists — do not add a `gcloud run jobs execute cv-api-migrate` call
+back; it fails against a job that is not there. ADR-0003 still governs the
+SHA-pinned image deploys above; only its migration-as-a-deploy-step half
+lapsed.
 
 ## Update Cloud Run services
 
@@ -114,6 +119,7 @@ Deploy the **same `$TAG`** you built — not `:latest`.
 gcloud run services update cv-api      --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/cv-api:$TAG
 gcloud run services update ui-angular  --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/ui-angular:$TAG
 gcloud run services update chat-ui     --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/chat-ui:$TAG
+gcloud run services update profile-builder-ui --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/profile-builder-ui:$TAG
 gcloud run services update llm-service --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/llm-service:$TAG
 gcloud run services update admin-api   --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-api:$TAG
 gcloud run services update admin-ui    --region europe-central2 --image europe-central2-docker.pkg.dev/applysy-498807/aicvmaker/admin-ui:$TAG

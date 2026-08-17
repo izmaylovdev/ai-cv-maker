@@ -111,15 +111,21 @@ name-only `PUT` would wipe the document.
 
 ## Data
 
-A profile row stores `Id`, `UserId`, `Name` (≤ 100 chars), and `Document` — the
-canonical `ProfileDocument { header, body }` block tree persisted as a single
-`jsonb` column. The pre-ADR-0013 structured shape (`fullName`/`workExperience`/
-`education`/`skills`/`sectionOrder` columns) is gone; see
+A profile is a document at `users/{userId}/profiles/{profileId}` in Firestore —
+a subcollection of the user, because every path that reaches a profile already
+carries the user id. It stores `name` (≤ 100 chars) and `document`: the canonical
+`ProfileDocument { header, body }` block tree serialized to a single JSON string
+field. The pre-ADR-0013 structured shape (`fullName`/`workExperience`/
+`education`/`skills`/`sectionOrder`) is gone; see
 [ADR-0013](../adr/0013-canonical-profile-document-model.md) and
 [ADR-0014](../adr/0014-lexical-block-tree-profile-model.md).
 
-`GeneratedCv → Profile` is configured with `DeleteBehavior.Cascade`, so deleting a
-profile removes its CVs in the database rather than in application code.
+Generated CVs live in the top-level `generatedCvs` collection with a `profileId`
+field, not under the profile, because a CV is looked up by `(cvId, profileId)`
+without the owning user in scope. Firestore has no foreign keys, so deleting a
+profile removes its CVs through an explicit cascade **in application code**
+([ADR-0021](../adr/0021-firestore-replaces-cloud-sql.md)) rather than through a
+database constraint.
 
 ---
 

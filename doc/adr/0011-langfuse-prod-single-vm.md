@@ -1,6 +1,6 @@
 # ADR-0011: Langfuse production hosting on a single GCE VM
 
-- **Status:** Accepted (rollout gated — not yet deployed)
+- **Status:** Accepted (rollout gated — not yet deployed; amended by [ADR-0021](0021-firestore-replaces-cloud-sql.md) to that extent: the metadata Postgres is no longer provisioned here and must be supplied externally via `langfuse_postgres_*`)
 - **Date:** 2026-06-16
 
 ## Context

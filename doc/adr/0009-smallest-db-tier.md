@@ -1,6 +1,6 @@
 # ADR-0009: Smallest Cloud SQL tier (db-f1-micro) for the idle platform
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0021](0021-firestore-replaces-cloud-sql.md) (the databases moved to Firestore; this ADR's "stopped by default" operating model was drift — the instance had been `RUNNABLE` and billing continuously)
 - **Date:** 2026-06-16
 
 ## Context

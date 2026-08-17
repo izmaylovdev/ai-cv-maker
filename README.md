@@ -8,12 +8,12 @@ An AI-powered CV generation platform built as an Nx monorepo. Users authenticate
 |-----|------|-------------|
 | `landing` | Static HTML + Vite + Nginx | Public marketing landing page |
 | `ui-angular` | Angular + Nginx | Frontend SPA (auth, profile, CV pages) |
-| `cv-api` | ASP.NET Core 9 + PostgreSQL | REST API — auth, user profiles, CV management, PDF export |
+| `cv-api` | ASP.NET Core 9 + Cloud Firestore | REST API — auth, user profiles, CV management, PDF export |
 | `llm-service` | Python / gRPC + LangChain | AI microservice — generates CV content via a configurable LLM |
 | `infra` | Terraform | Cloud infrastructure |
 
 ```
-Browser → ui-angular (Nginx) → cv-api (.NET) → PostgreSQL
+Browser → ui-angular (Nginx) → cv-api (.NET) → Cloud Firestore
                                      ↓ gRPC
                               llm-service (Python / grpc.aio)
 ```
@@ -44,17 +44,18 @@ docker compose up --build
 | UI | http://localhost:4200 |
 | CV API | http://localhost:5050 |
 | LLM service | gRPC localhost:50051 (metrics on http://localhost:8080) |
-| PostgreSQL | localhost:5433 |
+| Firestore emulator | localhost:8085 |
 
 ### One-line dev environment
 
 Run the whole app stack with hot reload in a single command. It starts the
-Postgres dependency in Docker, then runs every app's dev server concurrently
-with prefixed logs. Press `Ctrl-C` to tear it all down.
+Firestore emulator in Docker and waits for it to accept connections, then runs
+every app's dev server concurrently with prefixed logs. Press `Ctrl-C` to tear it
+all down.
 
 ```sh
-npm run dev                  # postgres + cv-api + llm-service + ui-angular + chat-ui
-npm run dev -- --with-admin  # also start admin-db + admin-api + admin-ui
+npm run dev                  # firestore emulator + cv-api + llm-service + ui-angular + chat-ui + profile-builder-ui
+npm run dev -- --with-admin  # also start admin-api + admin-ui (same emulator)
 npm run dev -- --with-obs    # also start Langfuse and trace the host llm-service
 ```
 
@@ -77,6 +78,7 @@ make dev-stop   # kill any host dev servers left running in the background
 | profile-builder-ui (profile editor widget, `npm run serve:builder`) | http://localhost:4203 |
 | cv-api | http://localhost:5050 |
 | llm-service | gRPC :50051 |
+| Firestore emulator | localhost:8085 |
 | Langfuse (`--with-obs`) | http://localhost:3030 |
 
 > cv-api on the host reads secrets from .NET User Secrets — run the loader once
@@ -105,12 +107,15 @@ come from [.NET User Secrets](https://learn.microsoft.com/aspnet/core/security/a
 dotnet user-secrets list --project apps/cv-api   # verify
 ```
 
-This populates `Google:ClientSecret`, `JwtSettings:Secret`, and
-`ConnectionStrings:DefaultConnection` (pointed at the Docker postgres published
-on `localhost:5433`). User Secrets live in your OS profile, so nothing secret is
-ever committed or shipped in the image. Re-run the script after editing `.env`.
+This populates `Google:ClientSecret` and `JwtSettings:Secret`. User Secrets live
+in your OS profile, so nothing secret is ever committed or shipped in the image.
+Re-run the script after editing `.env`.
 
-> Override the local DB endpoint with `DB_HOST` / `DB_PORT` env vars if needed.
+> The database needs no secret at all: locally the Firestore SDK routes to the
+> emulator on `FIRESTORE_EMULATOR_HOST` (`localhost:8085`, exported by
+> `scripts/dev.sh`) with `GOOGLE_CLOUD_PROJECT` namespacing the data; in GCP it
+> authenticates as the service account. There is no connection string
+> ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)).
 
 ### Hybrid: full stack in Docker, llm-service on the host
 
@@ -166,7 +171,8 @@ gRPC metadata, so each Langfuse trace links back to the cv-api request.
 See `.env.example` for the full list. Key variables:
 
 ```
-POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+GOOGLE_CLOUD_PROJECT      # project id namespacing the Firestore data (local default: applysy-local)
+FIRESTORE_EMULATOR_HOST   # host:port of the local emulator; unset in GCP
 JWT_SECRET
 GOOGLE_CLIENT_ID          # Google OAuth
 LLM_PROVIDER              # google | openai | foundry

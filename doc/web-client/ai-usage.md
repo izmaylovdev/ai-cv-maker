@@ -17,9 +17,10 @@ documented in [chat.md](chat.md) and [cv-generation.md](cv-generation.md).
 
 Every gRPC response from llm-service carries a `UsageMetadata` message:
 `prompt_tokens`, `completion_tokens`, `model_name`, `cache_read_tokens`,
-`cache_write_tokens`. cv-api writes one `LlmUsage` row per call — `UserId`,
-`Operation`, the four token counts, `ModelName`, `CreatedAt`. Rows where all four
-counts are zero are skipped rather than stored.
+`cache_write_tokens`. cv-api writes one document to the top-level `llmUsage` collection per call —
+`userId` (nullable, for system calls), `operation`, the four token counts,
+`modelName`, `createdAt`. Records where all four counts are zero are skipped
+rather than stored.
 
 Cost is **not** stored. It is computed on read from the `LlmPricing` price table
 in `appsettings.json`, keyed by model name:
@@ -51,9 +52,10 @@ The **effective allowance** resolves in order:
 
 1. the user's `BillingAccount.AllowanceUsd`, if a row exists;
 2. otherwise the configured `Billing:DefaultAllowanceUsd`, when set;
-3. otherwise the global admin-configurable limit — the `LlmUsageLimitUsd` row in
-   the `AppSettings` table, falling back to `UsageLimit:MaxCostUsdPerUser` in
-   `appsettings.json` (default **$0.50**).
+3. otherwise the global admin-configurable limit — the `LlmUsageLimitUsd`
+   document in the `appSettings` collection (the setting key *is* the document
+   id), falling back to `UsageLimit:MaxCostUsdPerUser` in `appsettings.json`
+   (default **$0.50**).
 
 A blocked call surfaces as **HTTP 402** with a stable machine-readable body:
 

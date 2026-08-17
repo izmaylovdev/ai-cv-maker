@@ -28,16 +28,3 @@ datasources:
         datasourceUid: prom-cv-maker
       serviceMap:
         datasourceUid: prom-cv-maker
-
-  - name: PostgreSQL
-    uid: pg-cv-maker
-    type: postgres
-    access: proxy
-    url: ${POSTGRES_HOST}:${POSTGRES_PORT}
-    database: ${POSTGRES_DB}
-    user: ${POSTGRES_USER}
-    secureJsonData:
-      password: ${POSTGRES_PASSWORD}
-    jsonData:
-      sslmode: ${POSTGRES_SSL_MODE}
-      postgresVersion: 1600

@@ -1,6 +1,6 @@
 # ADR-0012: Run LLM evals through Langfuse datasets and experiments
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by [ADR-0021](0021-firestore-replaces-cloud-sql.md) to that extent: production Langfuse now needs an externally provisioned Postgres; local `npm run evals` against the compose overlay is unaffected)
 - **Date:** 2026-06-17
 
 ## Context

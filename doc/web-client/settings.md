@@ -39,8 +39,9 @@ The text travels to llm-service as the `global_preferences` field on
 | `GET /api/settings/preferences` | `{ globalPreferences: string \| null }` |
 | `PUT /api/settings/preferences` | Body `{ globalPreferences }` → the saved value |
 
-Both require a JWT and operate only on the caller's own row. The value is stored
-as the nullable `Users.GlobalPreferences` column.
+Both require a JWT and operate only on the caller's own record. The value is
+stored as the nullable `globalPreferences` field on the user's Firestore
+document.
 
 ---
 
