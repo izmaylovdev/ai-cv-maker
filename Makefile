@@ -21,5 +21,4 @@ dev-stop: ## Kill any host dev servers left running in the background
 	bash scripts/dev-stop.sh
 
 # No migrate/migration targets: cv-api persists to Firestore, which is
-# schemaless (ADR-0021). The one-off Postgres import lives in
-# scripts/migrate-to-firestore/.
+# schemaless (ADR-0021).

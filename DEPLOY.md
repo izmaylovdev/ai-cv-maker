@@ -40,12 +40,6 @@ Edit `infra/terraform.tfvars` and fill in all required values:
 gcp_project_id = "applysy-498807"
 region         = "europe-central2"
 
-# Cloud SQL credentials for the stopped-but-retained Postgres instance only
-# (ADR-0021 §7). No running service reads them; they disappear with the
-# instance once the rollback window closes.
-postgres_admin_login    = "cvmaker"
-postgres_admin_password = "<strong-password>"
-
 jwt_secret                = "<random-string-at-least-32-chars>"
 google_web_client_id      = "<client-id>.apps.googleusercontent.com"
 google_extension_client_id = "<client-id>.apps.googleusercontent.com"
@@ -115,11 +109,11 @@ cd ..
 
 This provisions Cloud Run services, Artifact Registry, the **Firestore** database, and Secret Manager secrets. Public hostnames (TLS + host routing) are served by Cloudflare, configured outside Terraform — see `infra/cloudflare/README.md` (ADR-0020).
 
-**Database — Firestore ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)):** `infra/firestore.tf` enables `firestore.googleapis.com` and creates the project's `(default)` Native-mode database — the only free-tier-eligible one, shared by cv-api and admin-api and separated by top-level collection. Access is service-account IAM (`roles/datastore.user` per service), so **no database password exists** and no connection string is injected; the client libraries authenticate via ADC and find the database from `GOOGLE_CLOUD_PROJECT`. The old Cloud SQL instance is still in `infra/database.tf`, **stopped** (`activation_policy = "NEVER"`) and retained as the rollback target for one window; it is not deleted and nothing reads it.
+**Database — Firestore ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)):** `infra/firestore.tf` enables `firestore.googleapis.com` and creates the project's `(default)` Native-mode database — the only free-tier-eligible one, shared by cv-api and admin-api and separated by top-level collection. Access is service-account IAM (`roles/datastore.user` per service), so **no database password exists** and no connection string is injected; the client libraries authenticate via ADC and find the database from `GOOGLE_CLOUD_PROJECT`. The Cloud SQL instance it replaced has been deleted; the pre-cutover SQL dumps are kept in `gs://applysy-db-backup-prefirestore/`, a bucket deliberately left outside Terraform.
 
 **Secrets:** sensitive values (JWT secrets, OAuth client secret, LLM API keys, Grafana password) are stored in **Secret Manager** and referenced by Cloud Run via `secret_key_ref` — they are not plaintext env vars. `terraform apply` creates/updates the secret versions from `terraform.tfvars`. To rotate a secret: edit `terraform.tfvars`, `terraform apply` (adds a new version), then redeploy the consuming service so new instances pick up `latest`.
 
-**No database migrations.** Firestore is schemaless, so the `cv-api-migrate` Cloud Run job and the migrate-then-deploy step are gone — ADR-0003's migration half no longer applies to cv-api (its SHA-pinned image deploys still do). Moving existing Postgres data into Firestore is a separate one-off: see `scripts/migrate-to-firestore/README.md`.
+**No database migrations.** Firestore is schemaless, so the `cv-api-migrate` Cloud Run job and the migrate-then-deploy step are gone — ADR-0003's migration half no longer applies to cv-api (its SHA-pinned image deploys still do).
 
 ### Step 4a — admin-api → cv-api API key (no manual DB step)
 
@@ -133,9 +127,8 @@ admin-api's own store is the `admin_users` collection on the shared Firestore
 database (ADR-0021 §5) — there is no admin Postgres and no `init-admin-db.sql`.
 Seed the first operator with `admin_seed_email` in `terraform.tfvars`.
 
-There is no `psql` / Cloud SQL Auth Proxy step anywhere in provisioning: the old
-`admin_readonly` role and its secret went with the databases that ADR-0021
-retired, and the retained instance is stopped.
+There is no `psql` / Cloud SQL Auth Proxy step anywhere in provisioning: there
+is no Postgres in production at all (ADR-0021).
 
 ---
 

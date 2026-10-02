@@ -285,3 +285,30 @@ production and no admin account has ever existed there. The migration copied
 zero rows because there were zero to copy. Admin sign-in is no more broken than
 it was, but it has never worked, and seeding an admin is now a Firestore write
 rather than a Postgres one.
+
+**Amended 2026-10-02 — stopping the instance saved almost nothing; it is
+deleted.** The decision to keep Cloud SQL *stopped* for a rollback window rested
+on the assumption that a stopped instance costs only its disk and backups,
+about $2/mo. The invoices show otherwise. A stopped Cloud SQL instance is
+still charged for its reserved IP address, $0.012/hour, so stopping simply
+replaced the machine-tier charge with an IP charge of about the same size.
+September 2026, the first full month after cutover, was **$11.36**: $8.64 IP
+address reservation plus $2.04 storage — Cloud SQL was 94% of the bill, and
+the total was $0.19 lower than August's. The saving this ADR exists for had
+not materialised at all.
+
+The instance is therefore deleted rather than kept, in two applies (deletion
+guards cleared first, then the instance removed). Its databases and user are
+forgotten by Terraform rather than destroyed one by one, because the API
+cannot drop them from a stopped instance and deleting the instance takes them
+anyway. The VPC peering and reserved range that existed only for its private
+IP go with it. Nothing is lost: the instance has been stopped since
+2026-08-17, so it received no writes after that day's SQL exports, and those
+exports live in `gs://applysy-db-backup-prefirestore/`, a bucket deliberately
+kept outside Terraform so it survives this. Expected bill afterwards: about
+$0.70/mo (Artifact Registry and Secret Manager storage; everything else is
+inside the free tiers).
+
+The lesson worth keeping: check the invoice, not the pricing model. The
+"~$2/mo" figure was never verified against a bill, and it sat unchallenged for
+six weeks.

@@ -24,21 +24,6 @@ variable "firestore_location" {
   default = "europe-central2"
 }
 
-# --- Cloud SQL, decommissioned (ADR-0021) ---
-# Both variables exist only to keep google_sql_user.cvmaker in database.tf, on
-# the stopped instance retained for the rollback window. No running service
-# reads either one. Delete them with database.tf in the follow-up commit, and
-# drop postgres_admin_password from terraform.tfvars at the same time.
-variable "postgres_admin_login" {
-  type    = string
-  default = "cvmaker"
-}
-
-variable "postgres_admin_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "jwt_secret" {
   type      = string
   sensitive = true

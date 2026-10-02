@@ -459,8 +459,7 @@ repositories live behind a persistence seam (`apps/cv-api/Domain/Repositories/`
 interfaces, `apps/cv-api/Infrastructure/Persistence/Firestore/`
 implementations), which is what lets the tests fake the store instead of a
 database. There are no schema migrations: Firestore is schemaless, so schema
-evolution is a code-level concern with no enforcement point. The one-off
-Postgres→Firestore data move lives in `scripts/migrate-to-firestore/`.
+evolution is a code-level concern with no enforcement point.
 
 Only cv-api reads or writes the application collections; admin-api reaches user
 data through cv-api's `GET /api/admin/users`
@@ -483,7 +482,7 @@ The profile is carried as `ProfileDocumentProto` (`id` + `ProfileHeaderProto hea
 
 ## Infrastructure (GCP)
 
-Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud Firestore in Native mode** — the project's `(default)` database, the only free-tier-eligible one, defined in `infra/firestore.tf` ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)). The Cloud SQL Postgres instance it replaced is **stopped and retained** as a rollback target for one window (`infra/database.tf`, `activation_policy = "NEVER"`, both deletion guards on); nothing reads it. Public hostnames are served through **Cloudflare** (free plan, not in Terraform): Cloudflare terminates TLS and a Worker (`infra/cloudflare/`) does host-based routing to the `run.app` origins — `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0020](doc/adr/0020-cloudflare-worker-replaces-lb.md); it replaced the global HTTPS load balancer of [ADR-0007](doc/adr/0007-landing-page-deployment.md)).
+Managed by Terraform in `infra/`. Services run on **Cloud Run v2**; images live in **Artifact Registry**; the database is **Cloud Firestore in Native mode** — the project's `(default)` database, the only free-tier-eligible one, defined in `infra/firestore.tf` ([ADR-0021](doc/adr/0021-firestore-replaces-cloud-sql.md)). The Cloud SQL Postgres instance it replaced has been deleted; its pre-cutover SQL dumps are kept in `gs://applysy-db-backup-prefirestore/`, outside Terraform. Public hostnames are served through **Cloudflare** (free plan, not in Terraform): Cloudflare terminates TLS and a Worker (`infra/cloudflare/`) does host-based routing to the `run.app` origins — `applysy.works` / `www.applysy.works` → landing, `app.applysy.works` → ui-angular, `admin.applysy.works` → admin-ui ([ADR-0020](doc/adr/0020-cloudflare-worker-replaces-lb.md); it replaced the global HTTPS load balancer of [ADR-0007](doc/adr/0007-landing-page-deployment.md)).
 
 | Cloud Run service | Instances | Ingress | Invoker | VPC egress |
 |---|---|---|---|---|

@@ -1,13 +1,8 @@
-# Project VPC for Cloud Run Direct VPC egress and Cloud SQL private IP.
+# Project VPC for Cloud Run Direct VPC egress.
 # See doc/adr/0001-llm-service-network-privacy.md for the full decision record.
 
 resource "google_project_service" "compute" {
   service            = "compute.googleapis.com"
-  disable_on_destroy = false
-}
-
-resource "google_project_service" "servicenetworking" {
-  service            = "servicenetworking.googleapis.com"
   disable_on_destroy = false
 }
 
@@ -27,33 +22,6 @@ resource "google_compute_subnetwork" "cloudrun_egress" {
   network                  = google_compute_network.vpc.id
   ip_cidr_range            = "10.10.0.0/24"
   private_ip_google_access = true
-}
-
-# Reserved range + peering so Cloud SQL can get a private IP in this VPC.
-#
-# Dead weight since ADR-0021: Firestore is reached over Private Google Access
-# from the subnet above, not over VPC peering, and no other resource uses this
-# range. It cannot be removed yet — the decommissioned Cloud SQL instance
-# (database.tf) still holds a private IP from it for the rollback window, and
-# the peering cannot be torn down while that IP is allocated.
-#
-# TODO(ADR-0021, follow-up commit): delete both resources below together with
-# database.tf, in that order (instance first, then peering, then the range).
-resource "google_compute_global_address" "private_services" {
-  name          = "${var.project_name}-private-services"
-  purpose       = "VPC_PEERING"
-  address_type  = "INTERNAL"
-  address       = "10.20.0.0"
-  prefix_length = 16
-  network       = google_compute_network.vpc.id
-}
-
-resource "google_service_networking_connection" "private_services" {
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_services.name]
-
-  depends_on = [google_project_service.servicenetworking]
 }
 
 # Per-service identities. llm-service's run.invoker is granted only to cv-api's
