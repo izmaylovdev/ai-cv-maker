@@ -44,9 +44,10 @@ resource "google_sql_database_instance" "db" {
     # Stopped. Flip back to "ALWAYS" to restart it for a rollback.
     activation_policy = "NEVER"
 
-    # API-level guard: blocks `gcloud sql instances delete` and the console,
-    # not just Terraform.
-    deletion_protection_enabled = true
+    # Deletion guard cleared ahead of deleting this instance (ADR-0021,
+    # 2026-10 amendment). Phase 1 of 2: apply this, then the next commit
+    # removes the instance.
+    deletion_protection_enabled = false
 
     backup_configuration {
       enabled                        = true
@@ -62,9 +63,9 @@ resource "google_sql_database_instance" "db" {
     }
   }
 
-  # Terraform-level guard, flipped from false. Both this and the setting above
-  # must be cleared in the follow-up commit before the instance can be deleted.
-  deletion_protection = true
+  # Cleared with the API-level guard above; Terraform refuses to destroy the
+  # instance while this is true in state, so it has to be applied first.
+  deletion_protection = false
 
   depends_on = [
     google_project_service.sqladmin,
