@@ -133,10 +133,10 @@ A self-contained React chat interface packaged as a [Custom Element](https://dev
 Vite builds the entire app — React, CSS, and all — into one file:
 
 ```
-dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~110 kB gzipped)
+dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~1 MB, ~320 kB gzipped)
 ```
 
-CSS is injected at runtime by `vite-plugin-css-injected-by-js`, so the single script file is fully standalone with no separate stylesheet.
+The UI is built from [LlamaIndex Chat UI](https://ui.llamaindex.ai/) (`@llamaindex/chat-ui`) styled with Tailwind v4 (ADR-0022). A shared PostCSS chain (`widget-css.mts`) scopes every CSS rule under `ai-chat-widget`, so nothing leaks into the host page. `vite-plugin-css-injected-by-js` injects the CSS at runtime, so the single script file stands alone with no separate stylesheet. `resolve.alias` swaps the Chat UI features the widget never renders (PDF viewer, editors, LlamaDeploy, vaul) for stubs in `src/stubs/`.
 
 **How it is loaded**
 
@@ -182,9 +182,10 @@ The same widget serves three modes, switched by which optional context is presen
 
 | Component | File | Role |
 |---|---|---|
-| `ChatApp` | `src/ChatApp.tsx` | Root — owns message state, calls the API, renders the layout |
-| `MessageList` | `src/components/MessageList.tsx` | Renders the conversation; assistant replies are rendered as sanitized Markdown (`react-markdown` + `remark-gfm`), user/error messages as plain text with line breaks preserved; shows an empty-state prompt when no messages exist |
-| `MessageInput` | `src/components/MessageInput.tsx` | Auto-growing textarea + Send button; `Enter` submits, `Shift+Enter` inserts a newline |
+| `ChatApp` | `src/ChatApp.tsx` | Root composition: `ChatSection` → `ChatMessages` (avatars, Markdown assistant parts, loading and empty states) plus the composer; also renders the landing splash on the global assistant |
+| `useApplysyChat` | `src/useApplysyChat.ts` | Custom Chat UI `ChatHandler`. It owns message state, calls `POST /api/chat`, raises `edit` proposals, and maps error and fill replies to custom `data-error` / `data-fill` parts |
+| `Composer` | `src/components/Composer.tsx` | `ChatInput` form with a textarea that grows and resets, plus a Send button. **Enter** submits and **Shift+Enter** inserts a newline |
+| `MessageParts` | `src/components/MessageParts.tsx` | Literal user text, the `role="alert"` error bubble, the **Use this** fill action, and the new-tab Markdown link |
 
 **Local development**
 
@@ -192,7 +193,7 @@ The same widget serves three modes, switched by which optional context is presen
 npm run serve:chat   # starts Vite dev server on port 4202 (wraps npx nx run chat-ui:dev)
 ```
 
-A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.
+A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. It uses the same aliases and the same CSS pipeline as the production build. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.
 
 **Deployment**
 
