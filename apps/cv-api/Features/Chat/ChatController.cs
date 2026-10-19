@@ -60,7 +60,7 @@ public class ChatController(
             .ToList();
 
         // LLM failures surface as typed exceptions (LlmInvalidRequest / LlmRateLimit
-        // / LlmEditFailed / LlmUnavailable) and are mapped to specific { code, message }
+        // / LlmFailed / LlmUnavailable) and are mapped to specific { code, message }
         // responses by the registered IExceptionHandlers (US-AI-11) — do not swallow
         // them here into a generic 502.
         var result = await llmService.UserChatAsync(new LlmUserChatRequest(

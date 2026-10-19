@@ -28,15 +28,15 @@ public class ChatErrorHandlerTests
     }
 
     [Fact]
-    public async Task EditFailed_Maps_To_502_LlmEditFailed_WithMessage()
+    public async Task Failed_Maps_To_502_LlmFailed_WithMessage()
     {
         var (status, code, message) = await Handle(
-            new LlmEditFailedExceptionHandler(),
-            new LlmEditFailedException("I couldn't produce a valid edit for that."));
+            new LlmFailedExceptionHandler(),
+            new LlmFailedException("The assistant ran into an unexpected problem and couldn't respond. Please try again."));
 
         Assert.Equal(StatusCodes.Status502BadGateway, status);
-        Assert.Equal("llm_edit_failed", code);
-        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.Equal("llm_failed", code);
+        Assert.Equal("The assistant ran into an unexpected problem and couldn't respond. Please try again.", message);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public class ChatErrorHandlerTests
     public async Task Handler_Ignores_UnrelatedException()
     {
         var ctx = new DefaultHttpContext();
-        var handled = await new LlmEditFailedExceptionHandler()
+        var handled = await new LlmFailedExceptionHandler()
             .TryHandleAsync(ctx, new InvalidOperationException("nope"), CancellationToken.None);
 
         Assert.False(handled);

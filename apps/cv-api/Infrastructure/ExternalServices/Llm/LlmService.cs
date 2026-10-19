@@ -86,12 +86,12 @@ public class LlmService(
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Internal)
         {
-            // The service ran but could not produce a usable result — commonly an
-            // edit response truncated at the model's output-token cap, so the JSON
-            // failed to parse (US-AI-11 llm_edit_failed).
-            throw new LlmEditFailedException(
-                "The assistant couldn't produce a valid edit — its response may have been too long. " +
-                "Try a smaller or more specific change.", ex);
+            // The service ran but hit an unexpected error (provider/SDK failure or a
+            // bug). Truncated or unparseable edits never land here — the chat chains
+            // answer those in-band — and this covers every operation, including the
+            // read-only global assistant, so the message names no edit or cause.
+            throw new LlmFailedException(
+                "The assistant ran into an unexpected problem and couldn't respond. Please try again.", ex);
         }
     }
 

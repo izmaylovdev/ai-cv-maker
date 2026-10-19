@@ -7,18 +7,18 @@ namespace CvApi.Infrastructure.ExternalServices.Llm;
 // widget renders `message` verbatim, so the user sees a specific reason instead
 // of a generic "something went wrong". Registered in Program.cs.
 
-/// <summary>llm-service produced an unusable result (gRPC Internal) → 502 <c>llm_edit_failed</c>.</summary>
-public sealed class LlmEditFailedExceptionHandler : IExceptionHandler
+/// <summary>llm-service hit an unexpected error (gRPC Internal) → 502 <c>llm_failed</c>.</summary>
+public sealed class LlmFailedExceptionHandler : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        if (exception is not LlmEditFailedException ex)
+        if (exception is not LlmFailedException ex)
             return false;
 
         httpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
         await httpContext.Response.WriteAsJsonAsync(
-            new { code = "llm_edit_failed", message = ex.Message }, cancellationToken);
+            new { code = "llm_failed", message = ex.Message }, cancellationToken);
         return true;
     }
 }

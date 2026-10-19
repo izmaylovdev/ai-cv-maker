@@ -221,7 +221,7 @@ builder.Services.AddExceptionHandler<CvApi.Features.Usage.UsageLimitExceptionHan
 // the chat widget can show a precise reason instead of a generic error.
 builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmInvalidRequestExceptionHandler>();
 builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmRateLimitExceptionHandler>();
-builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmEditFailedExceptionHandler>();
+builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmFailedExceptionHandler>();
 builder.Services.AddExceptionHandler<CvApi.Infrastructure.ExternalServices.Llm.LlmUnavailableExceptionHandler>();
 builder.Services.AddProblemDetails();
 
