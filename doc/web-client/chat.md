@@ -189,11 +189,15 @@ untouched and the conversation usable.
 | `402` | `usage_limit_exceeded` | Spending allowance reached ([ai-usage.md](ai-usage.md)) |
 | `422` | `llm_invalid_request` | Guard/scope/validation rejection; the message is the assistant's own explanation |
 | `429` | `llm_rate_limited` | Provider rate limit |
-| `502` | `llm_edit_failed` | The model could not produce a valid edit (often a truncated response) |
+| `502` | `llm_failed` | llm-service hit an unexpected error (gRPC `Internal`: a provider or SDK failure, or a bug). The message names no cause and just asks the user to try again |
 | `503` | `llm_unavailable` | llm-service unreachable or timed out |
 
 Classification happens in dedicated `IExceptionHandler`s, not in a controller
-catch-all.
+catch-all, and applies the same way to the global and in-editor assistant.
+An edit the model cuts off at its output-token cap, or a reply that is not the
+expected JSON envelope, is not an error at all. llm-service answers it with a
+normal `200` reply (a nudge to split the edit, or a "try rephrasing" note) and
+no proposal, so the document stays unchanged.
 
 A per-profile variant, `POST /api/job-profiles/{id}/chat`, exists on the profile
 controller and speaks the same `{ reply, proposal }` shape.

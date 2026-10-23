@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import types
 
+import pytest
+
 from evals import datasets, run_evals
 from evals.evaluators import (
     ExtractAccuracyEvaluator,
@@ -375,3 +377,36 @@ def test_cover_letter_with_prefs_fixtures_include_style_exempt_letter_case():
     prefs = " ".join(str(c.get("global_preferences", "")) for c in exempt).lower()
     assert "letter" in prefs
     assert "salutation" in prefs or "dear" in prefs or "sign-off" in prefs
+
+
+# --- LLM judge on the installed Anthropic SDK -------------------------------
+
+
+@pytest.mark.asyncio
+async def test_quality_judge_sends_no_sampling_params_through_real_sdk():
+    """The LLM-as-judge calls Claude directly on the installed SDK (2.x, API
+    version 2026-10-21), which rejects temperature/top_p/top_k on every model.
+    The judge must still score — and send no sampling parameter."""
+    from app.anthropic_test_support import MODEL, Recorder, assert_wire_contract, real_client
+    from evals.evaluators import CVQualityEvaluator
+
+    recorder = Recorder(json.dumps({
+        "coherence": 4, "professionalism": 5, "relevance": 3,
+        "reason": "Clear and polished, loosely tailored.",
+    }))
+    judge = CVQualityEvaluator()
+    judge._client = real_client(recorder)
+    judge._model = MODEL
+
+    evals_out = await judge(
+        input={"query": "Senior Backend Engineer"},
+        output={"response": "Seasoned backend engineer."},
+        metadata={"operation": "generate"},
+    )
+
+    assert {e.name: e.value for e in evals_out} == {
+        "quality.coherence": 4,
+        "quality.professionalism": 5,
+        "quality.relevance": 3,
+    }, "judge failed to score — the SDK call likely raised (see captured log)"
+    assert_wire_contract(recorder, min_requests=1)

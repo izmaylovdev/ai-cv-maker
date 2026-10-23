@@ -109,7 +109,6 @@ async def _llm_reply(
             name="user_chat",
             model=model,
             max_tokens=1024,
-            temperature=app_settings.llm_temperature(),
             system=cached_system(system_prompt),
             messages=messages,
         )

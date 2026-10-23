@@ -424,7 +424,6 @@ async def _chat_anthropic(
             name="chat",
             model=model,
             max_tokens=_MAX_TOKENS,
-            temperature=app_settings.llm_temperature(),
             system=system,
             messages=mark_last_block(messages),
         )

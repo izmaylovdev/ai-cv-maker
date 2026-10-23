@@ -12,8 +12,9 @@ namespace CvApi.Tests;
 
 // US-AI-11 / F-AI-11.3-11.5 — LlmService.ExecuteAsync must translate the gRPC
 // statuses llm-service emits into distinct domain exceptions, so the chat error
-// handlers can map each to its own { code, message }. Internal (truncated /
-// unparseable edit) and InvalidArgument (guard / scope) are the two new cases.
+// handlers can map each to its own { code, message }. Internal means llm-service
+// hit an unexpected error (truncated / unparseable edits are answered in-band
+// by the chat chains, never as Internal), so its message is operation-neutral.
 public class LlmServiceErrorTranslationTests
 {
     private static AsyncUnaryCall<T> Faulted<T>(RpcException ex) => new(
@@ -29,6 +30,9 @@ public class LlmServiceErrorTranslationTests
         client
             .Setup(c => c.ChatAsync(It.IsAny<ChatRequest>(), It.IsAny<CallOptions>()))
             .Returns(Faulted<ChatResponse>(new RpcException(new Status(status, detail))));
+        client
+            .Setup(c => c.UserChatAsync(It.IsAny<UserChatRequest>(), It.IsAny<CallOptions>()))
+            .Returns(Faulted<UserChatResponse>(new RpcException(new Status(status, detail))));
 
         var provider = new Mock<ResiliencePipelineProvider<string>>();
         provider
@@ -48,10 +52,25 @@ public class LlmServiceErrorTranslationTests
         new List<LlmChatMessage>());
 
     [Fact]
-    public async Task Internal_Becomes_LlmEditFailedException()
+    public async Task Internal_Becomes_LlmFailedException()
     {
-        var svc = BuildServiceThatThrows(StatusCode.Internal, "Unterminated string starting at: line 1 column 391");
-        await Assert.ThrowsAsync<LlmEditFailedException>(() => svc.ChatAsync(Request()));
+        var svc = BuildServiceThatThrows(StatusCode.Internal, "AsyncMessages.create() got an unexpected keyword argument 'temperature'");
+        await Assert.ThrowsAsync<LlmFailedException>(() => svc.ChatAsync(Request()));
+    }
+
+    [Fact]
+    public async Task Internal_On_GlobalAssistant_Has_OperationNeutral_Message()
+    {
+        // The read-only global assistant has no document, so the message must not
+        // talk about edits or response length — and must not leak the raw detail.
+        var svc = BuildServiceThatThrows(StatusCode.Internal, "AsyncMessages.create() got an unexpected keyword argument 'temperature'");
+        var ex = await Assert.ThrowsAsync<LlmFailedException>(() => svc.UserChatAsync(
+            new LlmUserChatRequest(new List<LlmProfileSummary>(), "hello", new List<LlmChatMessage>())));
+
+        Assert.Equal("The assistant ran into an unexpected problem and couldn't respond. Please try again.", ex.Message);
+        Assert.DoesNotContain("edit", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("too long", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("temperature", ex.Message);
     }
 
     [Fact]

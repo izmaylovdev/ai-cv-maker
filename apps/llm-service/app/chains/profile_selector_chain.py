@@ -99,7 +99,6 @@ async def select_best_profile(
             name="select_profile",
             model=model,
             max_tokens=256,
-            temperature=0,
             system=cached_system(_SYSTEM_PROMPT),
             messages=[{"role": "user", "content": user_content}],
         )

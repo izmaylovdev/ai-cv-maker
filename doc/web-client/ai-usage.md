@@ -9,6 +9,7 @@ documented in [chat.md](chat.md) and [cv-generation.md](cv-generation.md).
 [ADR-0010](../adr/0010-langfuse-llm-observability.md) /
 [ADR-0012](../adr/0012-langfuse-evals.md) (observability) ·
 [ADR-0019](../adr/0019-anthropic-prompt-caching.md) (prompt caching) ·
+[ADR-0024](../adr/0024-anthropic-sdk-2-default-sampling.md) (Anthropic SDK 2.x, default sampling) ·
 [ADR-0016](../adr/0016-distributed-tracing-tempo-otel.md) (tracing)
 
 ---
@@ -97,6 +98,22 @@ anywhere, record zero cache counts, and price exactly as before.
 
 ---
 
+## Sampling
+
+llm-service talks to Claude through the `anthropic` Python SDK 2.x, which sends API
+version `2026-10-21`. That API version rejects `temperature`, `top_p` and `top_k`
+on every model, so Anthropic-path requests carry none of them and sample at the
+API default. This applies to every chain, including CV extraction and profile
+selection, and to the eval judge. `LLM_TEMPERATURE` (default 0.4) applies only to
+the LangChain providers (google, openai, azure_openai). See
+[ADR-0024](../adr/0024-anthropic-sdk-2-default-sampling.md).
+
+Contract tests in `apps/llm-service` drive a real SDK client over a mocked
+transport through every Anthropic chain. They fail if a request carries a
+sampling parameter or a different `anthropic-version`.
+
+---
+
 ## Observability
 
 Langfuse traces carry the authenticated `user_id`. A chat conversation is grouped
@@ -108,7 +125,8 @@ older clients keep working — and when Langfuse is not configured nothing
 observability-related runs at all.
 
 Anthropic-path generations additionally report `cache_read_input_tokens` and
-`cache_creation_input_tokens` in `usage_details`.
+`cache_creation_input_tokens` in `usage_details`, and list `max_tokens` as their
+only model parameter.
 
 ---
 

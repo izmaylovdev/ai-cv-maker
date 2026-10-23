@@ -254,7 +254,6 @@ async def _generate_cv_foundry_raw(inputs: dict[str, str], global_preferences: s
         name="generate",
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
-        temperature=app_settings.llm_temperature(),
         system=cached_system(system_prompt),
         messages=[{"role": "user", "content": user_content}],
     )
@@ -444,7 +443,6 @@ async def _extract_profile_foundry_raw(cv_text: str, provider: str = "foundry"):
         name="extract",
         model=model,
         max_tokens=app_settings.anthropic_max_tokens(),
-        temperature=0,
         system=cached_system(_EXTRACT_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": user_content}],
     )

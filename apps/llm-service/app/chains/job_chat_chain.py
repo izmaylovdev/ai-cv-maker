@@ -164,7 +164,6 @@ async def _job_chat_with_llm(
             name="job_chat",
             model=model,
             max_tokens=2048,
-            temperature=app_settings.llm_temperature(),
             system=cached_system(_SYSTEM_PROMPT),
             messages=messages,
         )
