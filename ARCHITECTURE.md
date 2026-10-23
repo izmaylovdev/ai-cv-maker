@@ -322,7 +322,7 @@ Controlled entirely by environment variables — no code changes required:
 
 | `LLM_PROVIDER` | Model variable | Notes |
 |---|---|---|
-| `google` (default) | `LLM_MODEL` or `gemini-1.5-flash` | Requires `GOOGLE_API_KEY` |
+| `google` (default) | `LLM_MODEL` or `gemini-3.8-flash` | Requires `GOOGLE_API_KEY` |
 | `openai` | `OPENAI_MODEL` | Any OpenAI-compatible endpoint; default points to LM Studio on localhost |
 | `foundry` | `FOUNDRY_DEPLOYMENT_NAME` / `LLM_MODEL` | Azure AI Foundry (e.g., Claude via Anthropic); requires `FOUNDRY_API_KEY` |
 
