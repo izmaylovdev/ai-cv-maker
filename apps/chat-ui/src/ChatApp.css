@@ -1,441 +1,219 @@
-:host {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 14px;
-  color: #1a1a1a;
-  background: #fff;
+/*
+ * <ai-chat-widget> stylesheet: Tailwind v4 + LlamaIndex Chat UI.
+ *
+ * Every rule here (preflight and Chat UI's markdown.css included) is re-rooted
+ * under `ai-chat-widget` at build time by widget-css.mts, so `:root` below means
+ * the widget element and `.dark` means "inside a dark-themed page". Nothing in
+ * this file can match an element of the host page.
+ *
+ * Tailwind is imported piecewise rather than via `@import "tailwindcss"` so that
+ * class detection is limited to the explicit `@source`s below (no repo scan) in
+ * both the Vite build and the dev bundle.
+ */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+/* highlight.js (atom-one-light) + KaTeX + Chat UI's Markdown styles. */
+@import '@llamaindex/chat-ui/styles/markdown.css';
+
+@layer utilities {
+  @tailwind utilities source(none);
 }
 
-.dark :host,
-.dark .chat-app {
-  color: #f4f4f5;
-  background: #18181b;
+@source '../../../node_modules/@llamaindex/chat-ui/dist/chat/index.js';
+@source '../../../node_modules/@llamaindex/chat-ui/dist/widgets/index.js';
+@source './**/*.tsx';
+@source not './**/*.test.tsx';
+
+/* Follow the app's theme: `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* shadcn-style tokens, consumed by Chat UI's classes (bg-background, text-primary-foreground, …). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-.chat-app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+@theme {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 
-.chat-app--empty {
-  justify-content: center;
-  align-items: center;
+/* Light — Applysy zinc neutrals, indigo accent. */
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #6366f1;
+  --link: #4f46e5;
 }
 
-.chat-landing {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
-  max-width: 680px;
-  padding: 0 24px;
-  margin-bottom: 10%;
+/* Dark — follows `.dark` on the host's <html>. */
+.dark {
+  --background: #18181b;
+  --foreground: #f4f4f5;
+  --card: #18181b;
+  --card-foreground: #f4f4f5;
+  --popover: #27272a;
+  --popover-foreground: #f4f4f5;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #27272a;
+  --secondary-foreground: #f4f4f5;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #f4f4f5;
+  --destructive: #f87171;
+  --destructive-foreground: #18181b;
+  --border: #3f3f46;
+  --input: #3f3f46;
+  --ring: #818cf8;
+  --link: #818cf8;
 }
 
-.chat-landing__heading {
-  font-size: 26px;
-  font-weight: 600;
-  color: #1a1a1a;
-  text-align: center;
-  letter-spacing: -0.3px;
+@layer base {
+  :root {
+    color: var(--foreground);
+    font-size: 14px;
+  }
+
+  * {
+    border-color: var(--border);
+  }
 }
 
-.chat-input--landing {
-  width: 100%;
-  border: 1.5px solid #d1d5db;
-  border-radius: 16px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
-  padding: 14px 18px;
-  background: transparent;
+/* ── Composer ───────────────────────────────────────────────────────────── */
+
+.chat-landing-composer .chat-composer-field {
+  border-color: var(--border);
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.07);
+  font-size: 15px;
 }
 
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.dark .chat-landing-composer .chat-composer-field {
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.3);
 }
 
-.chat-empty {
-  color: #888;
-  text-align: center;
-  margin-top: 32px;
-  font-style: italic;
+/* ── Assistant Markdown (Chat UI's markdown.css is tuned for full pages) ── */
+
+.custom-markdown.chat-markdown :is(ul, ol):not(.custom-renderer *) {
+  margin: 0.25rem 0 0.5rem 1.25rem;
 }
 
-.chat-message {
-  max-width: 80%;
-  padding: 10px 14px;
-  border-radius: 12px;
-  line-height: 1.5;
+.custom-markdown.chat-markdown li:not(.custom-renderer *) {
+  margin-bottom: 0.125rem;
 }
 
-.chat-message--user {
-  align-self: flex-end;
-  background: #2563eb;
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-.chat-message--assistant {
-  align-self: flex-start;
-  background: #f1f5f9;
-  color: #1a1a1a;
-  border-bottom-left-radius: 4px;
-}
-
-.chat-message--error {
-  align-self: flex-start;
-  background: #fee2e2;
-  color: #991b1b;
-  border-bottom-left-radius: 4px;
-}
-
-.chat-message__text {
-  margin: 0 0 8px;
-  /* Preserve author line breaks in plain-text (user/error) messages. */
-  white-space: pre-wrap;
+.custom-markdown.chat-markdown a:not(.custom-renderer *) {
+  color: var(--link);
   overflow-wrap: break-word;
 }
 
-.chat-message__text:last-child {
-  margin-bottom: 0;
+.custom-markdown.chat-markdown :is(h1, h2, h3, h4, h5, h6):not(.custom-renderer *) {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 1.05em;
 }
 
-/* Rendered Markdown (assistant messages). Block elements manage their own
-   spacing, so the wrapper itself uses normal whitespace handling. */
-.chat-markdown {
-  white-space: normal;
+.custom-markdown.chat-markdown table:not(.custom-renderer *) {
+  margin: 0.5rem 0;
+  font-size: inherit;
 }
 
-.chat-markdown > :first-child {
-  margin-top: 0;
+.custom-markdown.chat-markdown :is(th, td):not(.custom-renderer *) {
+  height: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  color: inherit;
 }
 
-.chat-markdown > :last-child {
-  margin-bottom: 0;
-}
-
-.chat-markdown p {
-  margin: 0 0 8px;
-}
-
-.chat-markdown ul,
-.chat-markdown ol {
-  margin: 0 0 8px;
-  padding-left: 20px;
-}
-
-.chat-markdown li {
-  margin: 2px 0;
-}
-
-.chat-markdown a {
-  color: #2563eb;
-  text-decoration: underline;
-  overflow-wrap: break-word;
-}
-
-.chat-markdown code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.875em;
-  background: rgba(0, 0, 0, 0.06);
+.custom-markdown.chat-markdown :not(pre) > code {
   padding: 1px 4px;
   border-radius: 4px;
+  background: var(--muted);
+  font-size: 0.875em;
 }
 
-.chat-markdown pre {
-  margin: 0 0 8px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 8px;
-  overflow-x: auto;
-}
-
-.chat-markdown pre code {
-  background: none;
-  padding: 0;
-  font-size: 0.85em;
-}
-
-.chat-markdown blockquote {
-  margin: 0 0 8px;
+.custom-markdown.chat-markdown blockquote {
+  margin: 0 0 0.5rem;
   padding-left: 10px;
-  border-left: 3px solid #cbd5e1;
-  color: #475569;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
 }
 
-.chat-markdown table {
-  border-collapse: collapse;
-  margin: 0 0 8px;
-  display: block;
-  overflow-x: auto;
+/* Code blocks: highlight.js atom-one-light, swapped for atom-one-dark tones in dark mode. */
+.dark .codeblock {
+  background: #27272a;
 }
 
-.chat-markdown th,
-.chat-markdown td {
-  border: 1px solid #cbd5e1;
-  padding: 4px 8px;
-  text-align: left;
-}
-
-.chat-markdown img {
-  max-width: 100%;
-  height: auto;
-}
-
-.chat-typing {
-  align-self: flex-start;
-  display: flex;
-  gap: 4px;
-  padding: 10px 14px;
-  background: #f1f5f9;
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
-}
-
-.chat-typing span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-  animation: bounce 1.2s infinite;
-}
-
-.chat-typing span:nth-child(2) { animation-delay: 0.2s; }
-.chat-typing span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes bounce {
-  0%, 80%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-6px); }
-}
-
-.proposal-card {
-  margin-top: 8px;
-  padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-}
-
-.proposal-card__description {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: #475569;
-}
-
-.proposal-card__actions {
-  display: flex;
-  gap: 8px;
-}
-
-.proposal-card__btn {
-  padding: 5px 14px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.proposal-card__btn--accept {
-  background: #2563eb;
-  color: #fff;
-}
-
-.proposal-card__btn--accept:hover { background: #1d4ed8; }
-
-.proposal-card__btn--reject {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.proposal-card__btn--reject:hover { background: #e2e8f0; }
-
-/* US-EXT-4 — "Use this" action under a cover-letter draft in the thread. */
-.chat-fill-action {
-  margin-top: 8px;
-  padding: 5px 14px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  background: #2563eb;
-  color: #fff;
-}
-
-.chat-fill-action:hover { background: #1d4ed8; }
-
-.chat-input {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e2e8f0;
-  background: #fff;
-}
-
-.chat-input__textarea {
-  flex: 1;
-  resize: none;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  outline: none;
-  padding: 8px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  line-height: 1.5;
-  background: #fff;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.chat-input__textarea:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.chat-input--landing .chat-input__textarea {
-  border: none;
-  border-radius: 0;
-  padding: 6px 0;
-  font-size: 15px;
-  line-height: 1.6;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: inherit;
-  outline: none;
-}
-
-.chat-input--landing:focus-within {
-  border-color: #a1a1aa;
-}
-
-.chat-input__send {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #1a1a1a;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
-}
-
-.chat-input__send:hover:not(:disabled) { background: #333; }
-
-.chat-input__send:disabled {
-  background: #d1d5db;
-  cursor: not-allowed;
-}
-
-/* Dark mode */
-.dark .chat-landing__heading {
-  color: #f4f4f5;
-}
-
-.dark .chat-input--landing {
-  border-color: #3f3f46;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+.dark .hljs {
+  color: #abb2bf;
   background: transparent;
 }
 
-.dark .chat-input--landing .chat-input__textarea {
-  background: transparent !important;
-  color: #f4f4f5;
+.dark :is(.hljs-comment, .hljs-quote) {
+  color: #7f848e;
 }
 
-.dark .chat-input--landing .chat-input__textarea::placeholder {
-  color: #71717a;
+.dark :is(.hljs-doctag, .hljs-keyword, .hljs-formula) {
+  color: #c678dd;
 }
 
-.dark .chat-empty {
-  color: #71717a;
+.dark :is(.hljs-section, .hljs-name, .hljs-selector-tag, .hljs-deletion, .hljs-subst) {
+  color: #e06c75;
 }
 
-.dark .chat-message--assistant {
-  background: #27272a;
-  color: #f4f4f5;
+.dark .hljs-literal {
+  color: #56b6c2;
 }
 
-.dark .chat-markdown a {
-  color: #60a5fa;
+.dark :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute) {
+  color: #98c379;
 }
 
-.dark .chat-markdown code,
-.dark .chat-markdown pre {
-  background: rgba(255, 255, 255, 0.08);
+.dark :is(.hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-type, .hljs-number) {
+  color: #d19a66;
 }
 
-.dark .chat-markdown blockquote {
-  border-left-color: #52525b;
-  color: #a1a1aa;
+.dark :is(.hljs-symbol, .hljs-bullet, .hljs-link, .hljs-meta, .hljs-selector-id, .hljs-title) {
+  color: #61aeee;
 }
 
-.dark .chat-markdown th,
-.dark .chat-markdown td {
-  border-color: #3f3f46;
-}
-
-.dark .chat-message--error {
-  background: #450a0a;
-  color: #fca5a5;
-}
-
-.dark .chat-typing {
-  background: #27272a;
-}
-
-.dark .chat-typing span {
-  background: #71717a;
-}
-
-.dark .proposal-card {
-  background: #27272a;
-  border-color: #3f3f46;
-}
-
-.dark .proposal-card__description {
-  color: #a1a1aa;
-}
-
-.dark .proposal-card__btn--reject {
-  background: #3f3f46;
-  color: #d4d4d8;
-}
-
-.dark .proposal-card__btn--reject:hover {
-  background: #52525b;
-}
-
-.dark .chat-input {
-  background: #18181b;
-  border-top-color: #3f3f46;
-}
-
-.dark .chat-input__textarea {
-  background: #27272a;
-  border-color: #3f3f46;
-  color: #f4f4f5;
-}
-
-.dark .chat-input__textarea::placeholder {
-  color: #71717a;
-}
-
-.dark .chat-input__textarea:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+.dark :is(.hljs-built_in, .hljs-title.class_) {
+  color: #e6c07b;
 }
