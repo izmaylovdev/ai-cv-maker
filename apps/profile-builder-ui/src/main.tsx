@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import ReactDOM from 'react-dom/client';
 import { ProfileBuilder } from './ProfileBuilder';
 import { DocumentPatch, ProfileDocument, applyPatch, emptyDocument } from './model';
@@ -22,7 +23,7 @@ class ProfileBuilderWidget extends HTMLElement {
   }
   set document(value: ProfileDocument) {
     this._document = value ?? emptyDocument();
-    this.renderWidget();
+    this.renderWidgetNow();
   }
 
   connectedCallback() {
@@ -37,7 +38,7 @@ class ProfileBuilderWidget extends HTMLElement {
 
   attributeChangedCallback() {
     this.readDocumentAttribute();
-    this.renderWidget();
+    this.renderWidgetNow();
   }
 
   private readDocumentAttribute() {
@@ -91,6 +92,16 @@ class ProfileBuilderWidget extends HTMLElement {
     this.root?.render(
       <ProfileBuilder document={this._document} onChange={this.handleChange} />
     );
+  }
+
+  /**
+   * Render a document the host just set, synchronously: once `el.document = x`
+   * (or the attribute) returns, the editor already shows `x`, so a host — or a
+   * test — reading the DOM next sees the new content rather than racing React's
+   * scheduler. Internal re-renders (handleChange) stay asynchronous.
+   */
+  private renderWidgetNow() {
+    flushSync(() => this.renderWidget());
   }
 }
 

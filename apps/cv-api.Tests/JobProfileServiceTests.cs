@@ -1,5 +1,6 @@
 using CvApi.Domain.Entities;
 using CvApi.Features.JobProfiles;
+using CvApi.Features.JobProfiles.Dtos;
 using CvApi.Features.Usage;
 using CvApi.Infrastructure.ExternalServices.Llm;
 using Moq;
@@ -210,5 +211,67 @@ public class JobProfileServiceTests
 
         var result = await MakeService(db).GetAsync(profile.Id, otherUserId);
         Assert.Null(result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Legacy standalone `link` block -> paragraph > inlineLink (GET and PUT)
+    // -------------------------------------------------------------------------
+
+    private static ProfileDocument LegacyLinkDoc() => new()
+    {
+        Header = new ProfileHeader { FullName = "Ada Lovelace" },
+        Body = new BlockNode
+        {
+            Type = "root",
+            Id = "root-1",
+            Children =
+            [
+                new BlockNode { Type = "title", Id = "t1", Attrs = new() { ["text"] = "Links" } },
+                new BlockNode { Type = "link", Id = "L1", Attrs = new() { ["text"] = "Portfolio", ["url"] = "https://example.com" } },
+            ],
+        },
+    };
+
+    private static void AssertMigratedLink(ProfileDocument document)
+    {
+        var children = document.Body.Children;
+        Assert.Equal(2, children.Count);
+        Assert.Equal("paragraph", children[1].Type);
+        Assert.Equal("L1", children[1].Id);
+        var run = Assert.Single(children[1].Children);
+        Assert.Equal("inlineLink", run.Type);
+        Assert.Equal("Portfolio", run.Attrs["text"]);
+        Assert.Equal("https://example.com", run.Attrs["url"]);
+    }
+
+    [Fact]
+    public async Task GetAsync_MigratesLegacyLinkBlockToParagraphWithInlineLink()
+    {
+        var userId = Guid.NewGuid();
+        var db = CreateDb();
+        var profile = new Profile { Id = Guid.NewGuid(), UserId = userId, Name = "Test", Document = LegacyLinkDoc() };
+        db.Profiles.Add(profile);
+        await db.SaveChangesAsync();
+
+        var result = await MakeService(db).GetAsync(profile.Id, userId);
+
+        Assert.NotNull(result);
+        AssertMigratedLink(result!.Document);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_MigratesLegacyLinkBlockBeforeValidation_AndPersistsInlineLink()
+    {
+        var userId = Guid.NewGuid();
+        var db = CreateDb();
+        var profile = new Profile { Id = Guid.NewGuid(), UserId = userId, Name = "Test", Document = ProfileDocument.Empty() };
+        db.Profiles.Add(profile);
+        await db.SaveChangesAsync();
+
+        var result = await MakeService(db).UpdateAsync(profile.Id, userId, new UpdateProfileRequest("Test", LegacyLinkDoc()));
+
+        Assert.NotNull(result);
+        AssertMigratedLink(result!.Document);
+        AssertMigratedLink(db.Profiles.Single(p => p.Id == profile.Id).Document);
     }
 }

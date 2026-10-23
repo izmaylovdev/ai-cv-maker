@@ -58,7 +58,7 @@ llm_provider = "google"   # google | openai | foundry
 **For Google (Gemini):**
 ```hcl
 llm_provider   = "google"
-llm_model      = "gemini-2.0-flash"
+llm_model      = "gemini-3.8-flash"
 google_api_key = "AIzaSy..."
 ```
 

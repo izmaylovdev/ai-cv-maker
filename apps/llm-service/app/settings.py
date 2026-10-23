@@ -22,7 +22,7 @@ def llm_temperature() -> float:
 
 
 def google_model() -> str:
-    return llm_model() or "gemini-1.5-flash"
+    return llm_model() or "gemini-3.8-flash"
 
 
 def openai_base_url() -> str:

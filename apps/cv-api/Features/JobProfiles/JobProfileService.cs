@@ -42,7 +42,7 @@ public class JobProfileService(IProfileRepository profiles, ILlmService llmServi
     {
         var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
-        var document = ProfileDocumentSchema.MigrateLegacySections(profile.Document);
+        var document = ProfileDocumentSchema.MigrateLegacy(profile.Document);
         return new ProfileDto(profile.Id, profile.Name, document);
     }
 
@@ -51,7 +51,7 @@ public class JobProfileService(IProfileRepository profiles, ILlmService llmServi
         var profile = await profiles.GetForUserAsync(id, userId);
         if (profile is null) return null;
 
-        var document = ProfileDocumentSchema.MigrateLegacySections(
+        var document = ProfileDocumentSchema.MigrateLegacy(
             request.Document ?? ProfileDocument.Empty());
         var validationError = ProfileDocumentSchema.Validate(document.Body);
         if (validationError is not null)
@@ -115,8 +115,8 @@ public class JobProfileService(IProfileRepository profiles, ILlmService llmServi
         var llmResponse = await llmService.ExtractAsync(new LlmExtractRequest(cvText));
         await usageService.RecordAsync(userId, "Extract", llmResponse.Usage);
 
-        // Migrate any legacy section nodes the LLM may still emit (transition period).
-        var document = ProfileDocumentSchema.MigrateLegacySections(llmResponse.Document);
+        // Migrate any legacy section/link nodes the LLM may still emit (transition period).
+        var document = ProfileDocumentSchema.MigrateLegacy(llmResponse.Document);
 
         // F-PROF-8.3: prefer the LLM-suggested profile name (trimmed, capped at
         // 100 chars); fall back to the current name when the LLM produced none.

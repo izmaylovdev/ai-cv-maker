@@ -126,5 +126,6 @@ export default defineConfig(({ command }) => ({
     // Unit tests live in src/; e2e/ is Playwright (run via the `e2e` target) and
     // must not be collected by vitest.
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    setupFiles: ['src/test-setup.ts'],
   },
 }));

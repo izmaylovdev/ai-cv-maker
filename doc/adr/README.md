@@ -77,3 +77,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0020](0020-cloudflare-worker-replaces-lb.md) | Replace the global HTTPS load balancer with a Cloudflare Worker proxy | Proposed |
 | [0021](0021-firestore-replaces-cloud-sql.md) | Move the main and admin databases to Firestore | Accepted |
 | [0022](0022-llamaindex-chat-ui-widget.md) | Build the chat widget on LlamaIndex Chat UI | Accepted |
+| [0023](0023-stock-lexical-link-node.md) | Links are Lexical's stock LinkNode; the standalone link block is retired | Accepted |
