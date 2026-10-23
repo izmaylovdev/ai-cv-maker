@@ -140,6 +140,10 @@ test.describe('Insert elements inside timeline entries (US-EDIT-20)', () => {
 
     await caretInFirstEntryDescription();
     await page.locator('button[aria-label^="Link"]').click();
+    // The link editor inserts nothing until its URL is confirmed.
+    const urlField = page.getByRole('dialog', { name: /link/i }).getByLabel('Link URL');
+    await urlField.fill('https://case.dev');
+    await urlField.press('Enter');
 
     // Links are now inline runs inside the entry's description paragraph, not a
     // standalone link line — but still inside the entry, never at root.

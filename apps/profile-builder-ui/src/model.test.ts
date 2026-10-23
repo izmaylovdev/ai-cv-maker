@@ -10,7 +10,6 @@ import {
   chipsNode,
   entryNode,
   inlineLinkNode,
-  linkNode,
   listItemNode,
   listNode,
   paragraphNode,
@@ -19,6 +18,7 @@ import {
   timelineNode,
   titleNode,
   widgetsAllowedIn,
+  WIDGETS,
 } from './nodes';
 
 function wrap(body: ProfileDocument['body']): ProfileDocument {
@@ -36,9 +36,9 @@ describe('title node schema (US-EDIT-19 / spec §13)', () => {
     expect(ALLOWED_CHILDREN.root).not.toContain('section');
   });
 
-  it('root allows title, paragraph, list, chips, timeline, link', () => {
-    expect(ALLOWED_CHILDREN.root).toEqual(
-      expect.arrayContaining(['title', 'paragraph', 'list', 'chips', 'timeline', 'link']),
+  it('root allows title, paragraph, list, chips, timeline (and no standalone link)', () => {
+    expect([...ALLOWED_CHILDREN.root].sort()).toEqual(
+      ['chips', 'list', 'paragraph', 'timeline', 'title'],
     );
   });
 
@@ -90,49 +90,38 @@ describe('title node schema (US-EDIT-19 / spec §13)', () => {
   });
 });
 
-describe('link node schema (US-EDIT-15 / spec §10)', () => {
-  it('is a leaf — no children allowed, and allowed at root, listItem, and entry', () => {
-    expect(ALLOWED_CHILDREN.root).toContain('link');
-    expect(ALLOWED_CHILDREN.listItem).toContain('link');
-    expect(ALLOWED_CHILDREN.entry).toContain('link');
-    expect(ALLOWED_CHILDREN.link).toEqual([]);
+describe('standalone link block is retired (links are inline only)', () => {
+  it('link is no longer a node type in the nesting matrix', () => {
+    expect('link' in ALLOWED_CHILDREN).toBe(false);
+    expect(ALLOWED_CHILDREN.root).not.toContain('link');
+    expect(ALLOWED_CHILDREN.listItem).not.toContain('link');
+    expect(ALLOWED_CHILDREN.entry).not.toContain('link');
   });
 
-  it('validates a link directly at root level', () => {
-    const body = rootNode([linkNode('Portfolio', 'https://example.com')]);
-    expect(validateDocument(wrap(body)).valid).toBe(true);
-  });
-
-  it('validates a link inside a list item and a timeline entry', () => {
-    const item = listItemNode('Top');
-    item.children = [linkNode('Ref', 'https://example.com/ref')];
-    const list = listNode();
-    list.children = [item];
-
-    const entry = entryNode('Role', '2022', '');
-    entry.children = [linkNode('Case', 'https://example.com/case')];
-
-    const body = rootNode([list, timelineNode([entry])]);
-    expect(validateDocument(wrap(body)).valid).toBe(true);
-  });
-
-  it('rejects a link missing its required text/url attrs', () => {
-    const bad: BlockNode = { type: 'link', id: 'l1', attrs: {} };
-    const body = rootNode([bad as ReturnType<typeof linkNode>]);
+  it('validateDocument rejects a link node at root as an unknown type', () => {
+    const bad = { type: 'link', id: 'l1', attrs: { text: 'Portfolio', url: 'https://example.com' } };
+    const body = rootNode([bad as never]);
     const result = validateDocument(wrap(body));
     expect(result.valid).toBe(false);
-    expect(result.errors.join(' ')).toMatch(/link.*(text|url)/i);
+    expect(result.errors.join(' ')).toMatch(/unknown node type "link"/i);
   });
 
-  it('rejects a link with children (leaf)', () => {
-    const bad: BlockNode = {
-      type: 'link',
-      id: 'l1',
-      attrs: { text: 't', url: 'u' },
-      children: [linkNode('x', 'y')],
-    };
-    const body = rootNode([bad as ReturnType<typeof linkNode>]);
-    expect(validateDocument(wrap(body)).valid).toBe(false);
+  it('validateDocument rejects a link node inside a list item and a timeline entry', () => {
+    const item = listItemNode('Top');
+    item.children = [paragraphNode('Top'), { type: 'link', id: 'l2', attrs: { text: 'R', url: 'https://r.dev' } } as never];
+    const list = listNode();
+    list.children = [item];
+    expect(validateDocument(wrap(rootNode([list]))).valid).toBe(false);
+
+    const entry = entryNode('Role', '2022', '');
+    entry.children = [{ type: 'link', id: 'l3', attrs: { text: 'C', url: 'https://c.dev' } } as never];
+    expect(validateDocument(wrap(rootNode([timelineNode([entry])]))).valid).toBe(false);
+  });
+
+  it('no rail widget produces a link block', () => {
+    for (const w of WIDGETS) {
+      expect(w.make().type).not.toBe('link');
+    }
   });
 });
 
@@ -170,10 +159,8 @@ describe('inline link schema (US-EDIT-21 / spec §15)', () => {
 });
 
 describe('insert elements inside timeline entries (US-EDIT-20 / spec §14)', () => {
-  it('entry allows paragraph, list, chips, and link', () => {
-    expect(ALLOWED_CHILDREN.entry).toEqual(
-      expect.arrayContaining(['paragraph', 'list', 'chips', 'link']),
-    );
+  it('entry allows paragraph, list, and chips (links live inside its paragraphs)', () => {
+    expect([...ALLOWED_CHILDREN.entry].sort()).toEqual(['chips', 'list', 'paragraph']);
   });
 
   it('validates chips inside a timeline entry', () => {
@@ -183,13 +170,13 @@ describe('insert elements inside timeline entries (US-EDIT-20 / spec §14)', () 
     expect(validateDocument(wrap(body)).valid).toBe(true);
   });
 
-  it('validates a list, chips, and link together inside one entry', () => {
+  it('validates a list, chips, and an inline link together inside one entry', () => {
     const entry = entryNode('Engineer', '2021–2024', 'Led the rewrite.');
     entry.children = [
       paragraphNode('Led the rewrite.'),
       listNode(['Shipped v2', 'Mentored two juniors']),
       chipsNode(['React', 'Go']),
-      linkNode('Case study', 'https://example.com/case'),
+      { ...paragraphNode(''), children: [inlineLinkNode('Case study', 'https://example.com/case')] },
     ];
     const body = rootNode([timelineNode([entry])]);
     expect(validateDocument(wrap(body)).valid).toBe(true);
@@ -202,9 +189,10 @@ describe('insert elements inside timeline entries (US-EDIT-20 / spec §14)', () 
     expect(validateDocument(wrap(body)).valid).toBe(false);
   });
 
-  it('offers text, list, chips, and link — but not timeline or title — inside an entry', () => {
+  it('offers text, list, and chips — but not timeline, title, or a link block — inside an entry', () => {
     const kinds = widgetsAllowedIn('entry').map((w) => w.kind);
-    expect(kinds).toEqual(expect.arrayContaining(['text', 'list', 'chips', 'link']));
+    expect(kinds).toEqual(expect.arrayContaining(['text', 'list', 'chips']));
+    expect(kinds).not.toContain('link');
     expect(kinds).not.toContain('timeline');
     expect(kinds).not.toContain('title');
   });

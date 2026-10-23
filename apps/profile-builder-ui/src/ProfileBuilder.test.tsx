@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { $getRoot, ElementNode, LexicalEditor, TextNode } from 'lexical';
+import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import { ProfileBuilder } from './ProfileBuilder';
-import { ProfileDocument, RootNode, emptyHeader } from './model';
+import { BlockNode, ProfileDocument, RootNode, emptyHeader } from './model';
 import { paragraphNode, rootNode, titleNode } from './nodes';
 
 function docWithOneTitle(): ProfileDocument {
@@ -125,6 +127,83 @@ describe('ProfileBuilder — flat title-anchored document (US-EDIT-19)', () => {
       if (!body) return;
       expect(body.children.some((c) => c.type === 'title')).toBe(true);
       expect(body.children.some((c) => (c as {type: string}).type === 'section')).toBe(false);
+    });
+  });
+
+  it('loads a legacy standalone link block as a paragraph holding the same link (text + url)', async () => {
+    const onChange = vi.fn();
+    const legacyDoc: ProfileDocument = {
+      header: emptyHeader(),
+      body: {
+        type: 'root',
+        id: 'r1',
+        children: [
+          titleNode('Links'),
+          { type: 'link', id: 'L1', attrs: { text: 'Portfolio', url: 'https://example.com' } } as never,
+        ],
+      },
+    };
+    render(<ProfileBuilder document={legacyDoc} onChange={onChange} />);
+
+    await waitFor(() => {
+      const body = lastBody(onChange);
+      expect(body).toBeDefined();
+      const migrated = body!.children.find((c) => c.id === 'L1');
+      expect(migrated?.type).toBe('paragraph');
+      expect(migrated?.children?.[0]).toMatchObject({
+        type: 'inlineLink',
+        attrs: { text: 'Portfolio', url: 'https://example.com' },
+      });
+    });
+    const anchor = screen.getByRole('link', { name: 'Portfolio' });
+    expect(anchor.getAttribute('href')).toBe('https://example.com');
+  });
+
+  it('a link created via TOGGLE_LINK_COMMAND gets a non-empty inlineLink id that stays stable', async () => {
+    const onChange = vi.fn();
+    const { container } = render(<ProfileBuilder document={docWithOneTitle()} onChange={onChange} />);
+    await waitFor(() => expect(screen.getByText('Built things.')).toBeTruthy());
+    const editable = container.querySelector('[contenteditable="true"]') as unknown as {
+      __lexicalEditor: LexicalEditor;
+    };
+    const editor = editable.__lexicalEditor;
+    expect(editor).toBeTruthy();
+
+    const findLink = (body: RootNode | undefined): BlockNode | undefined => {
+      const walk = (n: BlockNode): BlockNode[] => [n, ...(n.children ?? []).flatMap(walk)];
+      return body ? walk(body).find((n) => n.type === 'inlineLink') : undefined;
+    };
+
+    // Select "Built" in the paragraph and wrap it in a link.
+    editor.update(
+      () => {
+        const para = $getRoot().getChildren()[1] as ElementNode;
+        (para.getFirstChild() as TextNode).select(0, 5);
+      },
+      { discrete: true },
+    );
+    editor.dispatchCommand(TOGGLE_LINK_COMMAND, 'https://example.com');
+
+    let firstId = '';
+    await waitFor(() => {
+      const link = findLink(lastBody(onChange));
+      expect(link?.attrs).toEqual({ text: 'Built', url: 'https://example.com' });
+      expect(link?.id).toBeTruthy();
+      firstId = link!.id;
+    });
+
+    // An unrelated edit re-serializes the document; the link keeps its id.
+    editor.update(
+      () => {
+        const title = $getRoot().getChildren()[0] as ElementNode;
+        (title.getFirstChild() as TextNode).setTextContent('Experience');
+      },
+      { discrete: true },
+    );
+    await waitFor(() => {
+      const body = lastBody(onChange);
+      expect(body?.children[0].attrs?.['text']).toBe('Experience');
+      expect(findLink(body)?.id).toBe(firstId);
     });
   });
 

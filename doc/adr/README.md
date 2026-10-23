@@ -76,3 +76,4 @@ What becomes easier, what becomes harder, what new obligations exist
 | [0019](0019-anthropic-prompt-caching.md) | Anthropic prompt caching and cache-aware usage accounting | Proposed |
 | [0020](0020-cloudflare-worker-replaces-lb.md) | Replace the global HTTPS load balancer with a Cloudflare Worker proxy | Proposed |
 | [0021](0021-firestore-replaces-cloud-sql.md) | Move the main and admin databases to Firestore | Accepted |
+| [0022](0022-stock-lexical-link-node.md) | Links are Lexical's stock LinkNode; the standalone link block is retired | Accepted |

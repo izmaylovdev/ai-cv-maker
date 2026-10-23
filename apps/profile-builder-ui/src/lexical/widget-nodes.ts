@@ -12,9 +12,17 @@
 //     state; the serializer maps it to/from `chip` children).
 //   • paragraph / text / list / listItem reuse Lexical (+ @lexical/list)
 //     built-ins, subclassed only to thread the stable id.
+//   • inline links are the stock @lexical/link nodes, unsubclassed; their id
+//     lives in NodeState (see "Inline links" below).
 
-import { LinkNode as LexicalLinkNode, LinkAttributes, SerializedLinkNode as SerializedLexicalLinkNode } from '@lexical/link';
+import { $isLinkNode, AutoLinkNode, LinkNode } from '@lexical/link';
+import { mergeRegister } from '@lexical/utils';
 import {
+  $getRoot,
+  $getState,
+  $isElementNode,
+  $setState,
+  createState,
   DecoratorNode,
   EditorConfig,
   ElementNode,
@@ -36,8 +44,8 @@ import {
 } from '@lexical/list';
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
+import { newId } from '../model';
 import { ChipsComponent } from './ChipsComponent';
-import { LinkComponent } from './LinkComponent';
 
 let counter = 0;
 /** Fallback id for nodes created in the editor before serialization assigns one. */
@@ -392,134 +400,53 @@ export function $isChipsNode(node: LexicalNode | null | undefined): node is Chip
   return node instanceof ChipsNode;
 }
 
-// ---- LinkWidgetNode (decorator) -------------------------------------------
-
-export type SerializedLinkNode = Spread<{ nodeId: string; text: string; url: string }, SerializedLexicalNode>;
+// ---- Inline links (stock @lexical/link) ------------------------------------
 
 /**
- * A standalone link line (spec §10). A leaf widget — text + url live in node
- * state and a small React component edits them; the serializer maps them to/from
- * the neutral `link` node's `attrs`. NOT an inline mark (those stay out of scope
- * per §9.6); it renders as its own block, like chips/timeline.
+ * Inline links are Lexical's stock `LinkNode` (and `AutoLinkNode`, for typed /
+ * pasted URLs), registered unreplaced. The neutral `inlineLink.id` rides along
+ * in NodeState rather than a subclass: NodeState is cloned with the node and
+ * survives Lexical's own JSON, so the id stays stable for AI patches addressing
+ * the link. URL lives on the node; the label is its text children.
  */
-export class LinkWidgetNode extends DecoratorNode<ReactNode> {
-  __nodeId: string;
-  __text: string;
-  __url: string;
-  static getType(): string {
-    return 'pb-link';
-  }
-  static clone(node: LinkWidgetNode): LinkWidgetNode {
-    return new LinkWidgetNode(node.__nodeId, node.__text, node.__url, node.__key);
-  }
-  constructor(nodeId?: string, text = '', url = '', key?: string) {
-    super(key);
-    this.__nodeId = nodeId ?? ephemeralId('link');
-    this.__text = text;
-    this.__url = url;
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
-  }
-  getText(): string {
-    return this.getLatest().__text;
-  }
-  getUrl(): string {
-    return this.getLatest().__url;
-  }
-  setLink(text: string, url: string): void {
-    const writable = this.getWritable();
-    writable.__text = text;
-    writable.__url = url;
-  }
-  createDOM(config: EditorConfig): HTMLElement {
-    const el = document.createElement('div');
-    el.className = (config.theme as Record<string, string>)['pbLink'] ?? 'pb-link';
-    el.setAttribute('data-pb', 'link');
-    return el;
-  }
-  updateDOM(): boolean {
-    return false;
-  }
-  isInline(): false {
-    return false;
-  }
-  decorate(editor: LexicalEditor): ReactNode {
-    return createElement(LinkComponent, {
-      editor,
-      nodeKey: this.getKey(),
-      text: this.getText(),
-      url: this.getUrl(),
-    });
-  }
-  exportJSON(): SerializedLinkNode {
-    return {
-      type: LinkWidgetNode.getType(),
-      version: 1,
-      nodeId: this.__nodeId,
-      text: this.__text,
-      url: this.__url,
-    };
-  }
-  static importJSON(json: SerializedLinkNode): LinkWidgetNode {
-    return new LinkWidgetNode(json.nodeId, json.text, json.url);
-  }
-}
-export function $createLinkNode(nodeId?: string, text = '', url = ''): LinkWidgetNode {
-  return new LinkWidgetNode(nodeId, text, url);
-}
-export function $isLinkNode(node: LexicalNode | null | undefined): node is LinkWidgetNode {
-  return node instanceof LinkWidgetNode;
+const pbIdState = createState('pbId', { parse: (v) => (typeof v === 'string' ? v : '') });
+
+/** The link's neutral `inlineLink` id ('' until {@link registerLinkIds} or the serializer sets one). */
+export function $getLinkId(link: LinkNode): string {
+  return $getState(link, pbIdState);
 }
 
-// ---- PbInlineLinkNode (inline mark) ---------------------------------------
+export function $setLinkId(link: LinkNode, id: string): void {
+  $setState(link, pbIdState, id);
+}
 
-export type SerializedPbInlineLinkNode = Spread<{ nodeId: string }, SerializedLexicalLinkNode>;
+/** The first link in document order carrying `id`, or null. */
+function $firstLinkWithId(id: string): LinkNode | null {
+  const stack: LexicalNode[] = [$getRoot()];
+  while (stack.length) {
+    const node = stack.shift()!;
+    if ($isLinkNode(node) && $getLinkId(node) === id) return node;
+    if ($isElementNode(node)) stack.unshift(...node.getChildren());
+  }
+  return null;
+}
 
 /**
- * An inline hyperlink run inside running text (spec §15 / US-EDIT-21). Subclasses
- * `@lexical/link`'s LinkNode purely to thread the neutral tree's stable id, so the
- * serializer can round-trip an `inlineLink` node's id. URL lives on the Lexical
- * node; the label is its (editable) text children. target/rel are unused — the
- * model exposes a URL only. Distinct from the block {@link LinkWidgetNode} (a
- * standalone link *line*); this one wraps text inline.
+ * Give every link a neutral id inside the same update that creates it — from the
+ * toolbar, a paste, autolink or a load. Also re-ids a copy: Lexical clones a
+ * link (with its NodeState) when it splits one, e.g. Enter inside a label, and
+ * the copy must not share the original's id. The first link in document order
+ * keeps it.
  */
-export class PbInlineLinkNode extends LexicalLinkNode {
-  __nodeId: string;
-  static getType(): string {
-    return 'pb-inline-link';
-  }
-  static clone(node: PbInlineLinkNode): PbInlineLinkNode {
-    return new PbInlineLinkNode(
-      node.__url,
-      node.__nodeId,
-      { rel: node.__rel, target: node.__target, title: node.__title },
-      node.__key,
-    );
-  }
-  constructor(url = '', nodeId?: string, attributes: LinkAttributes = {}, key?: string) {
-    super(url, attributes, key);
-    this.__nodeId = nodeId ?? ephemeralId('inline-link');
-  }
-  afterCloneFrom(prevNode: this): void {
-    super.afterCloneFrom(prevNode);
-    this.__nodeId = prevNode.__nodeId;
-  }
-  getNodeId(): string {
-    return this.getLatest().__nodeId;
-  }
-  exportJSON(): SerializedPbInlineLinkNode {
-    return { ...super.exportJSON(), type: PbInlineLinkNode.getType(), version: 1, nodeId: this.__nodeId };
-  }
-  static importJSON(json: SerializedPbInlineLinkNode): PbInlineLinkNode {
-    return new PbInlineLinkNode(json.url, json.nodeId).updateFromJSON(json);
-  }
-}
-export function $createInlineLinkNode(url = '', nodeId?: string): PbInlineLinkNode {
-  return new PbInlineLinkNode(url, nodeId);
-}
-export function $isInlineLinkNode(node: LexicalNode | null | undefined): node is PbInlineLinkNode {
-  return node instanceof PbInlineLinkNode;
+export function registerLinkIds(editor: LexicalEditor): () => void {
+  const $ensureId = (link: LinkNode) => {
+    const id = $getLinkId(link);
+    if (!id || !$firstLinkWithId(id)?.is(link)) $setLinkId(link, newId());
+  };
+  return mergeRegister(
+    editor.registerNodeTransform(LinkNode, $ensureId),
+    editor.registerNodeTransform(AutoLinkNode, $ensureId),
+  );
 }
 
 // ---- Id-carrying built-in subclasses --------------------------------------
@@ -573,6 +500,20 @@ export class PbTextNode extends LexicalTextNode {
   }
   getNodeId(): string {
     return this.getLatest().__nodeId;
+  }
+  // Lexical keys "simple text" off the 'text' type, which PbTextNode does not
+  // have. Report it by mode instead, so AutoLink (which only links and keeps
+  // simple text) works on our runs.
+  isSimpleText(): boolean {
+    return this.__mode === 0;
+  }
+  // That also opts runs into Lexical's text normalisation: adjacent runs with the
+  // same format merge (the surviving node keeps its id), which AutoLink relies on
+  // to re-match a URL after it unwraps a partial link mid-typing. Empty runs stay
+  // out of it — normalisation would delete them, and they are load-bearing: an
+  // empty paragraph's only run, and the caret's landing spot after a committed link.
+  isUnmergeable(): boolean {
+    return this.__text === '' || super.isUnmergeable();
   }
   exportJSON(): SerializedPbTextNode {
     return { ...super.exportJSON(), type: PbTextNode.getType(), version: 1, nodeId: this.__nodeId };
@@ -678,8 +619,8 @@ export function $isPbListItemNode(node: LexicalNode | null | undefined): node is
 
 /** All custom nodes for the editor's `nodes` config. */
 export const WIDGET_NODES = [
-  LexicalLinkNode,
-  PbInlineLinkNode,
+  LinkNode,
+  AutoLinkNode,
   PbTitleNode,
   SectionNode,
   SectionHeadingNode,
@@ -687,19 +628,12 @@ export const WIDGET_NODES = [
   EntryNode,
   EntryFieldNode,
   ChipsNode,
-  LinkWidgetNode,
   PbParagraphNode,
   PbTextNode,
   PbListNode,
   PbListItemNode,
   // Override the built-ins so editor commands that create paragraphs/lists use
   // our id-carrying variants.
-  {
-    replace: LexicalLinkNode,
-    with: (n: LexicalLinkNode) =>
-      new PbInlineLinkNode(n.getURL(), undefined, { rel: n.getRel(), target: n.getTarget(), title: n.getTitle() }),
-    withKlass: PbInlineLinkNode,
-  },
   { replace: LexicalParagraphNode, with: () => new PbParagraphNode(), withKlass: PbParagraphNode },
   { replace: LexicalTextNode, with: (n: LexicalTextNode) => new PbTextNode(undefined, n.__text), withKlass: PbTextNode },
   { replace: LexicalListNode, with: () => new PbListNode(), withKlass: PbListNode },

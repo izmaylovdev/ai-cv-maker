@@ -9,7 +9,13 @@
 // heading text) followed by the section's former children, all appended flat to
 // root. The neutral tree emitted by onChange is already in the new flat shape, so
 // the first save after opening a legacy document upgrades it transparently.
+// Legacy standalone `link` blocks get the same treatment: they load as a
+// paragraph holding one inline link (model.ts `migrateLegacyLinks`).
+//
+// Inline links are the stock @lexical/link LinkNode (AutoLinkNode for typed or
+// pasted URLs); the neutral `inlineLink.id` is carried in its NodeState.
 
+import { $createLinkNode, $isAutoLinkNode, $isLinkNode, LinkNode } from '@lexical/link';
 import { $getRoot, ElementNode, LexicalEditor, LexicalNode } from 'lexical';
 import {
   BlockNode,
@@ -18,7 +24,6 @@ import {
   EntryNode as EntryModel,
   FlowNode,
   InlineLinkNode as InlineLinkModel,
-  LinkNode as LinkModel,
   ListItemNode as ListItemModel,
   ListNode as ListModel,
   ParagraphNode as ParagraphModel,
@@ -26,13 +31,13 @@ import {
   TextNode as TextModel,
   TimelineNode as TimelineModel,
   TitleNode as TitleModel,
+  migrateLegacyLinks,
+  newId,
 } from './model';
 import {
   $createChipsNode,
   $createEntryFieldNode,
   $createEntryNode,
-  $createInlineLinkNode,
-  $createLinkNode,
   $createPbListItemNode,
   $createPbListNode,
   $createPbParagraphNode,
@@ -41,8 +46,6 @@ import {
   $isChipsNode,
   $isEntryFieldNode,
   $isEntryNode,
-  $isInlineLinkNode,
-  $isLinkNode,
   $isPbListItemNode,
   $isPbListNode,
   $isPbParagraphNode,
@@ -50,9 +53,10 @@ import {
   $isTitleNode,
   $isTimelineNode,
   $createTimelineNode,
+  $getLinkId,
+  $setLinkId,
   ChipsNode as LexChipsNode,
   EntryFieldNode,
-  PbInlineLinkNode,
   PbTextNode,
 } from './lexical/widget-nodes';
 
@@ -76,12 +80,13 @@ export function $createLexicalNode(node: BlockNode): LexicalNode {
     case 'text':
       return $createPbTextNode(node.id, node.attrs?.['text'] ?? '');
     case 'inlineLink': {
-      const link = $createInlineLinkNode(node.attrs?.['url'] ?? '', node.id);
-      link.append($createPbTextNode(undefined, node.attrs?.['text'] ?? ''));
+      const url = node.attrs?.['url'] ?? '';
+      const link = $createLinkNode(url);
+      $setLinkId(link, node.id || newId());
+      // A label-less link would render invisible; fall back to the url.
+      link.append($createPbTextNode(undefined, node.attrs?.['text'] || url));
       return link;
     }
-    case 'link':
-      return $createLinkNode(node.id, node.attrs?.['text'] ?? '', node.attrs?.['url'] ?? '');
     case 'list': {
       const el = $createPbListNode(node.id);
       appendChildren(el, node.children ?? []);
@@ -98,7 +103,10 @@ export function $createLexicalNode(node: BlockNode): LexicalNode {
         const firstRun = runs[0];
         const el = $createPbListItemNode(node.id, first.id, firstRun?.type === 'text' ? firstRun.id : undefined);
         appendChildren(el, runs);
-        appendChildren(el, rest);
+        // ListItemNode.append merges a paragraph's children into the item, which
+        // would fold a later paragraph (e.g. a migrated legacy link) into the
+        // leading runs. ElementNode.splice inserts the block as-is.
+        for (const child of rest) el.splice(el.getChildrenSize(), 0, [$createLexicalNode(child)]);
         return el;
       }
       const el = $createPbListItemNode(node.id);
@@ -140,11 +148,13 @@ function appendChildren(parent: ElementNode, children: BlockNode[]): void {
  * Replace the editor's content with the Lexical equivalent of `body`.
  * Handles legacy `section` nodes (F-EDIT-19.8): each section is expanded to
  * a PbTitleNode (heading text) followed by its former children, all flat at root.
+ * Handles legacy `link` blocks at any depth: each becomes a paragraph (keeping
+ * the link's id) holding one inline link.
  */
 export function $writeBody(body: RootNode): void {
   const root = $getRoot();
   root.clear();
-  for (const child of body.children ?? []) {
+  for (const child of migrateLegacyLinks(body).children ?? []) {
     if ((child as { type: string }).type === 'section') {
       // Legacy migration: section → title + flat children.
       const heading = (child as BlockNode).attrs?.['heading'] ?? '';
@@ -186,13 +196,44 @@ function readChildren(node: LexicalNode, skip?: (n: LexicalNode) => boolean): Bl
   return out;
 }
 
-/** An inline link node → its neutral `inlineLink` run (label = its text content). */
-function inlineLinkToModel(node: PbInlineLinkNode): InlineLinkModel {
+/** A link node → its neutral `inlineLink` run (label = its text content). */
+function inlineLinkToModel(node: LinkNode): InlineLinkModel {
   return {
     type: 'inlineLink',
-    id: node.getNodeId(),
+    // Every link gets an id from the editor's transform (registerLinkIds); the
+    // key fallback only covers a bare editor that never registered it.
+    id: $getLinkId(node) || `link-${node.getKey()}`,
     attrs: { text: node.getTextContent(), url: node.getURL() },
   };
+}
+
+/**
+ * Read a run of inline children (a paragraph's, or a list item's leading text)
+ * into neutral `text` / `inlineLink` runs. An autolink the user unlinked
+ * (rendered as plain text) reads back as its text runs.
+ *
+ * Empty text runs are dropped when the block has other runs: committing a link
+ * leaves an empty run after it as the caret's landing spot, and it carries no
+ * content. A block holding only an empty run keeps it.
+ */
+function readInlineRuns(children: LexicalNode[]): (TextModel | InlineLinkModel)[] {
+  const runs: (TextModel | InlineLinkModel)[] = [];
+  for (const child of children) {
+    if ($isPbTextNode(child)) {
+      runs.push({ type: 'text', id: child.getNodeId(), attrs: { text: child.getTextContent() } });
+    } else if ($isAutoLinkNode(child) && child.getIsUnlinked()) {
+      runs.push(...readInlineRuns(child.getChildren()));
+    } else if ($isLinkNode(child)) {
+      runs.push(inlineLinkToModel(child));
+    }
+  }
+  const content = runs.filter((r) => r.type !== 'text' || r.attrs.text !== '');
+  return content.length > 0 ? content : runs.slice(0, 1);
+}
+
+/** Whether `node` is inline content of a paragraph / list item (a run). */
+function isInlineRun(node: LexicalNode): boolean {
+  return $isPbTextNode(node) || $isLinkNode(node);
 }
 
 /** Read a single Lexical node into a neutral BlockNode (or null to skip it). */
@@ -208,14 +249,14 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
     return {
       type: 'paragraph',
       id: node.getNodeId(),
-      children: readChildren(node) as ParagraphModel['children'],
+      children: readInlineRuns(node.getChildren()),
     } satisfies ParagraphModel;
   }
   if ($isPbTextNode(node)) {
     const n = node as PbTextNode;
     return { type: 'text', id: n.getNodeId(), attrs: { text: n.getTextContent() } } satisfies TextModel;
   }
-  if ($isInlineLinkNode(node)) {
+  if ($isLinkNode(node)) {
     return inlineLinkToModel(node);
   }
   if ($isPbListNode(node)) {
@@ -227,32 +268,17 @@ function readLexicalNode(node: LexicalNode): BlockNode | null {
   }
   if ($isPbListItemNode(node)) {
     const out: ListItemModel['children'] = [];
-    const inlineRuns: ParagraphModel['children'] = [];
-    let hasInline = false;
+    const inline = node.getChildren().filter(isInlineRun);
     for (const child of node.getChildren()) {
-      if ($isPbTextNode(child)) {
-        hasInline = true;
-        inlineRuns.push({ type: 'text', id: child.getNodeId(), attrs: { text: child.getTextContent() } });
-      } else if ($isInlineLinkNode(child)) {
-        hasInline = true;
-        inlineRuns.push(inlineLinkToModel(child));
-      } else {
-        const mapped = readLexicalNode(child);
-        if (mapped) out.push(mapped as ListItemModel['children'][number]);
-      }
+      if (isInlineRun(child)) continue;
+      const mapped = readLexicalNode(child);
+      if (mapped) out.push(mapped as ListItemModel['children'][number]);
     }
-    if (hasInline) {
+    if (inline.length > 0) {
       // Re-wrap the item's inline runs in the neutral model's paragraph→text shape.
-      out.unshift({ type: 'paragraph', id: node.getParaId(), children: inlineRuns });
+      out.unshift({ type: 'paragraph', id: node.getParaId(), children: readInlineRuns(inline) });
     }
     return { type: 'listItem', id: node.getNodeId(), children: out } satisfies ListItemModel;
-  }
-  if ($isLinkNode(node)) {
-    return {
-      type: 'link',
-      id: node.getNodeId(),
-      attrs: { text: node.getText(), url: node.getUrl() },
-    } satisfies LinkModel;
   }
   if ($isChipsNode(node)) {
     const n = node as LexChipsNode;

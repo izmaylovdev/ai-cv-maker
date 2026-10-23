@@ -69,3 +69,66 @@ def test_validate_document_rejects_unknown_node_type():
     )
     errors = validate_document(doc)
     assert any("bogus" in e for e in errors)
+
+
+# --- Links are inline only: the standalone `link` block is retired -----------
+# A link is an `inlineLink` run inside a `paragraph`; a `link` node is rejected
+# like any unknown type (mirrors model.ts and ProfileDocumentSchema.cs).
+
+
+def _doc(*children: BlockNode) -> ProfileDocument:
+    return ProfileDocument(
+        header=ProfileHeader(fullName="Ada"),
+        body=BlockNode(type="root", id="root-1", children=list(children)),
+    )
+
+
+def test_link_is_not_a_known_node_type():
+    from app.schemas import ALLOWED_CHILDREN
+
+    assert "link" not in ALLOWED_CHILDREN
+    for parent in ("root", "listItem", "entry"):
+        assert "link" not in ALLOWED_CHILDREN[parent]
+
+
+def test_validate_document_rejects_link_at_root():
+    doc = _doc(BlockNode(type="link", id="l1", attrs={"text": "Site", "url": "https://s.dev"}))
+    errors = validate_document(doc)
+    assert errors
+    assert any("link" in e for e in errors)
+
+
+def test_validate_document_rejects_link_inside_entry():
+    entry = BlockNode(
+        type="entry",
+        id="e1",
+        attrs={"title": "Engineer", "dates": "2022"},
+        children=[BlockNode(type="link", id="l1", attrs={"text": "Case", "url": "https://c.dev"})],
+    )
+    doc = _doc(BlockNode(type="timeline", id="tl", children=[entry]))
+    assert validate_document(doc)
+
+
+def test_validate_document_accepts_paragraph_with_inline_link():
+    para = BlockNode(
+        type="paragraph",
+        id="p1",
+        children=[
+            BlockNode(type="text", id="t1", attrs={"text": "See my "}),
+            BlockNode(type="inlineLink", id="il1", attrs={"text": "portfolio", "url": "https://me.dev"}),
+        ],
+    )
+    entry = BlockNode(
+        type="entry",
+        id="e1",
+        attrs={"title": "Engineer", "dates": "2022"},
+        children=[
+            BlockNode(
+                type="paragraph",
+                id="p2",
+                children=[BlockNode(type="inlineLink", id="il2", attrs={"text": "Case", "url": "https://c.dev"})],
+            )
+        ],
+    )
+    doc = _doc(para, BlockNode(type="timeline", id="tl", children=[entry]))
+    assert validate_document(doc) == []

@@ -37,13 +37,13 @@ The body is a single tree of BlockNodes. Every node is:
 (array order IS document order). No other types and no raw HTML are allowed.
 
 Node vocabulary and the children each may contain (the nesting matrix):
-- root      → children: title | paragraph | list | chips | timeline | link  (flat body)
+- root      → children: title | paragraph | list | chips | timeline  (flat body)
 - title     attrs:{text}        → leaf; section heading, e.g. "Work Experience"
-- paragraph → children: text*                            (a text block / one run)
+- paragraph → children: (text | inlineLink)*            (a text block of runs)
 - text      attrs:{text}        → leaf (no children); plain string
-- link      attrs:{text,url}    → leaf
+- inlineLink attrs:{text,url}   → leaf; a hyperlink run inside a paragraph
 - list      → children: listItem*                        (bulleted list)
-- listItem  → children: paragraph | list | chips | link  (rich item; nested lists ok)
+- listItem  → children: paragraph | list | chips         (rich item; nested lists ok)
 - chips     → children: chip*                            (tag cloud: skills, tools)
 - chip      attrs:{text}        → leaf (no children); short string
 - timeline  → children: entry*                           (dated entries)
@@ -51,8 +51,11 @@ Node vocabulary and the children each may contain (the nesting matrix):
 
 Rules:
 - The body is FLAT. Use a `title` node to start a section, then put its content nodes
-  (paragraph, list, chips, timeline, link) directly under root — NOT inside a wrapper.
+  (paragraph, list, chips, timeline) directly under root — NOT inside a wrapper.
   There is NO `section` node type.
+- Links are `inlineLink` runs inside a paragraph, e.g. a paragraph with children
+  [text "Portfolio: ", inlineLink {text:"me.dev", url:"https://me.dev"}].
+  There is NO standalone link block.
 - Do NOT nest timeline inside listItem/entry; no chips inside a chip;
   nothing inside text/chip/title. Max nesting ~4 levels.
 - `dates` is FREE TEXT exactly as a CV would print it, e.g. "Jan 2022 – Present".

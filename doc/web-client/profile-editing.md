@@ -9,6 +9,7 @@ tree is what gets persisted, sent to the LLM, and rendered to PDF.
 hosted by `apps/ui-angular/src/app/features/profile/`
 **See also:** [ADR-0013](../adr/0013-canonical-profile-document-model.md) (document model) ·
 [ADR-0014](../adr/0014-lexical-block-tree-profile-model.md) (block tree, supersedes per-section templates) ·
+[ADR-0022](../adr/0022-stock-lexical-link-node.md) (links are stock Lexical `LinkNode`) ·
 [job-profiles.md](job-profiles.md) · [chat.md](chat.md) · [cv-generation.md](cv-generation.md)
 
 ---
@@ -35,32 +36,48 @@ hidden, so the rail's shape never moves.
 | Text | `mod+Alt+0` | Free-form paragraph |
 | List | `mod+Shift+8` | Bulleted list; items hold rich content and nest |
 | Chips | `mod+Shift+9` | Tag cloud of short items |
-| Link | `mod+K` | Inline hyperlink at the caret or around the selection |
+| Link | `mod+K` | Action, not a block: links the selection, or inserts a link at the caret |
 | Timeline | `mod+Shift+6` | Dated entries (role, study, project) |
 
 The rail is a labelled `role="toolbar"`; every button carries an accessible name
 and `aria-keyshortcuts`.
 
 **Insertion follows the caret.** With the caret inside a timeline entry,
-inserting List, Link, or Chips places the node *inside that entry*, right after
-the block holding the caret — and the rail narrows to the widgets valid there
-(`text`, `list`, `link`, `chips`); Title and Timeline are not offered and their
-hotkeys are no-ops. Outside an entry, insertion anchors at root level.
+inserting List or Chips places the node *inside that entry*, right after the
+block holding the caret — and the rail narrows to the widgets valid there
+(`text`, `list`, `chips`, plus the Link action); Title and Timeline are not
+offered and their hotkeys are no-ops. Outside an entry, insertion anchors at root
+level.
 
 **Timeline entries** hold a Title, a single free-text Dates field, and a rich
 description. Those three subsections are required and non-removable: editing can
 clear a field's text but Backspace at the start or Delete at the end of a
 subsection is a no-op, so an entry never collapses or merges into its neighbour.
 
-**Links** come in two shapes. `mod+K` or the rail produces an **inline** link —
-wrapping the selection, or inserted at the caret with the label mirroring the URL
-until the user types their own. A floating editor below the link offers a **Link
-text** and a **Link URL** field: committing sets the label to `text || url`, so a
-link is never invisible; committing an empty URL removes the link; Escape leaves
-both as they were. After a ✓ commit the caret sits *after* the link, so typing
-continues the running text instead of extending the label. A standalone block
-`link` line also remains valid in the model, for back-compat and AI-authored
-content.
+**Links are inline text.** A link is a run inside a paragraph, a list item, or
+a timeline entry's description — never a block of its own — and is Lexical's
+stock `LinkNode` ([ADR-0022](../adr/0022-stock-lexical-link-node.md)). Titles,
+entry Title/Dates fields and chips cannot hold links: there the rail's Link button
+is disabled and `mod+K` does nothing. `mod+K` or the Link button opens a floating
+link editor whose mode depends on the selection:
+
+- **Wrap** — with text selected, it asks for a **Link URL** and links the selection.
+- **Insert** — at a collapsed caret, it asks for **Link text** and **Link URL** and
+  inserts the link at the caret; an empty text uses the URL as the label. The
+  caret lands after the new link.
+- **View** — with the caret inside a link, it shows the URL (opens in a new tab)
+  with **Edit** and **Remove**. Edit changes the URL; confirming an empty URL, or
+  Remove, unwraps the link and keeps its text as plain text.
+
+Nothing is written to the document until the user confirms; Escape or clicking
+away cancels and returns focus to the text. URLs are normalised: a bare domain
+gets `https://`, a bare email gets `mailto:`, and only `http`, `https`, `mailto`
+and `tel` are accepted — anything else disables confirm and shows "Enter a valid
+URL". Typing right after a link continues as plain text. Typed or pasted URLs
+(`https://…`, `www.…`, email addresses) become links automatically, including
+plain-text URLs already in a document when it opens; pasting a URL over a
+selection links the selection. Clicking a link in the editor places the caret and
+never navigates.
 
 **Empty regions are visible.** Empty structural fields (title text, entry title,
 entry dates) render as a tinted dashed slot with placeholder text. An empty
@@ -108,18 +125,17 @@ order.
 
 | Node | Required `attrs` | Allowed children |
 |---|---|---|
-| `root` | — | `title`, `paragraph`, `list`, `chips`, `timeline`, `link` |
+| `root` | — | `title`, `paragraph`, `list`, `chips`, `timeline` |
 | `title` | `text` | — (leaf) |
 | `paragraph` | — | `text`, `inlineLink` |
 | `text` | `text` | — (leaf) |
 | `inlineLink` | `text`, `url` | — (leaf) |
-| `link` | `text`, `url` | — (leaf, standalone block line) |
 | `list` | — | `listItem` |
-| `listItem` | — | `paragraph`, `list`, `chips`, `link` |
+| `listItem` | — | `paragraph`, `list`, `chips` |
 | `chips` | — | `chip` |
 | `chip` | `text` | — (leaf) |
 | `timeline` | — | `entry` |
-| `entry` | `title`, `dates` | `paragraph`, `list`, `chips`, `link` |
+| `entry` | `title`, `dates` | `paragraph`, `list`, `chips` |
 
 Nesting outside this matrix is rejected: the editor cannot author it, cv-api
 refuses it on write, and the PDF walk may assume it. Flow nesting depth is
@@ -129,8 +145,19 @@ bounded (default 4; `list` and `timeline` are the depth-incrementing containers 
 The body is a **flat, title-anchored** list. The old `section` node type is
 retired; documents that still contain `section` nodes are migrated in memory on
 load — each section becomes a `title` node carrying its heading, followed by the
-section's former children, appended flat to root. Everything emitted by the
-editor is already in the flat shape.
+section's former children, appended flat to root. The old standalone `link`
+block is retired the same way: wherever it appears (root, list item, entry) it
+becomes a `paragraph` that keeps the link's id and holds one `inlineLink` run
+(label = its text, or the URL when the text is empty; a link with no URL becomes
+plain text, and one with neither is dropped). The editor applies both migrations
+on load and to every AI patch before validating it; cv-api applies them on read,
+on write, and to CVs imported by the LLM. Everything emitted by the editor is
+already in the current shape. Generated-CV snapshots are not rewritten, so the
+PDF renderer still draws a legacy `link` block as a link line.
+
+An `inlineLink` keeps its `id` across edits and serialisations (it is stored on
+the Lexical node as node state), so AI patches can address a link directly —
+e.g. `setAttrs` to change its URL.
 
 ---
 
@@ -147,7 +174,10 @@ change. Validation lives in three places against the same matrix: the editor
 
 ## Not implemented
 
-Text marks other than links (bold, italic, colour), raw-HTML or arbitrary-node
+Link `title`/`target`/`rel` attributes; bold or italic inside a link label;
+links in titles, entry Title/Dates fields, or chips. Removing a link whose label
+is itself a URL does not stick — autolink relinks it the next time the document
+opens. Text marks other than links (bold, italic, colour), raw-HTML or arbitrary-node
 insertion, per-widget styling, collaborative editing, and an unsaved-changes
 navigation guard. Reordering individual non-title blocks at root has no UI
 affordance — move the group, or cut and re-insert.
