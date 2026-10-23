@@ -15,16 +15,20 @@ dependencies = [
     "anthropic>=2.2.0,<3",
     "pydantic>=2.8.0",
     "python-dotenv>=1.0.0",
-    "grpcio>=1.80.0",
-    "grpcio-tools>=1.80.0",
-    "grpcio-health-checking>=1.80.0",
+    "grpcio>=1.83.0",
+    "grpcio-tools>=1.83.0",
+    "grpcio-health-checking>=1.83.0",
+    # Must stay >= the gencode stamp in app/grpc/llm_service_pb2.py (which
+    # `npm run grpc:generate` can move) and on the same major, or the stubs
+    # fail to import. Enforced by app/test_protobuf_floor.py.
+    "protobuf>=7.35.0,<8",
     "prometheus-client>=0.21.0",
     "langfuse>=3.0.0,<4",
     "httpx>=0.27",
     "beautifulsoup4>=4.12",
     # Distributed tracing to Tempo (ADR-0016).
     "opentelemetry-sdk>=1.27.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.43.0",
     "opentelemetry-instrumentation-grpc>=0.48b0",
 ]
 

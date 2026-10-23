@@ -136,6 +136,16 @@ The override only changes cv-api's `LlmService__GrpcUrl` to
 `http://host.docker.internal:50051`; to go back to all-Docker, restart
 llm-service and re-create cv-api without the override file.
 
+On the host, llm-service loads the committed gRPC stubs in
+`apps/llm-service/app/grpc/`, which need a protobuf runtime at least as new as
+the version they were generated with. `pyproject.toml` pins that floor, and
+`app/test_protobuf_floor.py` keeps the two in step. `serve` and `serve-host`
+run the `install` target first, which upgrades an existing venv whenever
+`pyproject.toml` changes. If llm-service exits at startup with *Detected
+incompatible Protobuf Gencode/Runtime versions*, the venv is out of date: run
+`npx nx run llm-service:install --skip-nx-cache`. The Docker image regenerates
+the stubs at build time, so it never hits this.
+
 ## LLM providers
 
 Set `LLM_PROVIDER` in `.env` to switch backends:
