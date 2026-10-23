@@ -7,6 +7,8 @@ import { ProfileService } from '../profile/profile.service';
 import { CvService } from '../cv/cv.service';
 import { JobProfileListItem } from '../../shared/models/profile.model';
 import { PdfPreviewComponent } from '../../shared/components/pdf-preview/pdf-preview.component';
+import { NotifyService } from '../../shared/services/notify.service';
+import { cvImportErrorMessage } from './cv-import-error';
 
 @Component({
   selector: 'app-job-profiles',
@@ -17,6 +19,7 @@ import { PdfPreviewComponent } from '../../shared/components/pdf-preview/pdf-pre
 export class JobProfilesComponent implements OnInit, OnDestroy {
   private profileService = inject(ProfileService);
   private cvService = inject(CvService);
+  private notify = inject(NotifyService);
   private sanitizer = inject(DomSanitizer);
   readonly router = inject(Router);
 
@@ -102,9 +105,14 @@ export class JobProfilesComponent implements OnInit, OnDestroy {
               error: () => this.router.navigate(['/job-profiles', profile.id]),
             });
           },
-          error: () => {
-            this.saving.set(false);
-            this.router.navigate(['/job-profiles', profile.id]);
+          // A failed import creates nothing: remove the template-only profile and
+          // keep the form (name + file) so the user can retry with one click.
+          error: (err) => {
+            this.notify.error(`Couldn't import your CV. ${cvImportErrorMessage(err)}`);
+            this.profileService.deleteProfile(profile.id).pipe(finalize(() => this.saving.set(false))).subscribe({
+              // The profile survived, so show it rather than pretend it's gone.
+              error: () => this.load(),
+            });
           },
         });
       },

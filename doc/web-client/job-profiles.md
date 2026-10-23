@@ -28,8 +28,12 @@ the expected section structure instead of a blank page.
 app creates the profile, sends the extracted text to the LLM, and saves the
 returned document into it. The LLM also proposes a profile name; a name the user
 typed always wins, and the suggestion is only used when the field was left blank.
-If extraction fails, the profile is still created — it just keeps its template
-document and its original name.
+
+An import is all-or-nothing. If extraction fails, the app deletes the profile it
+just created, so a template-only profile never passes for a successful import.
+The user stays on `/job-profiles` with the create form still open and the name
+and file intact, so one click retries. An error toast reads *"Couldn't import your
+CV."* followed by the reason (see [Import errors](#import-errors)).
 
 **Rename.** A pencil action on each dashboard row turns the name into an inline
 input; the profile name in the editor header is editable the same way. Enter or
@@ -80,6 +84,29 @@ The upload input in the UI accepts `.pdf`; the API additionally accepts any othe
 file it can read as UTF-8 text. Request size is capped at **10 MB** by
 `[RequestSizeLimit]`.
 
+### Import errors
+
+The toast's reason comes from `cvImportErrorMessage()`
+(`job-profiles/cv-import-error.ts`). It uses the server's own words when the
+response has any. cv-api answers with a plain-text body from the controller's
+`BadRequest` / `StatusCode` results, or with a `{ code, message }` body from the
+global LLM and usage-limit handlers. An HTML body (a proxy error page) does not
+count. When there is no usable message, the reason falls back on the status:
+
+| Status | Reason shown |
+|---|---|
+| `400` | We couldn't read any text from that file. Try a different PDF. |
+| `402` | The usage-limit message ([ai-usage.md](ai-usage.md)) |
+| `413` | That file is too large. The limit is 10 MB. |
+| `429`, `503` | CV import is temporarily unavailable. Please try again later. |
+| `0` (no response) | We couldn't reach the server. Check your connection and try again. |
+| anything else | Something went wrong. Please try again. |
+
+The toast replaces the generic usage-limit toast that `apiInterceptor` raises for a
+`402`. Only a failed **extract** is handled this way. If extraction succeeds but
+saving the document (`PUT`) fails, the app still opens the profile, which keeps
+its template document.
+
 ---
 
 ## API
@@ -103,9 +130,11 @@ on every call — another user's profile is indistinguishable from a missing one
 `ProfileDocument.Empty()`), which is why rename has its own `PATCH` verb: a
 name-only `PUT` would wipe the document.
 
-**Extract error responses:** `400` no file uploaded or no text extractable ·
-`404` unknown profile · `503` AI service unreachable (circuit open) or over quota ·
-`502` other AI transport failure.
+**Extract error responses:** `400` no file uploaded or no text extractable
+(plain text) · `402` usage limit reached (`{ code: 'usage_limit_exceeded', message }`) ·
+`404` unknown profile · `422` `llm_invalid_request` · `503` AI service unreachable
+(plain text when the circuit is open, else `{ code: 'llm_unavailable', message }`)
+or over quota (plain text) · `502` other AI failure (plain text, or `llm_failed`).
 
 ---
 
@@ -134,4 +163,5 @@ database constraint.
 Profile duplication, sharing, folders or tags, and a choice of CV templates (one
 default template ships; picking between templates is deferred). Re-importing a CV
 into an existing profile from the editor, and renaming from within the AI chat,
-also do not exist.
+also do not exist. A failed save after a successful extraction is not reported to
+the user. Error toasts dismiss after 4 s whatever the length of the message.
