@@ -13,21 +13,22 @@ _LONG = 5_000   # free-text bodies and descriptions
 # apps/profile-builder-ui/src/model.ts and the C# CvApi.Domain.Entities —
 # keep the three in sync. The TS file is the reference.
 # US-EDIT-19: 'section' is retired; 'title' is the new flat heading node.
+# The standalone 'link' block is retired too: a link is an 'inlineLink' run
+# inside a 'paragraph', and a 'link' node is rejected like any unknown type.
 
 # Allowed child types per node type (§9.3 / §13 nesting matrix).
 ALLOWED_CHILDREN: dict[str, list[str]] = {
-    "root":     ["title", "paragraph", "list", "chips", "timeline", "link"],
+    "root":     ["title", "paragraph", "list", "chips", "timeline"],
     "title":    [],
     "paragraph": ["text", "inlineLink"],
     "text":     [],
     "inlineLink": [],
-    "link":     [],
     "list":     ["listItem"],
-    "listItem": ["paragraph", "list", "chips", "link"],
+    "listItem": ["paragraph", "list", "chips"],
     "chips":    ["chip"],
     "chip":     [],
     "timeline": ["entry"],
-    "entry":    ["paragraph", "list", "chips", "link"],
+    "entry":    ["paragraph", "list", "chips"],
 }
 
 # Required `attrs` keys per node type (each value must be a string).
@@ -35,7 +36,6 @@ REQUIRED_ATTRS: dict[str, list[str]] = {
     "title": ["text"],
     "text":  ["text"],
     "inlineLink": ["text", "url"],
-    "link":  ["text", "url"],
     "chip":  ["text"],
     "entry": ["title", "dates"],
 }

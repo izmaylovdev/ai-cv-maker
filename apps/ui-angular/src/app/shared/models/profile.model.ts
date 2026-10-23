@@ -7,7 +7,6 @@ export type NodeType =
   | 'title'
   | 'paragraph'
   | 'text'
-  | 'link'
   | 'list'
   | 'listItem'
   | 'chips'

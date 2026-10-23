@@ -40,4 +40,43 @@ public class PdfServiceInlineLinkTests
         var bytes = new PdfService().GenerateFromDocument(doc);
         Assert.True(bytes.Length > 0);
     }
+
+    // Generated-CV documents are snapshots that may still hold a retired
+    // standalone `link` block; the PDF must keep rendering it (graceful
+    // degradation) even though the schema no longer accepts it on write.
+    [Fact]
+    public void StillRendersLegacyStandaloneLinkBlock()
+    {
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
+        var doc = new ProfileDocument
+        {
+            Header = new ProfileHeader { FullName = "Jane Doe", Title = "Engineer", Email = "j@x.com" },
+            Body = new BlockNode
+            {
+                Type = "root",
+                Children =
+                [
+                    new BlockNode { Type = "title", Attrs = { ["text"] = "Links" } },
+                    new BlockNode { Type = "link", Attrs = { ["text"] = "Portfolio", ["url"] = "https://me.dev" } },
+                    new BlockNode
+                    {
+                        Type = "timeline",
+                        Children =
+                        [
+                            new BlockNode
+                            {
+                                Type = "entry",
+                                Attrs = { ["title"] = "Engineer", ["dates"] = "2022" },
+                                Children = [new BlockNode { Type = "link", Attrs = { ["text"] = "Case", ["url"] = "https://case.dev" } }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        var bytes = new PdfService().GenerateFromDocument(doc);
+        Assert.True(bytes.Length > 0);
+    }
 }

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { $getRoot, createEditor } from 'lexical';
+import { $createTextNode, $getRoot, ElementNode, createEditor } from 'lexical';
+import { $createAutoLinkNode, $isLinkNode } from '@lexical/link';
 import { WIDGET_NODES, $isTitleNode } from './lexical/widget-nodes';
 import { loadDocument, readDocument } from './serialize';
 import {
   chipsNode,
   entryNode,
   inlineLinkNode,
-  linkNode,
   listItemNode,
   listNode,
   paragraphNode,
@@ -35,13 +35,28 @@ function roundTrip(body: RootNode): RootNode {
   return readDocument(editor, body.id);
 }
 
+/** A paragraph holding a single inline link run (the only kind of link, spec: stock LinkNode). */
+function linkParagraph(text: string, url: string) {
+  return { ...paragraphNode(''), children: [inlineLinkNode(text, url)] };
+}
+
+/** A legacy standalone `link` block, as stored before the block was retired. */
+function legacyLink(id: string, text: string, url: string): BlockNode {
+  return { type: 'link', id, attrs: { text, url } } as unknown as BlockNode;
+}
+
+/** Every node in a tree, depth-first. */
+function allNodes(n: BlockNode): BlockNode[] {
+  return [n, ...(n.children ?? []).flatMap(allNodes)];
+}
+
 /** A deeply-mixed valid body tree using the new flat (title-anchored) model. */
 function richBody(): RootNode {
   const entry = entryNode('Senior Engineer', 'Jan 2022 – Present', 'Led the team.');
   entry.children = [
     paragraphNode('Led the team.'),
     listNode(['Shipped editor', 'Mentored']),
-    linkNode('Case study', 'https://example.com/case'),
+    linkParagraph('Case study', 'https://example.com/case'),
   ];
 
   const item = listItemNode('Top');
@@ -52,7 +67,7 @@ function richBody(): RootNode {
   return rootNode([
     titleNode('Summary'),
     paragraphNode('Product-minded engineer.'),
-    linkNode('Portfolio', 'https://example.com'),
+    linkParagraph('Portfolio', 'https://example.com'),
     titleNode('Work Experience'),
     timelineNode([entry]),
     titleNode('Skills'),
@@ -96,17 +111,6 @@ describe('serialize round-trip (ADR-0014 §9.4 / US-EDIT-19 §13)', () => {
     expect(validateDocument(doc).valid).toBe(true);
   });
 
-  it('round-trips a link node, preserving text + url attrs and id (US-EDIT-15)', () => {
-    const link = linkNode('Portfolio', 'https://example.com');
-    const body = rootNode([titleNode('Links'), link]);
-    const out = roundTrip(body);
-    expect(out).toEqual(body);
-    const outLink = out.children[1];
-    expect(outLink.type).toBe('link');
-    expect(outLink.attrs).toEqual({ text: 'Portfolio', url: 'https://example.com' });
-    expect(outLink.id).toBe(link.id);
-  });
-
   it('round-trips an inline link inside a paragraph, preserving runs + ids (US-EDIT-21)', () => {
     const para = paragraphNode('');
     para.children = [
@@ -148,6 +152,138 @@ describe('serialize round-trip (ADR-0014 §9.4 / US-EDIT-19 §13)', () => {
       ...(n.children ?? []).flatMap(allTypes),
     ];
     expect(allTypes(out)).not.toContain('section');
+  });
+});
+
+describe('inline links are stock Lexical LinkNodes', () => {
+  it('loads an inlineLink as the stock @lexical/link LinkNode (type "link"), not a subclass', () => {
+    const editor = makeEditor();
+    const para = paragraphNode('');
+    para.children = [textNode('See '), inlineLinkNode('site', 'https://me.dev')];
+    loadDocument(editor, rootNode([para]));
+    const linkTypes = editor.getEditorState().read(() => {
+      const p = $getRoot().getFirstChild() as ElementNode;
+      return p.getChildren().filter($isLinkNode).map((n) => n.getType());
+    });
+    expect(linkTypes).toEqual(['link']);
+  });
+
+  it('serializes an AutoLinkNode (typed/pasted URL) as an ordinary inlineLink run', () => {
+    const editor = makeEditor();
+    loadDocument(editor, rootNode([paragraphNode('Visit ')]));
+    editor.update(
+      () => {
+        const p = $getRoot().getFirstChild() as ElementNode;
+        const auto = $createAutoLinkNode('https://example.com');
+        auto.append($createTextNode('https://example.com'));
+        p.append(auto);
+      },
+      { discrete: true },
+    );
+    const out = readDocument(editor, 'r');
+    const runs = out.children[0].children ?? [];
+    expect(runs.map((r) => r.type)).toEqual(['text', 'inlineLink']);
+    expect(runs[1].attrs).toEqual({ text: 'https://example.com', url: 'https://example.com' });
+    expect(allNodes(out).map((n) => n.type)).not.toContain('autolink');
+  });
+
+  it('keeps an inlineLink id stable across two serializations, including after its url changes', () => {
+    const editor = makeEditor();
+    const link = inlineLinkNode('portfolio', 'https://me.dev');
+    const para = paragraphNode('');
+    para.children = [textNode('See my '), link];
+    loadDocument(editor, rootNode([para]));
+
+    const first = readDocument(editor, 'r');
+    editor.update(
+      () => {
+        const p = $getRoot().getFirstChild() as ElementNode;
+        const l = p.getChildren().find($isLinkNode);
+        l?.setURL('https://other.dev');
+      },
+      { discrete: true },
+    );
+    const second = readDocument(editor, 'r');
+
+    const idOf = (b: RootNode) => allNodes(b).find((n) => n.type === 'inlineLink')?.id;
+    expect(idOf(first)).toBe(link.id);
+    expect(idOf(second)).toBe(link.id);
+    expect(allNodes(second).find((n) => n.type === 'inlineLink')?.attrs?.['url']).toBe('https://other.dev');
+  });
+});
+
+describe('legacy link block migration (link → paragraph > inlineLink)', () => {
+  it('migrates a root-level link to a paragraph that keeps the link id and holds an inlineLink', () => {
+    const body = rootNode([titleNode('Links'), legacyLink('L1', 'Portfolio', 'https://example.com') as never]);
+    const out = roundTrip(body);
+
+    expect(out.children.map((c) => c.type)).toEqual(['title', 'paragraph']);
+    const para = out.children[1];
+    expect(para.id).toBe('L1');
+    expect(para.children?.map((c) => c.type)).toEqual(['inlineLink']);
+    expect(para.children?.[0].attrs).toEqual({ text: 'Portfolio', url: 'https://example.com' });
+    expect(para.children?.[0].id).toBeTruthy();
+    expect(para.children?.[0].id).not.toBe('L1');
+  });
+
+  it('migrates a link inside a list item', () => {
+    const item = listItemNode('Top');
+    item.children = [paragraphNode('Top'), legacyLink('L2', 'Ref', 'https://example.com/ref') as never];
+    const list = listNode();
+    list.children = [item];
+    const out = roundTrip(rootNode([list]));
+
+    expect(allNodes(out).map((n) => n.type)).not.toContain('link');
+    const para = allNodes(out).find((n) => n.id === 'L2');
+    expect(para?.type).toBe('paragraph');
+    expect(para?.children?.[0]).toMatchObject({ type: 'inlineLink', attrs: { text: 'Ref', url: 'https://example.com/ref' } });
+  });
+
+  it('migrates a link inside a timeline entry', () => {
+    const entry = entryNode('Engineer', '2022', 'Led.');
+    entry.children = [paragraphNode('Led.'), legacyLink('L3', 'Case study', 'https://example.com/case') as never];
+    const out = roundTrip(rootNode([timelineNode([entry])]));
+
+    expect(allNodes(out).map((n) => n.type)).not.toContain('link');
+    const outEntry = allNodes(out).find((n) => n.type === 'entry');
+    const para = outEntry?.children?.find((n) => n.id === 'L3');
+    expect(para?.type).toBe('paragraph');
+    expect(para?.children?.[0]).toMatchObject({
+      type: 'inlineLink',
+      attrs: { text: 'Case study', url: 'https://example.com/case' },
+    });
+  });
+
+  it('uses the url as the label when the legacy link has empty text', () => {
+    const out = roundTrip(rootNode([legacyLink('L4', '', 'https://me.dev') as never]));
+    expect(out.children[0].children?.[0]).toMatchObject({
+      type: 'inlineLink',
+      attrs: { text: 'https://me.dev', url: 'https://me.dev' },
+    });
+  });
+
+  it('migrates a legacy link with an empty url to a paragraph of plain text', () => {
+    const out = roundTrip(rootNode([legacyLink('L5', 'Just text', '') as never]));
+    expect(out.children).toHaveLength(1);
+    expect(out.children[0].type).toBe('paragraph');
+    expect(out.children[0].id).toBe('L5');
+    expect(out.children[0].children?.map((c) => c.type)).toEqual(['text']);
+    expect(out.children[0].children?.[0].attrs).toEqual({ text: 'Just text' });
+  });
+
+  it('drops a legacy link whose text and url are both empty', () => {
+    const out = roundTrip(rootNode([titleNode('Links'), legacyLink('L6', '', '') as never]));
+    expect(out.children.map((c) => c.type)).toEqual(['title']);
+  });
+
+  it('produces a migrated tree that passes schema validation', () => {
+    const entry = entryNode('Engineer', '2022', '');
+    entry.children = [legacyLink('L7', 'Case', 'https://c.dev') as never];
+    const body = rootNode([legacyLink('L8', 'Site', 'https://s.dev') as never, timelineNode([entry])]);
+    const out = roundTrip(body);
+    expect(allNodes(out).map((n) => n.type)).not.toContain('link');
+    const doc: ProfileDocument = { header: emptyHeader(), body: out };
+    expect(validateDocument(doc)).toEqual({ valid: true, errors: [] });
   });
 });
 

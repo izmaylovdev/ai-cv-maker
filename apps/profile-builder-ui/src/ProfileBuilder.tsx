@@ -5,12 +5,10 @@ import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
-import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { mergeRegister } from '@lexical/utils';
-import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import {
   $createParagraphNode,
   $getNodeByKey,
@@ -39,10 +37,11 @@ import {
 import {
   WIDGET_NODES,
   $isTitleNode,
-  $isEntryNode, $isEntryFieldNode, $isTimelineNode, $isPbListNode, $isPbTextNode, $isInlineLinkNode,
+  $isEntryNode, $isEntryFieldNode, $isTimelineNode, $isPbListNode,
   $isSectionHeadingNode,
-  $createEntryNode, $createEntryFieldNode, $createPbTextNode, $createPbParagraphNode, $createInlineLinkNode,
+  $createEntryNode, $createEntryFieldNode, $createPbTextNode, $createPbParagraphNode,
 } from './lexical/widget-nodes';
+import { LinkEditorPlugin, OPEN_LINK_EDITOR_COMMAND, $selectionAllowsLink } from './lexical/LinkEditorPlugin';
 import { $createLexicalNode, $readBody, loadDocument } from './serialize';
 import { WIDGETS, WidgetDescriptor, widgetsAllowedIn } from './nodes';
 import type { NodeType } from './model';
@@ -124,8 +123,7 @@ export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
         <EntryStructureGuardPlugin />
         <SingleLinePastePlugin />
         <TrailingParagraphPlugin />
-        <LinkPlugin />
-        <InlineLinkEditorPlugin />
+        <LinkEditorPlugin />
         <LoadBodyPlugin body={document.body} bodyJsonRef={bodyJsonRef} />
         <OnChangePlugin
           ignoreSelectionChange
@@ -271,213 +269,6 @@ function EntryStructureGuardPlugin() {
   return null;
 }
 
-// Seed URL/label for a link before the user supplies a real URL. The floating
-// editor treats it as "empty" (shows a blank input), and a caret-inserted link
-// whose label still equals this placeholder gets removed if the user cancels.
-const LINK_URL_PLACEHOLDER = 'https://';
-
-/**
- * Floating Text/URL bar for inline links (spec §15, extended by §16). Appears
- * below the link while the caret is inside one; ✓/Enter commits both fields,
- * Escape closes without saving, ✕ removes the link. All commits target the link
- * by its node key captured when the bar opened — NOT the live selection —
- * because focusing an input blurs the editor (clearing the selection), and an
- * earlier version then dropped the typed URL on the floor (F-EDIT-21.4).
- *
- * The visible label is always `text || url` (F-EDIT-22.3/22.4). That single rule
- * replaces the old "rewrite the label only when it still mirrors the URL" check:
- * because the committed label is re-derived from the Text field every time, a
- * later URL-only edit re-commits the user's label unchanged instead of
- * clobbering it (F-EDIT-22.5), and an empty Text can never leave the link
- * rendered invisible.
- */
-function InlineLinkEditorPlugin() {
-  const [editor] = useLexicalComposerContext();
-  const activeNodeKey = useRef<string | null>(null);
-  const originalUrl = useRef<string>('');
-  const originalText = useRef<string>('');
-  const [open, setOpen] = useState(false);
-  const [textVal, setTextVal] = useState('');
-  const [urlVal, setUrlVal] = useState('');
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const urlInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    return editor.registerUpdateListener(({ editorState }) => {
-      editorState.read(() => {
-        const sel = $getSelection();
-        // No range selection means the editor blurred — typically because focus
-        // moved to our URL input. Keep the bar (and its target link) intact so a
-        // pending commit still lands; do NOT clear activeNodeKey here.
-        if (!$isRangeSelection(sel)) return;
-        const node = sel.anchor.getNode();
-        const parent = node.getParent();
-        const linkNode = $isInlineLinkNode(parent) ? parent : $isInlineLinkNode(node) ? node : null;
-        if (!linkNode) { activeNodeKey.current = null; setOpen(false); return; }
-        const key = linkNode.getKey();
-        // Only reset the input when entering a *different* link — don't clobber what the user is typing.
-        if (key !== activeNodeKey.current) {
-          const url = linkNode.getURL();
-          const label = linkNode.getTextContent();
-          originalUrl.current = url;
-          originalText.current = label;
-          setUrlVal(url === LINK_URL_PLACEHOLDER ? '' : url);
-          // A label that mirrors its URL is a caret-inserted link the user has
-          // not named yet — open Text empty so mirroring stays live (F-EDIT-22.2).
-          setTextVal(label === url || label === LINK_URL_PLACEHOLDER ? '' : label);
-          activeNodeKey.current = key;
-        }
-        setOpen(true);
-        const dom = editor.getElementByKey(key);
-        if (dom) {
-          const r = dom.getBoundingClientRect();
-          setPos({ x: r.left, y: r.bottom + 6 });
-        }
-      });
-    });
-  }, [editor]);
-
-  useEffect(() => {
-    if (!open) return;
-    // A link with no URL yet was just inserted, and the URL is its only required
-    // field — start there. An existing link is more often opened to retitle it,
-    // so focus Text.
-    (urlVal ? inputRef : urlInputRef).current?.focus();
-  }, [open]);
-
-  // Place the caret just after the link once a commit/restore finishes, so
-  // typing continues in the running text. The caret MUST land outside the link:
-  // the old fallback, `parent.selectEnd()`, descends into the block's last
-  // descendant, which for a trailing link is the link's own text node — the
-  // caret lands back inside the link, the update listener matches
-  // $isInlineLinkNode again and re-opens the bar the same tick it closed
-  // (F-EDIT-22.8/22.9). With no next sibling there is no position outside the
-  // link yet, so create one.
-  const caretAfter = (node: LexicalNode) => {
-    const next = node.getNextSibling();
-    if (next) { next.selectStart(); return; }
-    const tail = $createPbTextNode(undefined, '');
-    node.insertAfter(tail);
-    tail.selectEnd();
-  };
-
-  // Remove the link by key. A link whose label still mirrors its URL (a freshly
-  // caret-inserted placeholder) is deleted outright; otherwise it is unwrapped,
-  // keeping its visible text in the running prose.
-  const removeByKey = (key: string) => {
-    setOpen(false);
-    activeNodeKey.current = null;
-    editor.update(() => {
-      const node = $getNodeByKey(key);
-      if (!$isInlineLinkNode(node)) return;
-      const label = node.getFirstChild();
-      const mirrored = $isPbTextNode(label) && label.getTextContent() === node.getURL();
-      const prev = node.getPreviousSibling();
-      const next = node.getNextSibling();
-      if (mirrored) {
-        node.remove();
-        if (next) next.selectStart();
-        else if (prev && $isTextNode(prev)) prev.selectEnd();
-      } else {
-        let last: LexicalNode | null = null;
-        for (const child of node.getChildren()) { node.insertBefore(child); last = child; }
-        node.remove();
-        last?.selectEnd();
-      }
-    });
-  };
-
-  // Write `label` as the link's single plain-text run. Defensively creates the
-  // text child when the link has none, so a label can never go missing.
-  const setLabel = (node: LexicalNode, label: string) => {
-    if (!$isInlineLinkNode(node)) return;
-    const first = node.getFirstChild();
-    if ($isPbTextNode(first)) first.setTextContent(label);
-    else node.append($createPbTextNode(undefined, label));
-  };
-
-  const commit = (text: string, url: string) => {
-    const key = activeNodeKey.current;
-    if (!key) return;
-    // An empty URL removes the link whatever the Text field holds (F-EDIT-22.6).
-    if (!url.trim()) { removeByKey(key); return; }
-    setOpen(false);
-    activeNodeKey.current = null;
-    editor.update(() => {
-      const node = $getNodeByKey(key);
-      if (!$isInlineLinkNode(node)) return;
-      node.setURL(url);
-      setLabel(node, text.trim() || url);
-      caretAfter(node);
-    });
-  };
-
-  const closeWithoutSaving = () => {
-    const key = activeNodeKey.current;
-    if (!key) return;
-    if (!urlVal.trim()) { removeByKey(key); return; }
-    const savedUrl = originalUrl.current;
-    const savedText = originalText.current;
-    setOpen(false);
-    activeNodeKey.current = null;
-    editor.update(() => {
-      const node = $getNodeByKey(key);
-      if (!$isInlineLinkNode(node)) return;
-      node.setURL(savedUrl);
-      setLabel(node, savedText);
-      caretAfter(node);
-    });
-  };
-
-  const removeLink = () => {
-    const key = activeNodeKey.current;
-    if (key) removeByKey(key);
-  };
-
-  if (!open || pos === null) return null;
-
-  return (
-    <div
-      className="pb-inline-link-editor"
-      style={{ position: 'fixed', left: pos.x, top: pos.y }}
-      onMouseDown={(e) => e.preventDefault()}
-    >
-      <input
-        ref={inputRef}
-        className="pb-inline-link-editor__input pb-inline-link-editor__input--text"
-        aria-label="Link text"
-        placeholder="Text"
-        title="Display text — defaults to the URL when left empty"
-        value={textVal}
-        onChange={(e) => setTextVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(textVal, urlVal); }
-          if (e.key === 'Escape') { e.preventDefault(); closeWithoutSaving(); }
-        }}
-      />
-      <input
-        ref={urlInputRef}
-        className="pb-inline-link-editor__input pb-inline-link-editor__input--url"
-        aria-label="Link URL"
-        placeholder="https://…"
-        value={urlVal}
-        onChange={(e) => setUrlVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(textVal, urlVal); }
-          if (e.key === 'Escape') { e.preventDefault(); closeWithoutSaving(); }
-        }}
-      />
-      <button type="button" className="pb-inline-link-editor__btn pb-inline-link-editor__btn--apply" aria-label="Apply link" title="Apply (Enter)" onClick={() => commit(textVal, urlVal)}>
-        ✓
-      </button>
-      <button type="button" className="pb-inline-link-editor__btn pb-inline-link-editor__btn--remove" aria-label="Remove link" onClick={removeLink}>
-        ✕
-      </button>
-    </div>
-  );
-}
-
 /** Ensures the document always ends with an empty paragraph so the user can click below all content and start typing. */
 function TrailingParagraphPlugin() {
   const [editor] = useLexicalComposerContext();
@@ -500,8 +291,21 @@ function TrailingParagraphPlugin() {
   return null;
 }
 
-/** SVG icons per widget kind — styled after Google Docs toolbar icons. */
-const WIDGET_ICON: Record<WidgetDescriptor['kind'], ReactNode> = {
+/**
+ * A rail button: one of the block widgets, or the Link text action (links are
+ * inline runs, so Link wraps the selection / inserts at the caret instead of
+ * adding a block).
+ */
+type RailKind = WidgetDescriptor['kind'] | 'link';
+
+const LINK_ACTION = {
+  kind: 'link' as const,
+  name: 'Link',
+  description: 'Link the selection, or insert a link at the cursor.',
+};
+
+/** SVG icons per rail item — styled after Google Docs toolbar icons. */
+const WIDGET_ICON: Record<RailKind, ReactNode> = {
   // Heading 1 (H + superscript 1) — GDocs format_h1
   title: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -568,7 +372,7 @@ const WIDGET_ICON: Record<WidgetDescriptor['kind'], ReactNode> = {
 // link   → Ctrl+K        (Word: Hyperlink)
 // chips, timeline → custom (no Word equivalent)
 interface HotkeyDef { code: string; shift: boolean; alt: boolean; }
-const WIDGET_HOTKEY: Record<WidgetDescriptor['kind'], HotkeyDef> = {
+const WIDGET_HOTKEY: Record<RailKind, HotkeyDef> = {
   title:    { code: 'Digit1', shift: false, alt: true  },  // Ctrl+Alt+1   — GDocs: Heading 1
   text:     { code: 'Digit0', shift: false, alt: true  },  // Ctrl+Alt+0   — GDocs: Normal text
   list:     { code: 'Digit8', shift: true,  alt: false },  // Ctrl+Shift+8 — GDocs: Bulleted list
@@ -586,7 +390,7 @@ function codeToKey(code: string): string {
   return code;
 }
 
-function hotkeyLabel(kind: WidgetDescriptor['kind']): string {
+function hotkeyLabel(kind: RailKind): string {
   const { code, shift, alt } = WIDGET_HOTKEY[kind];
   const key = codeToKey(code);
   if (IS_MAC) {
@@ -595,7 +399,7 @@ function hotkeyLabel(kind: WidgetDescriptor['kind']): string {
   return `Ctrl+${alt ? 'Alt+' : ''}${shift ? 'Shift+' : ''}${key}`;
 }
 
-function hotkeyAriaLabel(kind: WidgetDescriptor['kind']): string {
+function hotkeyAriaLabel(kind: RailKind): string {
   const { code, shift, alt } = WIDGET_HOTKEY[kind];
   const key = codeToKey(code);
   if (IS_MAC) {
@@ -604,10 +408,17 @@ function hotkeyAriaLabel(kind: WidgetDescriptor['kind']): string {
   return `Control+${alt ? 'Alt+' : ''}${shift ? 'Shift+' : ''}${key}`;
 }
 
+function hotkeyMatches(kind: RailKind, event: KeyboardEvent): boolean {
+  const hk = WIDGET_HOTKEY[kind];
+  return event.code === hk.code && event.shiftKey === hk.shift && event.altKey === hk.alt;
+}
+
 /**
  * Controls side rail (US-EDIT-15 / §13.2.5). Widgets are now inserted directly
  * at root level (after the root-level node containing the caret, or at the end).
- * The 'title' widget is first.
+ * The 'title' widget is first. Link is not a widget but a text action: it opens
+ * the link editor, and is disabled where links are not allowed (titles, entry
+ * Title / Dates fields, chips).
  */
 function ControlRail() {
   const [editor] = useLexicalComposerContext();
@@ -615,46 +426,32 @@ function ControlRail() {
   // valid there (US-EDIT-20 / F-EDIT-14.3). Only 'entry' diverges from the
   // historical root-level behaviour; everything else falls back to 'root'.
   const [containerType, setContainerType] = useState<NodeType>('root');
+  const [linkAllowed, setLinkAllowed] = useState(true);
 
   useEffect(() => {
-    return editor.registerUpdateListener(() => {
+    const recompute = () => {
       editor.getEditorState().read(() => {
         setContainerType(caretContainerType());
+        const active = editor.getRootElement()?.ownerDocument.activeElement;
+        const selection = $getSelection();
+        if (active?.closest('[data-pb="chips"]')) setLinkAllowed(false);
+        else if ($isRangeSelection(selection)) setLinkAllowed($selectionAllowsLink(selection));
+        // No selection: the editor blurred (often into the link editor) — keep the last state.
+        else if (selection !== null) setLinkAllowed(false);
       });
-    });
+    };
+    const root = editor.getRootElement();
+    root?.addEventListener('focusin', recompute);
+    const unregister = editor.registerUpdateListener(recompute);
+    return () => {
+      unregister();
+      root?.removeEventListener('focusin', recompute);
+    };
   }, [editor]);
 
+  const openLinkEditor = () => editor.dispatchCommand(OPEN_LINK_EDITOR_COMMAND, undefined);
+
   const insertWidget = (widget: WidgetDescriptor) => {
-    // Link → always an inline link (spec §15 / US-EDIT-21), never a block line.
-    if (widget.kind === 'link') {
-      const { hasSelection, allowed } = editor.getEditorState().read(() => {
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) return { hasSelection: false, allowed: false };
-        // Inline links belong in running prose only — not in single-line title or
-        // entry title/dates fields (spec §15 out of scope).
-        return { hasSelection: !sel.isCollapsed(), allowed: caretAllowsInlineLink(sel.anchor.getNode()) };
-      });
-      if (!allowed) return;
-      if (hasSelection) {
-        // Wrap the selection; its text becomes the link label.
-        editor.dispatchCommand(TOGGLE_LINK_COMMAND, LINK_URL_PLACEHOLDER);
-      } else {
-        // Collapsed caret → insert an inline link at the caret. The label mirrors
-        // the URL (F-EDIT-21.3): seed both with the placeholder so the floating
-        // editor (which shows the placeholder as empty) can rewrite the label
-        // when a real URL is committed.
-        editor.update(() => {
-          const sel = $getSelection();
-          if (!$isRangeSelection(sel)) return;
-          const link = $createInlineLinkNode(LINK_URL_PLACEHOLDER);
-          const label = $createPbTextNode(undefined, LINK_URL_PLACEHOLDER);
-          link.append(label);
-          sel.insertNodes([link]);
-          label.selectEnd();
-        });
-      }
-      return;
-    }
     editor.update(() => {
       // When the caret is inside a timeline entry, insert into the entry's
       // content (F-EDIT-14.1) — but only widgets the entry accepts; a
@@ -689,10 +486,14 @@ function ControlRail() {
       (event: KeyboardEvent) => {
         const mod = IS_MAC ? event.metaKey : event.ctrlKey;
         if (!mod) return false;
-        const widget = WIDGETS.find((w) => {
-          const hk = WIDGET_HOTKEY[w.kind];
-          return event.code === hk.code && event.shiftKey === hk.shift && event.altKey === hk.alt;
-        });
+        if (hotkeyMatches('link', event)) {
+          // Always claim mod+K (browsers bind it to search); the link editor
+          // ignores it where links are not allowed.
+          event.preventDefault();
+          openLinkEditor();
+          return true;
+        }
+        const widget = WIDGETS.find((w) => hotkeyMatches(w.kind, event));
         if (!widget) return false;
         event.preventDefault();
         insertWidget(widget);
@@ -705,42 +506,35 @@ function ControlRail() {
 
   const visibleWidgets =
     containerType === 'entry' ? widgetsAllowedIn('entry') : WIDGETS;
+  // Link sits after List, where the retired link-line widget used to be.
+  const items: { kind: RailKind; name: string; description: string; disabled: boolean; run: () => void }[] = [];
+  for (const w of visibleWidgets) {
+    items.push({ ...w, disabled: false, run: () => insertWidget(w) });
+    if (w.kind === 'list') items.push({ ...LINK_ACTION, disabled: !linkAllowed, run: openLinkEditor });
+  }
 
   return (
     <div className="pb-rail" role="toolbar" aria-label="Insert controls" aria-orientation="vertical">
-      {visibleWidgets.map((w) => (
+      {items.map((item) => (
         <button
-          key={w.kind}
+          key={item.kind}
           type="button"
           className="pb-rail__item"
-          aria-label={`${w.name} (${hotkeyLabel(w.kind)}) — ${w.description}`}
-          aria-keyshortcuts={hotkeyAriaLabel(w.kind)}
+          aria-label={`${item.name} (${hotkeyLabel(item.kind)}) — ${item.description}`}
+          aria-keyshortcuts={hotkeyAriaLabel(item.kind)}
+          disabled={item.disabled}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertWidget(w)}
+          onClick={item.run}
         >
-          <span className="pb-rail__icon" aria-hidden="true">{WIDGET_ICON[w.kind]}</span>
+          <span className="pb-rail__icon" aria-hidden="true">{WIDGET_ICON[item.kind]}</span>
           <span className="pb-rail__tip" role="tooltip" aria-hidden="true">
-            <span className="pb-rail__tip-name">{w.name}</span>
-            <kbd className="pb-rail__tip-key">{hotkeyLabel(w.kind)}</kbd>
+            <span className="pb-rail__tip-name">{item.name}</span>
+            <kbd className="pb-rail__tip-key">{hotkeyLabel(item.kind)}</kbd>
           </span>
         </button>
       ))}
     </div>
   );
-}
-
-/**
- * Whether an inline link may be created at `node`'s position. Links belong in
- * running prose (paragraphs, list items), not in the single-line title or entry
- * title/dates fields (spec §15 out of scope). Must be called inside read/update.
- */
-function caretAllowsInlineLink(node: LexicalNode): boolean {
-  let cur: LexicalNode | null = node;
-  while (cur) {
-    if ($isTitleNode(cur) || $isEntryFieldNode(cur)) return false;
-    cur = cur.getParent();
-  }
-  return true;
 }
 
 /**
