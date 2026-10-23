@@ -103,7 +103,6 @@ class _JudgeBase:
         message = await client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
-            temperature=0,
             system=system,
             messages=[{"role": "user", "content": user}],
         )

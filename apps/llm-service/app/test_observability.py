@@ -208,6 +208,45 @@ async def test_anthropic_stream_records_generation_when_enabled(monkeypatch):
     assert update_kwargs["usage_details"] == {"input": 10, "output": 5}
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper", ["anthropic_create", "anthropic_stream"])
+async def test_anthropic_generation_model_parameters_are_max_tokens_only(monkeypatch, helper):
+    """Anthropic generations report ``max_tokens`` as their only model parameter:
+    the current Messages API version accepts no sampling params, so a
+    ``temperature`` (or ``top_p`` / ``top_k``) in Langfuse would misreport what
+    was sent."""
+    fake_client = MagicMock()
+    cm = MagicMock()
+    cm.__enter__.return_value = MagicMock()
+    cm.__exit__.return_value = False
+    fake_client.start_as_current_generation.return_value = cm
+    monkeypatch.setattr(observability, "_build_client", lambda: fake_client)
+    observability.reset()
+
+    msg = MagicMock()
+    msg.content = [MagicMock(type="text", text="hello")]
+    msg.usage = MagicMock(input_tokens=10, output_tokens=5)
+    anthropic_client = MagicMock()
+    anthropic_client.messages.create = AsyncMock(return_value=msg)
+    anthropic_client.messages.stream = MagicMock(return_value=_stream_cm(msg))
+
+    await getattr(observability, helper)(
+        anthropic_client,
+        name="generate",
+        model="claude",
+        messages=[],
+        max_tokens=1024,
+        temperature=0.4,
+        top_p=0.9,
+        top_k=40,
+    )
+
+    _, gen_kwargs = fake_client.start_as_current_generation.call_args
+    assert gen_kwargs["model_parameters"] == {"max_tokens": 1024}, (
+        f"expected model_parameters == {{'max_tokens': 1024}}, got {gen_kwargs['model_parameters']}"
+    )
+
+
 # --- trace context propagation ---------------------------------------------
 
 

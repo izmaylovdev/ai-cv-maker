@@ -9,12 +9,10 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-google-genai>=2.0.0",
     "langchain-openai>=0.2.0",
-    # Capped below 1.x: the 1.x SDK removed `temperature` from messages.create /
-    # .stream (and moved to httpx2), and every chain passes it. Unbounded, a fresh
-    # venv or Docker build resolved 1.x and every Anthropic/Foundry call raised
-    # TypeError. Raising the cap is a deliberate SDK upgrade — the contract tests
-    # in app/test_anthropic_sdk_contract.py run against the installed SDK.
-    "anthropic>=0.45.0,<1",
+    # 2.x sends API version 2026-10-21, which rejects sampling parameters
+    # (temperature/top_p/top_k) on every model. The contract tests in
+    # app/test_anthropic_sdk_contract.py guard the call shape.
+    "anthropic>=2.2.0,<3",
     "pydantic>=2.8.0",
     "python-dotenv>=1.0.0",
     "grpcio>=1.80.0",

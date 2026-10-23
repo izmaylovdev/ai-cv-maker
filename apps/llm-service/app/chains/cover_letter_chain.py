@@ -129,7 +129,6 @@ async def _generate_with_llm(request: CoverLetterRequest) -> tuple[str, str, Tok
             name="cover_letter",
             model=model,
             max_tokens=1024,
-            temperature=app_settings.llm_temperature(),
             system=cached_system(system_prompt),
             messages=[{"role": "user", "content": user_content}],
         )

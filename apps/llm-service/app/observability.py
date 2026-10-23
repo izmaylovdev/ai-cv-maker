@@ -255,9 +255,7 @@ async def _anthropic_generation(
         model=kwargs.get("model"),
         input=kwargs.get("messages"),
         metadata={"system": kwargs.get("system")} if kwargs.get("system") else None,
-        model_parameters={
-            k: kwargs[k] for k in ("max_tokens", "temperature") if k in kwargs
-        },
+        model_parameters={"max_tokens": kwargs["max_tokens"]} if "max_tokens" in kwargs else {},
     ) as generation:
         message = await _messages_call(anthropic_client, kwargs, stream=stream)
         try:

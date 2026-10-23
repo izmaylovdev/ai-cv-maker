@@ -177,7 +177,7 @@ JWT_SECRET
 GOOGLE_CLIENT_ID          # Google OAuth
 LLM_PROVIDER              # google | openai | foundry
 LLM_MODEL                 # override default model name
-LLM_TEMPERATURE           # default 0.4
+LLM_TEMPERATURE           # default 0.4; LangChain providers only (Anthropic calls use the API default)
 LANGFUSE_PUBLIC_KEY       # optional — enables LLM tracing when set with the two below
 LANGFUSE_SECRET_KEY       # optional
 LANGFUSE_HOST             # optional — Langfuse base URL (self-hosted)
