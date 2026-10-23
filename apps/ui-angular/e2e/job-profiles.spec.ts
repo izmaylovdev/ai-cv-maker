@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { setupAuth } from './support/auth';
 import { API_URL } from './support/constants';
-import { mockJobProfilesListApi, mockEmptyProfilesListApi, mockJobProfilesExtractApi } from './support/mocks/job-profiles.mock';
+import { mockJobProfilesListApi, mockEmptyProfilesListApi, mockJobProfilesExtractApi, mockJobProfilesExtractErrorApi } from './support/mocks/job-profiles.mock';
 import { mockDefaultPdfApi } from './support/mocks/cv.mock';
 import { registerFakeProfileBuilder } from './support/mocks/builder.mock';
 import { mockProfilesList } from './support/fixtures/profiles-list.fixture';
@@ -122,6 +122,7 @@ test.describe('Create profile from CV upload', () => {
 
     await page.getByRole('button', { name: /Import & Create/ }).click();
     await expect(page).toHaveURL('/job-profiles/new-profile-id');
+    await expect(page.getByText("Couldn't import your CV.")).not.toBeVisible();
   });
 
   test('removes selected file when clear button is clicked', async ({ page }) => {
@@ -141,6 +142,66 @@ test.describe('Create profile from CV upload', () => {
     await page.locator('span').filter({ hasText: 'cv.pdf' }).locator('xpath=..').locator('button').click();
     await expect(page.getByText('cv.pdf')).not.toBeVisible();
     await expect(page.getByText('Upload PDF')).toBeVisible();
+  });
+});
+
+// A failed CV import is reported, and leaves no empty profile behind.
+test.describe('Create profile from CV upload — import fails', () => {
+  async function submitImport(page: Page, name = '') {
+    await page.goto('/job-profiles');
+    await page.getByRole('button', { name: /New Profile/ }).click();
+    if (name) await page.getByLabel(/Profile name/).fill(name);
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'my-cv.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 fake'),
+    });
+    await page.getByRole('button', { name: /Import & Create/ }).click();
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
+    await mockJobProfilesListApi(page);
+  });
+
+  test('shows the plain-text server message and stays on the form', async ({ page }) => {
+    const message =
+      'CV extraction is temporarily unavailable: the AI service is unreachable. Please try again later.';
+    const calls = await mockJobProfilesExtractErrorApi(page, 'new-profile-id', 503, message);
+
+    await submitImport(page, 'Data Engineer');
+
+    await expect(page.getByText(`Couldn't import your CV. ${message}`)).toBeVisible();
+    await expect(page).toHaveURL('/job-profiles');
+    // Form kept for a one-click retry.
+    await expect(page.getByLabel(/Profile name/)).toHaveValue('Data Engineer');
+    await expect(page.getByText('my-cv.pdf')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Import & Create/ })).toBeEnabled();
+    // The empty profile is removed.
+    await expect.poll(() => calls.deleted).toBe(true);
+  });
+
+  test('shows the message from a JSON { code, message } body', async ({ page }) => {
+    await mockJobProfilesExtractErrorApi(page, 'new-profile-id', 503, {
+      code: 'llm_unavailable',
+      message: 'The AI service is currently unreachable. Please try again later.',
+    });
+
+    await submitImport(page);
+
+    await expect(
+      page.getByText("Couldn't import your CV. The AI service is currently unreachable. Please try again later."),
+    ).toBeVisible();
+    await expect(page).toHaveURL('/job-profiles');
+  });
+
+  test('falls back to a status-specific message when the body is empty', async ({ page }) => {
+    await mockJobProfilesExtractErrorApi(page, 'new-profile-id', 400, '');
+
+    await submitImport(page);
+
+    await expect(page.getByText(/Couldn't import your CV\. We couldn't read any text from that file\./)).toBeVisible();
+    await expect(page).toHaveURL('/job-profiles');
   });
 });
 
