@@ -15,7 +15,6 @@ export type NodeType =
   | 'paragraph'
   | 'text'
   | 'inlineLink'
-  | 'link'
   | 'list'
   | 'listItem'
   | 'chips'
@@ -41,18 +40,20 @@ export interface BlockNode {
 export type RootNode = BlockNode & { type: 'root'; children: (TitleNode | FlowNode)[] };
 /** A section heading. Leaf — no children. Groups all non-title blocks that follow it until the next TitleNode. */
 export type TitleNode = BlockNode & { type: 'title'; attrs: { text: string } };
-export type FlowNode = ParagraphNode | ListNode | ChipsNode | TimelineNode | LinkNode;
+export type FlowNode = ParagraphNode | ListNode | ChipsNode | TimelineNode;
 export type ParagraphNode = BlockNode & { type: 'paragraph'; children: (TextNode | InlineLinkNode)[] };
 /** Leaf; plain string (non-link marks are out of scope, spec §9.6). */
 export type TextNode = BlockNode & { type: 'text'; attrs: { text: string } };
-/** Inline leaf; a hyperlink run inside running text — display label + url (spec §15). */
+/**
+ * Inline leaf; a hyperlink run inside running text — display label + url (spec §15).
+ * The only kind of link: the standalone `link` line block is retired (see
+ * {@link migrateLegacyLinks}).
+ */
 export type InlineLinkNode = BlockNode & { type: 'inlineLink'; attrs: { text: string; url: string } };
-/** Leaf; a standalone link line with display text + url (spec §10, NOT an inline mark). */
-export type LinkNode = BlockNode & { type: 'link'; attrs: { text: string; url: string } };
 export type ListNode = BlockNode & { type: 'list'; children: ListItemNode[] };
 export type ListItemNode = BlockNode & {
   type: 'listItem';
-  children: (ParagraphNode | ListNode | ChipsNode | LinkNode)[];
+  children: (ParagraphNode | ListNode | ChipsNode)[];
 };
 export type ChipsNode = BlockNode & { type: 'chips'; children: ChipNode[] };
 /** Leaf; short plain string. */
@@ -61,7 +62,7 @@ export type TimelineNode = BlockNode & { type: 'timeline'; children: EntryNode[]
 export type EntryNode = BlockNode & {
   type: 'entry';
   attrs: { title: string; dates: string };
-  children: (ParagraphNode | ListNode | ChipsNode | LinkNode)[];
+  children: (ParagraphNode | ListNode | ChipsNode)[];
 };
 
 export interface ProfileDocument {
@@ -112,18 +113,17 @@ export function emptyDocument(): ProfileDocument {
  * them.
  */
 export const ALLOWED_CHILDREN: Record<NodeType, NodeType[]> = {
-  root: ['title', 'paragraph', 'list', 'chips', 'timeline', 'link'],
+  root: ['title', 'paragraph', 'list', 'chips', 'timeline'],
   title: [],
   paragraph: ['text', 'inlineLink'],
   text: [],
   inlineLink: [],
-  link: [],
   list: ['listItem'],
-  listItem: ['paragraph', 'list', 'chips', 'link'],
+  listItem: ['paragraph', 'list', 'chips'],
   chips: ['chip'],
   chip: [],
   timeline: ['entry'],
-  entry: ['paragraph', 'list', 'chips', 'link'],
+  entry: ['paragraph', 'list', 'chips'],
 };
 
 /** Required `attrs` keys per node type (each value must be a string). */
@@ -131,7 +131,6 @@ const REQUIRED_ATTRS: Partial<Record<NodeType, string[]>> = {
   title: ['text'],
   text: ['text'],
   inlineLink: ['text', 'url'],
-  link: ['text', 'url'],
   chip: ['text'],
   entry: ['title', 'dates'],
 };
@@ -229,6 +228,55 @@ export function validateDocument(
   visit(doc.body, null, 0);
 
   return { valid: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy `link` block migration
+// ---------------------------------------------------------------------------
+
+/**
+ * Block containers that could hold a legacy standalone `link` line. `section` is
+ * itself legacy (F-EDIT-19.8) and may still wrap one in an old stored document.
+ */
+const LEGACY_LINK_PARENTS = new Set<string>(['root', 'listItem', 'entry', 'section']);
+
+/**
+ * The retired standalone `link` block `{ id, attrs: { text, url } }` as the
+ * inline shape that replaces it: a paragraph that takes over the link's id and
+ * holds one `inlineLink` run (new id), labelled `text || url`. With no url it
+ * becomes plain text; with neither it is dropped (null).
+ */
+function legacyLinkToParagraph(link: BlockNode): ParagraphNode | null {
+  const text = link.attrs?.['text'] ?? '';
+  const url = link.attrs?.['url'] ?? '';
+  if (!url && !text) return null;
+  const run: TextNode | InlineLinkNode = url
+    ? { type: 'inlineLink', id: newId(), attrs: { text: text || url, url } }
+    : { type: 'text', id: newId(), attrs: { text } };
+  return { type: 'paragraph', id: link.id || newId(), children: [run] };
+}
+
+/**
+ * Return `node` with every legacy `link` block under a block container
+ * (root / listItem / entry, at any depth) migrated to `paragraph > inlineLink`.
+ * Pure: the input is not mutated, and a tree without legacy links comes back
+ * structurally equal. Runs on load (serialize.ts) and in {@link applyPatch}, so
+ * stored documents and AI output both land in the current shape. Mirrored by
+ * cv-api's migration on read/write.
+ */
+export function migrateLegacyLinks<T extends BlockNode>(node: T): T {
+  if (!node.children) return node;
+  const migrateChildren = LEGACY_LINK_PARENTS.has(node.type);
+  const children: BlockNode[] = [];
+  for (const child of node.children) {
+    if (migrateChildren && (child.type as string) === 'link') {
+      const para = legacyLinkToParagraph(child);
+      if (para) children.push(para);
+    } else {
+      children.push(migrateLegacyLinks(child));
+    }
+  }
+  return { ...node, children };
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +418,9 @@ function applyOp(doc: ProfileDocument, op: PatchOp): void {
  * Apply an ordered patch to a clone of `doc`, then validate (US-AI-9 §6.4 /
  * F-CHAT-6.9). The patch is **atomic**: if any op targets a missing node, is
  * unknown, or the result fails {@link validateDocument}, the ORIGINAL document
- * is returned unchanged with `result.valid === false`.
+ * is returned unchanged with `result.valid === false`. Legacy `link` blocks —
+ * already stored, or emitted by the AI — are migrated on the working copy
+ * before validation, so they land as inline links rather than being rejected.
  */
 export function applyPatch(
   doc: ProfileDocument,
@@ -383,6 +433,7 @@ export function applyPatch(
   } catch (e) {
     return { document: doc, result: { valid: false, errors: [(e as Error).message] } };
   }
+  working.body = migrateLegacyLinks(working.body);
   const result = validateDocument(working, options);
   if (!result.valid) return { document: doc, result };
   return { document: working, result };

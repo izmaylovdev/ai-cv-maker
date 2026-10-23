@@ -601,24 +601,30 @@
   background: var(--pb-accent);
 }
 
-/* Inline link (created via selection → Link button). */
-.pb-content a { color: var(--pb-accent); text-decoration: underline; text-underline-offset: 2px; }
+/* Inline links (stock Lexical LinkNode) in running text. Clicking one places the
+   caret; it opens only from the link editor's URL. */
+.pb-content a { color: var(--pb-accent); text-decoration: underline; text-underline-offset: 2px; cursor: text; }
 
-/* Floating Text/URL bar for inline link editing. */
+/* Floating link editor: wrap / insert / edit forms, and the view bar (URL, Edit, Remove). */
 .pb-inline-link-editor {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(440px, calc(100vw - 16px));
   padding: 6px 8px;
   background: var(--pb-panel);
+  color: var(--pb-fg);
   border: 1px solid var(--pb-rule);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(16, 24, 40, 0.14);
+  font-size: 13px;
+  line-height: 1.4;
   z-index: 50;
 }
+.pb-inline-link-editor--view { flex-direction: row; align-items: center; gap: 6px; }
+.pb-inline-link-editor__fields { display: flex; align-items: center; gap: 6px; }
 .pb-inline-link-editor__input {
   font: inherit;
-  font-size: 13px;
   color: inherit;
   background: var(--pb-focus);
   border: 1px solid var(--pb-rule);
@@ -630,9 +636,23 @@
   min-width: 0;
 }
 .pb-inline-link-editor__input--text { flex-basis: 140px; }
-.pb-inline-link-editor__input--url { flex-basis: 200px; }
+.pb-inline-link-editor__input--url { flex-basis: 220px; }
 .pb-inline-link-editor__input:focus { outline: none; border-color: var(--pb-accent); }
+.pb-inline-link-editor__input[aria-invalid='true'] { border-color: var(--pb-danger); }
+.pb-inline-link-editor__error { color: var(--pb-danger); font-size: 12px; padding: 0 2px; }
+.pb-inline-link-editor__url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pb-inline-link-editor__url--unsafe { color: var(--pb-muted); text-decoration: none; }
 .pb-inline-link-editor__btn {
+  flex: none;
   border: none;
   background: transparent;
   color: var(--pb-accent);
@@ -643,54 +663,13 @@
   border-radius: 5px;
   cursor: pointer;
 }
-.pb-inline-link-editor__btn:hover { background: var(--pb-hover); }
-.pb-inline-link-editor__btn--apply { color: var(--pb-accent); font-size: 14px; }
-.pb-inline-link-editor__btn--remove { color: var(--pb-muted); font-size: 11px; }
-.pb-inline-link-editor__btn--remove:hover { color: var(--pb-fg); }
-
-/* Link widget (US-EDIT-15 / spec §10) — a standalone link line. */
-.pb-link { margin: 4px 0; }
-.pb-link__view { display: inline-flex; align-items: center; gap: 6px; }
-.pb-link__anchor {
-  color: var(--pb-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  font-size: 14.5px;
-  word-break: break-word;
-}
-.pb-link__edit-btn,
-.pb-link__done {
-  border: none;
-  background: transparent;
-  color: var(--pb-muted);
-  font: inherit;
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease;
-}
-.pb-link__view:hover .pb-link__edit-btn,
-.pb-link__edit-btn:focus { opacity: 1; }
-.pb-link__edit-btn:hover,
-.pb-link__done:hover { background: var(--pb-hover); color: var(--pb-accent); }
-.pb-link__edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.pb-link__text-input,
-.pb-link__url-input {
-  font: inherit;
-  font-size: 14px;
-  color: inherit;
-  background: var(--pb-focus);
-  border: 1px solid var(--pb-rule);
-  border-radius: 6px;
-  padding: 3px 8px;
-}
-.pb-link__text-input { width: 12ch; }
-.pb-link__url-input { width: 22ch; }
-.pb-link__text-input:focus,
-.pb-link__url-input:focus { outline: none; border-color: var(--pb-accent); }
-.pb-link__done { opacity: 1; color: var(--pb-accent); }
+.pb-inline-link-editor__btn:hover:not(:disabled) { background: var(--pb-hover); }
+.pb-inline-link-editor__btn:disabled { opacity: 0.4; cursor: default; }
+.pb-inline-link-editor__btn--apply { font-size: 14px; }
+.pb-inline-link-editor__btn--cancel { color: var(--pb-muted); font-size: 11px; }
+.pb-inline-link-editor__btn--cancel:hover { color: var(--pb-fg); }
+.pb-inline-link-editor__btn--remove { color: var(--pb-muted); }
+.pb-inline-link-editor__btn--remove:hover:not(:disabled) { color: var(--pb-danger); background: var(--pb-danger-bg); }
 
 .pb-content .pb-paragraph { margin: 2px 0 6px; }
 

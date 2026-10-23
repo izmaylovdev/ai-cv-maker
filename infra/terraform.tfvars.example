@@ -14,7 +14,7 @@ google_web_client_id   = "your-client-id.apps.googleusercontent.com"
 
 # --- LLM settings — google (Gemini) is the default ---
 llm_provider = "google"
-# llm_model       = "gemini-1.5-flash"   # optional override
+# llm_model       = "gemini-3.8-flash"   # optional override
 # llm_temperature = "0.4"                # optional, 0–2
 
 # --- LLM_PROVIDER=google ---

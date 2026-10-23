@@ -5,7 +5,8 @@ namespace CvApi.Domain.Entities;
 // cv-api rejects violating trees on write (400); the editor cannot author them
 // and the PDF walk may assume a valid tree. Mirrors the TS schema in
 // apps/profile-builder-ui (the reference). Updated for US-EDIT-19: 'section'
-// is retired; 'title' is the new flat heading node at root level.
+// is retired; 'title' is the new flat heading node at root level. The standalone
+// 'link' block is retired too: links are 'inlineLink' runs inside paragraphs.
 public static class ProfileDocumentSchema
 {
     /// <summary>Max flow nesting depth (§9.3, default 4).</summary>
@@ -14,18 +15,17 @@ public static class ProfileDocumentSchema
     // Allowed child types per node type. An empty set means "leaf" (no children).
     private static readonly Dictionary<string, HashSet<string>> AllowedChildren = new()
     {
-        ["root"]     = ["title", "paragraph", "list", "chips", "timeline", "link"],
+        ["root"]     = ["title", "paragraph", "list", "chips", "timeline"],
         ["title"]    = [],
         ["paragraph"] = ["text", "inlineLink"],
         ["text"]     = [],
         ["inlineLink"] = [],
-        ["link"]     = [],
         ["list"]     = ["listItem"],
-        ["listItem"] = ["paragraph", "list", "chips", "link"],
+        ["listItem"] = ["paragraph", "list", "chips"],
         ["chips"]    = ["chip"],
         ["chip"]     = [],
         ["timeline"] = ["entry"],
-        ["entry"]    = ["paragraph", "list", "chips", "link"],
+        ["entry"]    = ["paragraph", "list", "chips"],
     };
 
     // Only list/timeline introduce a new flow nesting level — mirrors the TS
@@ -35,13 +35,27 @@ public static class ProfileDocumentSchema
     public static bool IsKnownType(string type) => AllowedChildren.ContainsKey(type);
 
     /// <summary>
-    /// Converts any legacy <c>section</c> nodes (ADR-0013) in the body's direct
-    /// children into a flat <c>title</c> node followed by the section's former
-    /// children — mirroring the F-EDIT-19.8 migration in the TS serializer so that
-    /// the first PUT after an old document is opened upgrades the stored tree.
+    /// Upgrades a stored or LLM-produced document to the current schema, mirroring
+    /// the migrations in the TS serializer so that the first PUT after an old
+    /// document is opened upgrades the stored tree:
+    /// <list type="bullet">
+    /// <item>legacy <c>section</c> nodes (ADR-0013) in the body's direct children
+    /// become a flat <c>title</c> followed by the section's former children;</item>
+    /// <item>legacy standalone <c>link</c> blocks anywhere in the tree become a
+    /// <c>paragraph</c> (keeping the link's id) holding one <c>inlineLink</c> run.</item>
+    /// </list>
     /// Returns the same instance when no migration is needed (fast path).
     /// </summary>
-    public static ProfileDocument MigrateLegacySections(ProfileDocument doc)
+    public static ProfileDocument MigrateLegacy(ProfileDocument doc)
+    {
+        var migrated = MigrateLegacySections(doc);
+        var body = MigrateLegacyLinks(migrated.Body);
+        if (ReferenceEquals(body, migrated.Body))
+            return migrated;
+        return new ProfileDocument { Header = migrated.Header, Body = body };
+    }
+
+    private static ProfileDocument MigrateLegacySections(ProfileDocument doc)
     {
         var body = doc.Body;
         if (body.Children.TrueForAll(c => c.Type != "section"))
@@ -77,6 +91,57 @@ public static class ProfileDocumentSchema
                 Children = migrated,
             },
         };
+    }
+
+    // Rewrites `link` blocks in the subtree. Returns the same node instance when the
+    // subtree holds no `link`, so untouched documents are not copied.
+    private static BlockNode MigrateLegacyLinks(BlockNode node)
+    {
+        List<BlockNode>? children = null;
+        for (var i = 0; i < node.Children.Count; i++)
+        {
+            var child = node.Children[i];
+            var replacement = child.Type == "link" ? LinkToParagraph(child) : MigrateLegacyLinks(child);
+            if (children is null && ReferenceEquals(replacement, child))
+                continue;
+            children ??= node.Children.Take(i).ToList();
+            if (replacement is not null)
+                children.Add(replacement);
+        }
+
+        if (children is null)
+            return node;
+        return new BlockNode { Type = node.Type, Id = node.Id, Attrs = node.Attrs, Children = children };
+    }
+
+    // link → paragraph (keeps the link's id) > inlineLink { text (url when empty), url }.
+    // No url → a paragraph of plain text; neither text nor url → dropped (null).
+    private static BlockNode? LinkToParagraph(BlockNode link)
+    {
+        var text = link.Attrs.GetValueOrDefault("text", string.Empty);
+        var url = link.Attrs.GetValueOrDefault("url", string.Empty);
+        if (string.IsNullOrEmpty(text) && string.IsNullOrEmpty(url))
+            return null;
+
+        var run = string.IsNullOrEmpty(url)
+            ? new BlockNode
+            {
+                Type = "text",
+                Id = Guid.NewGuid().ToString("n"),
+                Attrs = new Dictionary<string, string> { ["text"] = text },
+            }
+            : new BlockNode
+            {
+                Type = "inlineLink",
+                Id = Guid.NewGuid().ToString("n"),
+                Attrs = new Dictionary<string, string>
+                {
+                    ["text"] = string.IsNullOrEmpty(text) ? url : text,
+                    ["url"] = url,
+                },
+            };
+
+        return new BlockNode { Type = "paragraph", Id = link.Id, Children = [run] };
     }
 
     /// <summary>

@@ -171,6 +171,9 @@ public class PdfService : IPdfService
 
     // link → a standalone hyperlink line (spec §10). Shows the display text (or the
     // url when no text), linked to the url when it is a safe http(s)/mailto target.
+    // Legacy fallback only: the `link` block is retired from the schema (links are
+    // inlineLink runs in paragraphs), but generated-CV snapshots may still hold
+    // `link` blocks, so they keep rendering here — graceful degradation, like `section`.
     private static void RenderLink(ColumnDescriptor col, BlockNode link)
     {
         var url = Attr(link, "url").Trim();

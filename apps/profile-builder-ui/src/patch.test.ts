@@ -1,7 +1,18 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { ProfileDocument, applyPatch, emptyHeader } from './model';
-import { chipsNode, listNode, paragraphNode, rootNode, titleNode } from './nodes';
+import {
+  chipsNode,
+  entryNode,
+  inlineLinkNode,
+  listNode,
+  paragraphNode,
+  rootNode,
+  textNode,
+  timelineNode,
+  titleNode,
+} from './nodes';
+import { BlockNode } from './model';
 
 // US-AI-9 / spec §6.4 — applyPatch: apply an ordered op list to a clone of the
 // document, then validate. The whole patch is atomic: an op set that yields an
@@ -195,5 +206,114 @@ describe('applyPatch — atomic rejection', () => {
 
     expect(result.valid).toBe(false);
     expect(document).toEqual(before);
+  });
+});
+
+// Links are inline only: a legacy `link` block an AI may still emit (or one in a
+// stored document) is migrated to `paragraph > inlineLink` on the working copy
+// before validation, so the edit still applies as an inline link.
+describe('applyPatch — legacy link blocks and inline links', () => {
+  const allNodes = (n: BlockNode): BlockNode[] => [n, ...(n.children ?? []).flatMap(allNodes)];
+
+  it('addChild of a link block at root lands as a paragraph holding an inlineLink, and is valid', () => {
+    const before = doc(rootNode([titleNode('Links')]));
+
+    const { document, result } = applyPatch(before, {
+      ops: [
+        {
+          op: 'addChild',
+          parentId: before.body.id,
+          node: { type: 'link' as never, id: '', attrs: { text: 'Portfolio', url: 'https://example.com' } },
+        },
+      ],
+    });
+
+    expect(result).toEqual({ valid: true, errors: [] });
+    const added = document.body.children![1];
+    expect(added.type).toBe('paragraph');
+    expect(added.id).toBeTruthy();
+    expect(added.children).toHaveLength(1);
+    expect(added.children![0]).toMatchObject({
+      type: 'inlineLink',
+      attrs: { text: 'Portfolio', url: 'https://example.com' },
+    });
+    expect(added.children![0].id).toBeTruthy();
+    expect(allNodes(document.body).map((n) => n.type)).not.toContain('link');
+  });
+
+  it('addChild of a link block inside a timeline entry lands as paragraph > inlineLink', () => {
+    const entry = entryNode('Engineer', '2022', 'Led.');
+    const before = doc(rootNode([timelineNode([entry])]));
+
+    const { document, result } = applyPatch(before, {
+      ops: [
+        {
+          op: 'addChild',
+          parentId: entry.id,
+          node: { type: 'link' as never, id: 'ai-link', attrs: { text: '', url: 'https://case.dev' } },
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+    const outEntry = allNodes(document.body).find((n) => n.id === entry.id)!;
+    const para = outEntry.children!.find((n) => n.id === 'ai-link');
+    expect(para?.type).toBe('paragraph');
+    // Empty text → the url becomes the label.
+    expect(para?.children?.[0]).toMatchObject({
+      type: 'inlineLink',
+      attrs: { text: 'https://case.dev', url: 'https://case.dev' },
+    });
+  });
+
+  it('migrates a legacy link already present in the document when any patch is applied', () => {
+    const legacy = { type: 'link', id: 'L1', attrs: { text: 'Site', url: 'https://s.dev' } } as never;
+    const before = doc(rootNode([titleNode('Links'), legacy]));
+    const title = before.body.children![0];
+
+    const { document, result } = applyPatch(before, {
+      ops: [{ op: 'setAttrs', id: title.id, attrs: { text: 'Online' } }],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(document.body.children![1]).toMatchObject({
+      type: 'paragraph',
+      id: 'L1',
+      children: [{ type: 'inlineLink', attrs: { text: 'Site', url: 'https://s.dev' } }],
+    });
+  });
+
+  it('setAttrs on an inlineLink changes its url (AI chat edit of a link)', () => {
+    const link = inlineLinkNode('portfolio', 'https://me.dev');
+    const para = { ...paragraphNode(''), children: [textNode('See my '), link] };
+    const before = doc(rootNode([para]));
+
+    const { document, result } = applyPatch(before, {
+      ops: [{ op: 'setAttrs', id: link.id, attrs: { url: 'https://new.dev' } }],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(allNodes(document.body).find((n) => n.id === link.id)?.attrs).toEqual({
+      text: 'portfolio',
+      url: 'https://new.dev',
+    });
+  });
+
+  it('addChild of an inlineLink into a paragraph is valid (AI chat adds a link)', () => {
+    const para = paragraphNode('Find me at ');
+    const before = doc(rootNode([para]));
+
+    const { document, result } = applyPatch(before, {
+      ops: [
+        {
+          op: 'addChild',
+          parentId: para.id,
+          node: { type: 'inlineLink', id: '', attrs: { text: 'GitHub', url: 'https://github.com/me' } },
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(document.body.children![0].children!.map((c) => c.type)).toEqual(['text', 'inlineLink']);
   });
 });
