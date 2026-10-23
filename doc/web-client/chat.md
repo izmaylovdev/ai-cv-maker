@@ -29,23 +29,54 @@ Both post to `POST /api/chat`. The request branches on one thing: whether a
 
 ## Conversation behaviour
 
-Messages are free text. Full history for the session travels with each request so
-the assistant keeps context; `error`-role bubbles are filtered out before sending.
-A typing indicator shows while a reply is in flight, the thread auto-scrolls to
-the newest message, and Send is disabled on an empty input or during a request.
+The widget is built from [LlamaIndex Chat UI](https://ui.llamaindex.ai/)
+(`@llamaindex/chat-ui`) components: a message thread with user and assistant
+avatars, and a Chat UI composer form with a send button
+([ADR-0022](../adr/0022-llamaindex-chat-ui-widget.md)).
 
-The input is a textarea that auto-grows as it wraps, up to a max height, then
-scrolls internally, and resets to one row after sending. **Enter** submits;
-**Shift+Enter** inserts a newline.
+Messages are free text. Each request carries the session's full history (the
+last 20 turns), so the assistant keeps context. Error bubbles are left out of
+that history. While a reply is in flight, a loading indicator shows and the
+thread scrolls to the newest message. Send is disabled when the input is empty
+and while a request is in flight.
 
-Assistant replies render as GitHub-flavored Markdown — paragraphs, lists,
-bold/italic, inline and fenced code, blockquotes, tables, task lists, links.
-`user` and `error` messages stay plain text with author line breaks preserved.
-Raw HTML is never parsed (react-markdown's default pipeline drops it, so no
-sanitizer is needed), and Markdown links open in a new tab with
-`rel="noopener noreferrer"`. Long code and URLs wrap or scroll inside the bubble.
+The input is a textarea that grows as text wraps, up to a max height. Past that
+it scrolls internally. It returns to one row after sending. **Enter** submits and
+**Shift+Enter** inserts a newline. While an IME composition is active, Enter
+does not submit.
+
+Assistant replies render as GitHub-flavored Markdown: paragraphs, lists,
+bold/italic, inline and fenced code, blockquotes, tables, task lists and links.
+Fenced code blocks are syntax-highlighted with highlight.js, which covers the
+common languages. User messages stay plain text, with the author's line breaks
+preserved.
+
+Raw HTML is never parsed. The Markdown pipeline has no raw-HTML step, so no
+sanitizer is needed. Markdown links open in a new tab with
+`rel="noopener noreferrer"`. Dollar signs are escaped, so amounts like "$120k"
+stay text and never become maths. Long code and URLs wrap or scroll inside the
+bubble.
+
+Errors appear in a distinct bubble with `role="alert"`, showing the server's
+message verbatim (see [API](#api)).
 
 The widget follows the app theme via the `.dark` class on `<html>`.
+
+### Styling and bundle
+
+The widget renders in light DOM, and every rule it ships is scoped under the
+`ai-chat-widget` selector. That includes Tailwind's preflight and the
+shadcn-style colour tokens. None of its CSS can match anything outside the
+element, so the host page looks the same with or without the widget. The rules
+are unlayered, so the host's own unlayered CSS cannot override the widget's
+utilities.
+
+Chat UI features the widget never renders are replaced with no-op stubs at build
+time, so they stay out of the bundle: the PDF viewer, the document and code
+editors, LlamaDeploy, and the vaul drawer. highlight.js ships only its common
+languages, and KaTeX ships without its web fonts. `chat-widget.js` is about
+1 MB minified (about 320 KB gzipped). A build check fails the tests if it grows
+past 1.2 MiB or if any shipped rule escapes the `ai-chat-widget` scope.
 
 ---
 
@@ -175,6 +206,9 @@ controller and speaks the same `{ reply, proposal }` shape.
 
 ## Not implemented
 
-Persisted conversation history (threads live only in the browser session),
-Markdown rendering or preview in the input box, syntax highlighting in code
-blocks, and Markdown parsing of user messages.
+- Persisted conversation history (threads live only in the browser session).
+- Markdown rendering or preview in the input box.
+- Markdown parsing of user messages.
+- Streaming replies: `/api/chat` is request/response.
+- These Chat UI features: file upload, citations, canvas/artifacts, starter
+  questions, and regenerate/stop.

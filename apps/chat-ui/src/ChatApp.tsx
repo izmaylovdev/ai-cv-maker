@@ -1,31 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageList } from './components/MessageList';
-import { MessageInput } from './components/MessageInput';
+import { useEffect } from 'react';
+import { ChatMessage, ChatMessages, ChatSection } from '@llamaindex/chat-ui';
+import { Composer } from './components/Composer';
+import { ErrorPart, FillAction, MarkdownLink, UserTextPart } from './components/MessageParts';
+import { useApplysyChat } from './useApplysyChat';
 import './ChatApp.css';
-
-const MAX_HISTORY_TURNS = 20;
-
-// Shown only when the server gave us nothing usable to display (network failure
-// or an unparseable error body). Classified failures carry their own message.
-const GENERIC_ERROR = 'Something went wrong. Please try again.';
-
-/**
- * US-AI-11 — cv-api classifies chat failures into `{ code, message }` (e.g.
- * `llm_edit_failed`, `usage_limit_exceeded`). Render the server's `message`
- * verbatim; fall back to {@link GENERIC_ERROR} only when the body is missing or
- * unparseable.
- */
-async function resolveErrorMessage(res: Response): Promise<string> {
-  try {
-    const body = await res.json();
-    if (body && typeof body.message === 'string' && body.message.trim()) {
-      return body.message;
-    }
-  } catch {
-    // Non-JSON / empty body — fall through to the generic message.
-  }
-  return GENERIC_ERROR;
-}
 
 export interface Message {
   id: string;
@@ -92,99 +70,29 @@ export interface ChatApi {
   addAssistantNote: (text: string) => void;
 }
 
+// Raw HTML stays inert: Chat UI's Markdown has no rehype-raw (F-CHAT-5.6).
+const markdownComponents = { a: MarkdownLink };
+
+/**
+ * The widget, composed from LlamaIndex Chat UI: a message thread and a composer
+ * driven by {@link useApplysyChat}.
+ */
 export function ChatApp({ authToken, apiBase, document, profileId, jobContext, onEdit, onFill, onReady }: Props) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  // US-AI-16 — one conversation = one widget mount. Mint a stable session id once
-  // per mount and send it on every POST /chat so all messages group under a single
-  // Langfuse Session. A page reload remounts the widget → a fresh id → a new Session.
-  const sessionId = useRef(crypto.randomUUID()).current;
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const addAssistantNote = useCallback((content: string) => {
-    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'assistant', content }]);
-  }, []);
+  const { handler, addAssistantNote, isEmpty } = useApplysyChat({
+    authToken,
+    apiBase,
+    document,
+    profileId,
+    jobContext,
+    onEdit,
+  });
 
   useEffect(() => {
     onReady?.({ addAssistantNote });
   }, [onReady, addAssistantNote]);
 
-  async function send(text: string) {
-    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text };
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
+  const fill = onFill ? (text: string) => onFill({ text }) : undefined;
 
-    const history = messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(-MAX_HISTORY_TURNS)
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    try {
-      const res = await fetch(`${apiBase}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        // Context is mutually exclusive: `document` → edit mode (in-editor chat);
-        // `jobContext` → side-panel job chat (US-EXT-4); neither → the global
-        // read-only assistant.
-        body: JSON.stringify({
-          message: text,
-          history,
-          // US-AI-16 — sessionId rides alongside the mutually-exclusive context so
-          // no branch can forget it.
-          sessionId,
-          ...(document
-            ? { document, profileId }
-            : jobContext
-              ? { jobContext }
-              : {}),
-        }),
-      });
-
-      if (!res.ok) {
-        const content = await resolveErrorMessage(res);
-        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'error', content }]);
-        return;
-      }
-
-      const data = await res.json();
-      // US-EXT-4 — a `fill` proposal is a reviewable draft: attach it to the
-      // message so a "Use this" action renders in-thread (never auto-applied).
-      const isFill = data.proposal?.type === 'fill';
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: data.reply,
-        fillText: isFill ? (data.proposal.text ?? '') : undefined,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      // Edit mode: hand any proposed edit to the host to apply to the document.
-      // Fill proposals are handled via the in-thread "Use this" action, not here.
-      if (data.proposal && !isFill && onEdit) {
-        onEdit({
-          patchJson: data.proposal.patchJson ?? data.proposal.patch_json ?? '',
-          description: data.proposal.description ?? '',
-        });
-      }
-    } catch {
-      // Network failure / fetch rejection — no response to classify.
-      setMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: 'error', content: GENERIC_ERROR },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const isEmpty = messages.length === 0;
   // US-AI-12 — the in-editor chat (bound to the open `document`) opens directly
   // in the conversation layout, so the greeting and the first message share the
   // same input position. The global read-only assistant keeps the centered
@@ -192,38 +100,47 @@ export function ChatApp({ authToken, apiBase, document, profileId, jobContext, o
   const showLanding = isEmpty && !document;
 
   return (
-    <div className={`chat-app${showLanding ? ' chat-app--empty' : ''}`}>
+    <ChatSection handler={handler} className="chat-app bg-background text-foreground gap-0 p-0">
       {showLanding ? (
-        <div className="chat-landing">
-          <div className="chat-landing__heading">How can I help you?</div>
-          <MessageInput onSend={send} disabled={loading} landing />
+        <div className="flex h-full flex-col items-center justify-center px-6">
+          <div className="mb-[10%] flex w-full max-w-[680px] flex-col items-center gap-5">
+            <div className="text-center text-[26px] font-semibold tracking-tight">How can I help you?</div>
+            <Composer className="chat-landing-composer w-full bg-transparent p-0" />
+          </div>
         </div>
       ) : (
         <>
-          <div className="chat-messages">
-            {isEmpty ? (
-              <div className="chat-empty">
-                Ask me to edit your CV — add a role, rewrite a summary, or turn a
-                list into chips.
-              </div>
-            ) : (
-              <MessageList
-                messages={messages}
-                onFill={onFill ? (text) => onFill({ text }) : undefined}
-              />
-            )}
-            {loading && (
-              <div className="chat-typing">
-                <span />
-                <span />
-                <span />
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-          <MessageInput onSend={send} disabled={loading} />
+          <ChatMessages className="space-y-0 bg-transparent p-0">
+            <ChatMessages.List className="gap-4 px-4 pt-4 pb-2">
+              {handler.messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isLast={index === handler.messages.length - 1}
+                  className="gap-3 p-0"
+                >
+                  <ChatMessage.Avatar className="size-7" />
+                  <ChatMessage.Content className="gap-2">
+                    {message.role === 'user' ? (
+                      <UserTextPart />
+                    ) : (
+                      <ChatMessage.Part.Markdown className="chat-markdown" components={markdownComponents} />
+                    )}
+                    <ErrorPart />
+                    {/* Directly under the draft it fills, not in the far-right actions slot. */}
+                    <FillAction onFill={fill} />
+                  </ChatMessage.Content>
+                </ChatMessage>
+              ))}
+              <ChatMessages.Empty className="text-muted-foreground items-center justify-start pt-8 text-center italic">
+                Ask me to edit your CV — add a role, rewrite a summary, or turn a list into chips.
+              </ChatMessages.Empty>
+              <ChatMessages.Loading className="text-muted-foreground justify-start pt-0 pl-10" />
+            </ChatMessages.List>
+          </ChatMessages>
+          <Composer className="px-4 pt-2 pb-4" />
         </>
       )}
-    </div>
+    </ChatSection>
   );
 }
