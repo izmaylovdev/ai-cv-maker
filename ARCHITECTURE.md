@@ -133,10 +133,10 @@ A self-contained React chat interface packaged as a [Custom Element](https://dev
 Vite builds the entire app — React, CSS, and all — into one file:
 
 ```
-dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~110 kB gzipped)
+dist/apps/chat-ui/chat-widget.js   ← self-contained IIFE (~1 MB, ~320 kB gzipped)
 ```
 
-CSS is injected at runtime by `vite-plugin-css-injected-by-js`, so the single script file is fully standalone with no separate stylesheet.
+The UI is built from [LlamaIndex Chat UI](https://ui.llamaindex.ai/) (`@llamaindex/chat-ui`) styled with Tailwind v4 (ADR-0022). A shared PostCSS chain (`widget-css.mts`) scopes every CSS rule under `ai-chat-widget`, so nothing leaks into the host page. `vite-plugin-css-injected-by-js` injects the CSS at runtime, so the single script file stands alone with no separate stylesheet. `resolve.alias` swaps the Chat UI features the widget never renders (PDF viewer, editors, LlamaDeploy, vaul) for stubs in `src/stubs/`.
 
 **How it is loaded**
 
@@ -182,9 +182,10 @@ The same widget serves three modes, switched by which optional context is presen
 
 | Component | File | Role |
 |---|---|---|
-| `ChatApp` | `src/ChatApp.tsx` | Root — owns message state, calls the API, renders the layout |
-| `MessageList` | `src/components/MessageList.tsx` | Renders the conversation; assistant replies are rendered as sanitized Markdown (`react-markdown` + `remark-gfm`), user/error messages as plain text with line breaks preserved; shows an empty-state prompt when no messages exist |
-| `MessageInput` | `src/components/MessageInput.tsx` | Auto-growing textarea + Send button; `Enter` submits, `Shift+Enter` inserts a newline |
+| `ChatApp` | `src/ChatApp.tsx` | Root composition: `ChatSection` → `ChatMessages` (avatars, Markdown assistant parts, loading and empty states) plus the composer; also renders the landing splash on the global assistant |
+| `useApplysyChat` | `src/useApplysyChat.ts` | Custom Chat UI `ChatHandler`. It owns message state, calls `POST /api/chat`, raises `edit` proposals, and maps error and fill replies to custom `data-error` / `data-fill` parts |
+| `Composer` | `src/components/Composer.tsx` | `ChatInput` form with a textarea that grows and resets, plus a Send button. **Enter** submits and **Shift+Enter** inserts a newline |
+| `MessageParts` | `src/components/MessageParts.tsx` | Literal user text, the `role="alert"` error bubble, the **Use this** fill action, and the new-tab Markdown link |
 
 **Local development**
 
@@ -192,7 +193,7 @@ The same widget serves three modes, switched by which optional context is presen
 npm run serve:chat   # starts Vite dev server on port 4202 (wraps npx nx run chat-ui:dev)
 ```
 
-A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.
+A custom Vite plugin (`widgetDevBundlePlugin`) intercepts `GET /chat-widget.js` and returns an on-demand esbuild IIFE bundle. It uses the same aliases and the same CSS pipeline as the production build. This means the Angular dev server (`port 4200`) can load the widget from `http://localhost:4202/chat-widget.js` without a separate production build step.
 
 **Deployment**
 
@@ -208,7 +209,7 @@ Browser → ui-angular Nginx → /chat-widget/* → chat-ui Nginx → chat-widge
 
 The **document-style profile editor** packaged — like `chat-ui` — as a self-contained React [Custom Element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) (`<applysy-profile-builder>`), built as a single IIFE with CSS injected at runtime. It is **not a standalone SPA** and Angular remains the sole production SPA. Per ADR-0013 it is the **canonical profile editor**, embedded in `ui-angular` at `/job-profiles/:id` (it replaced the old structured split-panel editor).
 
-Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one rich-text document** in a single Lexical editor built from a **closed set of predefined widgets** (ADR-0014, §13 / US-EDIT-19): **title** (a section heading that anchors a group), **text** (paragraph), **chips** (tag cloud), **list** (bullets), and **timeline** (dated entries — work experience, education, projects — each with Title / Dates / Description). Widgets are inserted from a fixed **controls side rail** beside the document. A **title** node anchors a *group*: dragging its handle moves the title plus all non-title blocks that follow it (until the next title or the end of the document) as a single unit, with a live drag preview and drop indicator. Links are not a widget: they are Lexical's stock inline `LinkNode` inside text, created from the rail's Link action / `mod+K` through one floating link editor, or automatically from typed and pasted URLs (ADR-0022).
+Instead of fixed personal-info/experience/education/skills forms, the profile is edited as **one rich-text document** in a single Lexical editor built from a **closed set of predefined widgets** (ADR-0014, §13 / US-EDIT-19): **title** (a section heading that anchors a group), **text** (paragraph), **chips** (tag cloud), **list** (bullets), and **timeline** (dated entries — work experience, education, projects — each with Title / Dates / Description). Widgets are inserted from a fixed **controls side rail** beside the document. A **title** node anchors a *group*: dragging its handle moves the title plus all non-title blocks that follow it (until the next title or the end of the document) as a single unit, with a live drag preview and drop indicator. Links are not a widget: they are Lexical's stock inline `LinkNode` inside text, created from the rail's Link action / `mod+K` through one floating link editor, or automatically from typed and pasted URLs (ADR-0023).
 
 **Model.** The widget operates on the `ProfileDocument` model (`apps/profile-builder-ui/src/model.ts`), the canonical persisted shape end to end: `{ header, body }`, where `body` is a **flat `BlockNode` tree** (`{ type, id, attrs?, children? }`, closed type set: root/**title**/paragraph/text/**inlineLink**/list/listItem/chips/chip/timeline/entry — `inlineLink` is an inline hyperlink run inside paragraph text; the `section` and standalone `link` block types are retired). It is editor-independent: Lexical's own JSON is never persisted; a serialization layer (`serialize.ts`) maps the editor state ⇄ the neutral tree, and migrates legacy nodes on load (`section` → `title` + flat children; `link` → `paragraph` holding an `inlineLink`). cv-api's `ProfileDocumentSchema.MigrateLegacy` applies the same migrations on GET, PUT and LLM import. An `inlineLink`'s stable id lives in Lexical node state on the stock `LinkNode`. The cv-api stores `{ header, body }` as a single JSON string field on the profile document and `GET/PUT /api/job-profiles/:id` speak `{ id, name, document }`.
 

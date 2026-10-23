@@ -1,4 +1,4 @@
-# ADR-0022: Links are Lexical's stock LinkNode; the standalone link block is retired
+# ADR-0023: Links are Lexical's stock LinkNode; the standalone link block is retired
 
 - **Status:** Accepted
 - **Date:** 2026-10-19

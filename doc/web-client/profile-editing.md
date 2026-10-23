@@ -9,7 +9,7 @@ tree is what gets persisted, sent to the LLM, and rendered to PDF.
 hosted by `apps/ui-angular/src/app/features/profile/`
 **See also:** [ADR-0013](../adr/0013-canonical-profile-document-model.md) (document model) ·
 [ADR-0014](../adr/0014-lexical-block-tree-profile-model.md) (block tree, supersedes per-section templates) ·
-[ADR-0022](../adr/0022-stock-lexical-link-node.md) (links are stock Lexical `LinkNode`) ·
+[ADR-0023](../adr/0023-stock-lexical-link-node.md) (links are stock Lexical `LinkNode`) ·
 [job-profiles.md](job-profiles.md) · [chat.md](chat.md) · [cv-generation.md](cv-generation.md)
 
 ---
@@ -56,7 +56,7 @@ subsection is a no-op, so an entry never collapses or merges into its neighbour.
 
 **Links are inline text.** A link is a run inside a paragraph, a list item, or
 a timeline entry's description — never a block of its own — and is Lexical's
-stock `LinkNode` ([ADR-0022](../adr/0022-stock-lexical-link-node.md)). Titles,
+stock `LinkNode` ([ADR-0023](../adr/0023-stock-lexical-link-node.md)). Titles,
 entry Title/Dates fields and chips cannot hold links: there the rail's Link button
 is disabled and `mod+K` does nothing. `mod+K` or the Link button opens a floating
 link editor whose mode depends on the selection:
