@@ -90,13 +90,28 @@ the clipboard to one line of plain text inside that field — rich or
 multi-paragraph content never spills out as sibling blocks or splits an entry.
 Pasting into a description or other flow region keeps its block structure.
 
-**Reordering and removal.** Dragging a title's handle moves the title *and its
-whole group* as a unit; a custom drag image shows the heading being dragged and a
-drop-indicator line shows where it will land. Dropping outside a valid target, or
-pressing Escape, cancels. Drag is the only reorder path — there are no
-move-up/move-down buttons, and non-title blocks at root have no handle. A ✕ button
-in the left gutter removes a title's section immediately, with no confirmation;
-⌘/Ctrl+Z restores it through the editor's history.
+**Reordering and removal.** Two things can be dragged, each by a `⠿` handle that
+appears in the left gutter on hover:
+
+- **A section** — the handle beside a title moves the title *and its whole group*
+  as a unit.
+- **A timeline entry** — the handle beside an entry's Title moves that entry, with
+  its Dates, description and any nested lists or chips, to another position in
+  the *same* timeline, including its very top or bottom. A timeline with a single
+  entry shows no handle.
+
+While dragging, a drag image of the section or entry follows the pointer and a
+drop-indicator line shows where it will land. Dropping it back where it was,
+outside a valid target (for an entry, anywhere outside its own timeline), or
+pressing Escape cancels with no change. A drop is one history step and leaves the
+editor focused with the caret at the end of the moved title, so ⌘/Ctrl+Z undoes
+it straight away. Drag is the only reorder path — there are no move-up/move-down buttons,
+and non-title blocks at root have no handle. Drags are mouse-driven
+(pointer events on `window`, not native HTML5 drag-and-drop).
+
+A ✕ button in the left gutter removes a title's section, or a single timeline
+entry (removing a timeline's last entry removes the timeline), immediately and
+with no confirmation; ⌘/Ctrl+Z restores it through the editor's history.
 
 **Enter inside a title** creates an empty paragraph directly below and moves the
 caret into it.
@@ -179,8 +194,10 @@ links in titles, entry Title/Dates fields, or chips. Removing a link whose label
 is itself a URL does not stick — autolink relinks it the next time the document
 opens. Text marks other than links (bold, italic, colour), raw-HTML or arbitrary-node
 insertion, per-widget styling, collaborative editing, and an unsaved-changes
-navigation guard. Reordering individual non-title blocks at root has no UI
-affordance — move the group, or cut and re-insert.
+navigation guard. Reordering individual non-title blocks at root, moving an
+entry into a different timeline, and reordering list items or chips have no UI
+affordance — move the group, or cut and re-insert. Reordering by keyboard or
+touch is not supported.
 
 > **History.** This feature has been rebuilt twice. The original form-based editor
 > (personal-info form, work/education entry lists, skills, section-order

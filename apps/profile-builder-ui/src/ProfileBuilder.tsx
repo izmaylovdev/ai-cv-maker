@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import './ProfileBuilder.css';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
@@ -14,6 +14,7 @@ import {
   $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isParagraphNode,
   $isRangeSelection,
   $isTextNode,
@@ -24,6 +25,7 @@ import {
   KEY_DELETE_COMMAND,
   KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
+  LexicalEditor,
   LexicalNode,
   PASTE_COMMAND,
   PointType,
@@ -114,7 +116,7 @@ export function ProfileBuilder({ document, onChange }: ProfileBuilderProps) {
               />
               <TitleControls />
               <AddEntryButtons />
-              <RemoveEntryButtons />
+              <EntryControls />
             </div>
           </div>
         </div>
@@ -659,11 +661,74 @@ function AddEntryButtons() {
   );
 }
 
-/** Small remove icon overlaid at the left gutter of each timeline entry. */
-function RemoveEntryButtons() {
+/**
+ * Pointer-based drag plumbing shared by the section and entry drags: window
+ * mousemove / mouseup plus a capture-phase Escape listener, registered for the
+ * duration of one drag and all torn down on drop or cancel. Escape is swallowed
+ * so it doesn't also reach the editor. Not native HTML5 DnD.
+ */
+function beginPointerDrag({
+  onMove,
+  onDrop,
+  onCancel,
+}: {
+  onMove: (event: MouseEvent) => void;
+  onDrop: (event: MouseEvent) => void;
+  onCancel: () => void;
+}) {
+  const teardown = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('keydown', onKeyDown, true);
+  };
+  const onUp = (event: MouseEvent) => {
+    teardown();
+    onDrop(event);
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    teardown();
+    onCancel();
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  window.addEventListener('keydown', onKeyDown, true);
+}
+
+/**
+ * Give the editor keyboard focus (without scrolling) before a drop commits.
+ * Pressing a drag handle never focuses the editor — its mousedown is
+ * prevented — so without this ⌘/Ctrl+Z after a drop would go nowhere.
+ */
+function focusEditorRoot(editor: LexicalEditor) {
+  const root = editor.getRootElement();
+  if (root && !root.contains(root.ownerDocument.activeElement)) root.focus({ preventScroll: true });
+}
+
+interface EntryControl {
+  key: string;
+  timelineKey: string;
+  /** Number of entries in the parent timeline — the drag handle needs 2+. */
+  timelineSize: number;
+  top: number;
+}
+
+/** Pointer Y may stray this far outside the source timeline and still target it. */
+const ENTRY_DROP_TOLERANCE = 24;
+
+/**
+ * Gutter controls for each timeline entry, anchored on its Title field: a drag
+ * handle (⠿, only when the timeline has 2+ entries) and the remove ✕. Dragging
+ * the handle reorders the entry within its own timeline.
+ */
+function EntryControls() {
   const [editor] = useLexicalComposerContext();
-  const [entries, setEntries] = useState<{ key: string; timelineKey: string; top: number }[]>([]);
+  const [entries, setEntries] = useState<EntryControl[]>([]);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [dropLineY, setDropLineY] = useState<number | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; html: string; width: number } | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleLeave = () => {
@@ -675,6 +740,17 @@ function RemoveEntryButtons() {
 
   useEffect(() => {
     const cleanupHover: (() => void)[] = [];
+    // Blocks can change height after the update listener has measured them
+    // (decorators such as chips render afterwards) while the root's total
+    // height stays the same — so watch every root-level block and entry, not
+    // just the root, or the anchors go stale.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => recompute()) : null;
+    const observed = new Set<Element>();
+    const observeOnly = (els: Set<Element>) => {
+      if (!ro) return;
+      for (const el of observed) if (!els.has(el)) { ro.unobserve(el); observed.delete(el); }
+      for (const el of els) if (!observed.has(el)) { ro.observe(el); observed.add(el); }
+    };
 
     const recompute = () => {
       cleanupHover.forEach((fn) => fn());
@@ -682,19 +758,28 @@ function RemoveEntryButtons() {
 
       const root = editor.getRootElement();
       const base = root ? root.getBoundingClientRect().top : 0;
-      const next: typeof entries = [];
+      const next: EntryControl[] = [];
+      const watch = new Set<Element>(root ? [root] : []);
       editor.getEditorState().read(() => {
         for (const child of $getRoot().getChildren()) {
+          const childEl = editor.getElementByKey(child.getKey());
+          if (childEl) watch.add(childEl);
           if (!$isTimelineNode(child)) continue;
-          for (const entry of (child as ElementNode).getChildren()) {
-            if (!$isEntryNode(entry)) continue;
+          const siblings = (child as ElementNode).getChildren().filter($isEntryNode);
+          for (const entry of siblings) {
             const el = editor.getElementByKey(entry.getKey());
             if (!el) continue;
+            watch.add(el);
             const titleEl = el.querySelector('[data-pb="entry-title"]') as HTMLElement | null;
             const ref = titleEl ?? el;
             const r = ref.getBoundingClientRect();
             const key = entry.getKey();
-            next.push({ key, timelineKey: child.getKey(), top: r.top + r.height / 2 - base });
+            next.push({
+              key,
+              timelineKey: child.getKey(),
+              timelineSize: siblings.length,
+              top: r.top + r.height / 2 - base,
+            });
 
             const onEnter = () => { cancelLeave(); setHoveredKey(key); };
             const onLeave = () => scheduleLeave();
@@ -707,14 +792,12 @@ function RemoveEntryButtons() {
           }
         }
       });
+      observeOnly(watch);
       setEntries(next);
     };
 
     recompute();
     const unregister = editor.registerUpdateListener(recompute);
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null;
-    const root = editor.getRootElement();
-    if (root && ro) ro.observe(root);
     return () => {
       unregister();
       ro?.disconnect();
@@ -736,22 +819,155 @@ function RemoveEntryButtons() {
     });
   };
 
+  /**
+   * Resolve where the dragged entry would land for pointer Y: before/after one
+   * of the other entries of its own timeline. Rects are read fresh — layout may
+   * have shifted since the last recompute. Returns null outside the timeline or
+   * when the drop would leave the entry where it already is. `lineY` is the gap
+   * between the two neighbouring entries, in `.pb-doc` coordinates.
+   */
+  const entryDropTargetAt = (
+    sourceKey: string,
+    timelineKey: string,
+    clientY: number,
+  ): { key: string; place: 'before' | 'after'; lineY: number } | null => {
+    const root = editor.getRootElement();
+    const doc = root?.closest('.pb-doc') ?? root;
+    const base = doc ? doc.getBoundingClientRect().top : 0;
+
+    let timelineRect: DOMRect | null = null;
+    const items: { key: string; top: number; bottom: number }[] = [];
+    editor.getEditorState().read(() => {
+      const timeline = $getNodeByKey(timelineKey);
+      if (!$isTimelineNode(timeline)) return;
+      timelineRect = editor.getElementByKey(timelineKey)?.getBoundingClientRect() ?? null;
+      for (const entry of (timeline as ElementNode).getChildren()) {
+        if (!$isEntryNode(entry)) continue;
+        const el = editor.getElementByKey(entry.getKey());
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        items.push({ key: entry.getKey(), top: r.top, bottom: r.bottom });
+      }
+    });
+    const tl = timelineRect as DOMRect | null;
+    if (!tl || items.length < 2) return null;
+    if (clientY < tl.top - ENTRY_DROP_TOLERANCE || clientY > tl.bottom + ENTRY_DROP_TOLERANCE) return null;
+
+    // The entry under the pointer, or the nearest one when in a gap / past an end.
+    let idx = items.findIndex((i) => clientY >= i.top && clientY <= i.bottom);
+    if (idx < 0) {
+      let best = Infinity;
+      items.forEach((i, n) => {
+        const d = Math.min(Math.abs(clientY - i.top), Math.abs(clientY - i.bottom));
+        if (d < best) { best = d; idx = n; }
+      });
+    }
+    const target = items[idx];
+    if (target.key === sourceKey) return null;
+    const place: 'before' | 'after' = clientY < (target.top + target.bottom) / 2 ? 'before' : 'after';
+
+    // Before its next sibling / after its previous sibling = where it already is.
+    const sourceIdx = items.findIndex((i) => i.key === sourceKey);
+    if ((place === 'before' && idx === sourceIdx + 1) || (place === 'after' && idx === sourceIdx - 1)) {
+      return null;
+    }
+
+    const prev = items[idx - 1];
+    const next = items[idx + 1];
+    let lineY: number;
+    if (place === 'before') lineY = prev ? (prev.bottom + target.top) / 2 : target.top;
+    else lineY = next ? (target.bottom + next.top) / 2 : target.bottom;
+    return { key: target.key, place, lineY: lineY - base };
+  };
+
+  /**
+   * Move the entry before/after a sibling — one update, so one undo step. The
+   * caret lands at the end of the moved entry's Title.
+   */
+  const moveEntry = (sourceKey: string, place: 'before' | 'after', targetKey: string) => {
+    focusEditorRoot(editor);
+    editor.update(() => {
+      const source = $getNodeByKey(sourceKey);
+      const target = $getNodeByKey(targetKey);
+      if (!$isEntryNode(source) || !$isEntryNode(target) || sourceKey === targetKey) return;
+      if (!source.getParent()?.is(target.getParent())) return;
+      if (place === 'before') target.insertBefore(source);
+      else target.insertAfter(source);
+      const title = (source as ElementNode).getFirstChild();
+      if ($isElementNode(title)) title.selectEnd();
+    });
+  };
+
+  const startDrag = (key: string, timelineKey: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = editor.getElementByKey(key);
+    if (!el) return;
+    setGhost({ x: e.clientX, y: e.clientY, html: el.outerHTML, width: el.getBoundingClientRect().width });
+
+    const clear = () => {
+      setGhost(null);
+      setDropLineY(null);
+    };
+    beginPointerDrag({
+      onMove: (ev) => {
+        setGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g));
+        const target = entryDropTargetAt(key, timelineKey, ev.clientY);
+        setDropLineY(target ? target.lineY : null);
+      },
+      onDrop: (ev) => {
+        const target = entryDropTargetAt(key, timelineKey, ev.clientY);
+        clear();
+        if (target) moveEntry(key, target.place, target.key);
+      },
+      onCancel: clear,
+    });
+  };
+
   return (
     <>
-      {entries.map(({ key, top, timelineKey }) => (
-        <button
-          key={key}
-          type="button"
-          className={`pb-remove-entry${hoveredKey === key ? ' pb-remove-entry--visible' : ''}`}
-          style={{ top }}
-          aria-label="Remove entry"
-          onMouseEnter={() => { cancelLeave(); setHoveredKey(key); }}
-          onMouseLeave={() => scheduleLeave()}
-          onClick={() => removeEntry(key, timelineKey)}
-        >
-          ✕
-        </button>
-      ))}
+      {ghost && (
+        <div
+          className="pb-drag-ghost pb-drag-ghost--floating"
+          style={{ left: ghost.x + 14, top: ghost.y + 10, width: ghost.width || undefined }}
+          aria-hidden="true"
+          dangerouslySetInnerHTML={{ __html: ghost.html }}
+        />
+      )}
+      {dropLineY !== null && (
+        <div className="pb-drop-line" style={{ top: dropLineY }} aria-hidden="true" />
+      )}
+      {entries.map(({ key, top, timelineKey, timelineSize }) => {
+        const visible = hoveredKey === key;
+        return (
+          <Fragment key={key}>
+            {timelineSize >= 2 && (
+              <button
+                type="button"
+                className={`pb-entry-handle${visible ? ' pb-entry-handle--visible' : ''}`}
+                style={{ top }}
+                aria-label="Drag to reorder entry"
+                title="Drag to reorder"
+                onMouseEnter={() => { cancelLeave(); setHoveredKey(key); }}
+                onMouseLeave={() => scheduleLeave()}
+                onMouseDown={(e) => startDrag(key, timelineKey, e)}
+              >
+                ⠿
+              </button>
+            )}
+            <button
+              type="button"
+              className={`pb-remove-entry${visible ? ' pb-remove-entry--visible' : ''}`}
+              style={{ top }}
+              aria-label="Remove entry"
+              onMouseEnter={() => { cancelLeave(); setHoveredKey(key); }}
+              onMouseLeave={() => scheduleLeave()}
+              onClick={() => removeEntry(key, timelineKey)}
+            >
+              ✕
+            </button>
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -833,11 +1049,13 @@ function TitleControls() {
   }, [editor]);
 
   /** Reorder: move source group before/after the target title group. */
-  const reorderGroup = (sourceKey: string, place: 'before' | 'after', targetKey: string) =>
+  const reorderGroup = (sourceKey: string, place: 'before' | 'after', targetKey: string) => {
+    focusEditorRoot(editor);
     editor.update(() => {
       const sourceNode = $getNodeByKey(sourceKey);
       const targetNode = $getNodeByKey(targetKey);
       if (!$isTitleNode(sourceNode) || !$isTitleNode(targetNode) || sourceKey === targetKey) return;
+      (sourceNode as ElementNode).selectEnd();
       const groupKeys = titleGroupKeys(sourceNode);
       if (place === 'before') {
         for (const k of groupKeys) {
@@ -856,6 +1074,7 @@ function TitleControls() {
         }
       }
     });
+  };
 
   // Resolve the drop target (title group) from pointer Y.
   // Groups are contiguous spans: group[i] runs from handles[i].top to handles[i+1].top
@@ -907,25 +1126,27 @@ function TitleControls() {
     });
     setGhost({ x: e.clientX, y: e.clientY, html, width });
 
-    const onMove = (ev: MouseEvent) => {
-      setGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g));
-      const target = dropGroupTargetAt(ev.clientY);
-      dropTarget.current = target ? { key: target.key, place: target.place } : null;
-      setDropLineY(target ? target.lineY : null);
-    };
-    const onUp = (ev: MouseEvent) => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      const source = dragKey.current;
-      const target = dropGroupTargetAt(ev.clientY);
+    const clear = () => {
       dragKey.current = null;
       dropTarget.current = null;
       setGhost(null);
       setDropLineY(null);
-      if (source && target) reorderGroup(source, target.place, target.key);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    beginPointerDrag({
+      onMove: (ev) => {
+        setGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g));
+        const target = dropGroupTargetAt(ev.clientY);
+        dropTarget.current = target ? { key: target.key, place: target.place } : null;
+        setDropLineY(target ? target.lineY : null);
+      },
+      onDrop: (ev) => {
+        const source = dragKey.current;
+        const target = dropGroupTargetAt(ev.clientY);
+        clear();
+        if (source && target) reorderGroup(source, target.place, target.key);
+      },
+      onCancel: clear,
+    });
   };
 
   if (handles.length === 0) return null;

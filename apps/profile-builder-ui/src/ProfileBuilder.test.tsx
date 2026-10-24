@@ -4,7 +4,7 @@ import { $getRoot, ElementNode, LexicalEditor, TextNode } from 'lexical';
 import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import { ProfileBuilder } from './ProfileBuilder';
 import { BlockNode, ProfileDocument, RootNode, emptyHeader } from './model';
-import { paragraphNode, rootNode, titleNode } from './nodes';
+import { entryNode, paragraphNode, rootNode, timelineNode, titleNode } from './nodes';
 
 function docWithOneTitle(): ProfileDocument {
   return {
@@ -210,4 +210,39 @@ describe('ProfileBuilder — flat title-anchored document (US-EDIT-19)', () => {
   it.todo('reorders title groups via drag handle — group moves with title (browser-verified)');
   it.todo('move-up on a title shifts the whole group before the previous title group (browser-verified)');
   it.todo('individual non-title blocks have no drag handle (browser-verified)');
+});
+
+describe('ProfileBuilder — timeline entry drag handle (entry reorder)', () => {
+  function docWithTimelines(): ProfileDocument {
+    return {
+      header: emptyHeader(),
+      body: rootNode([
+        titleNode('Experience'),
+        timelineNode([
+          entryNode('Alpha Corp', '2020 – 2021', 'Alpha description.'),
+          entryNode('Beta Inc', '2021 – 2022', 'Beta description.'),
+          entryNode('Gamma LLC', '2022 – Present', 'Gamma description.'),
+        ]),
+        titleNode('Education'),
+        timelineNode([entryNode('Omega University', '2016 – 2020', 'Omega description.')]),
+      ]),
+    };
+  }
+
+  it('renders one "Drag to reorder entry" handle per entry, only in timelines with 2+ entries', async () => {
+    render(<ProfileBuilder document={docWithTimelines()} onChange={vi.fn()} />);
+    // The per-entry gutter overlay is rendered: every entry (4) has its ✕.
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Remove entry' })).toHaveLength(4);
+    });
+    // Only the three entries of the multi-entry timeline get a drag handle; the
+    // single-entry Education timeline gets none.
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Drag to reorder entry' })).toHaveLength(3);
+    });
+    for (const handle of screen.getAllByRole('button', { name: 'Drag to reorder entry' })) {
+      expect(handle.getAttribute('title')).toBe('Drag to reorder');
+      expect(handle.classList.contains('pb-entry-handle')).toBe(true);
+    }
+  });
 });
